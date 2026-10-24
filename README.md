@@ -4,7 +4,7 @@
 
 **当前状态：仅仓库与文档初始化，无实现、安装包或正式发布；尚未完成平台联调。**
 
-项目入口：[Amadeus-dsh](https://github.com/jeskoky-pixel/Amadeus-dsh)。开发顺序：P1。当前仓库为私有。
+项目入口：[Amadeus-dsh](https://github.com/jeskoky-pixel/Amadeus-dsh)。开发顺序：P1。当前仓库已于 2026-10-25 根据用户要求公开，便于网页端审阅。
 
 ## 职责与边界
 

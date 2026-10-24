@@ -6,7 +6,7 @@
 
 - 远端：https://github.com/jeskoky-pixel/amadeus-memory
 - 默认分支：main
-- 可见性：私有
+- 可见性：公开（2026-10-25 用户明确要求）
 - 开发顺序：P1
 - 本地位置：主项目目录下 plugins/amadeus-memory/，属于独立 Git 仓库。
 
