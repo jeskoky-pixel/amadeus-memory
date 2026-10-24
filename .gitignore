@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+/private/
+/runtime/
+/logs/
+/memory/
+/profiles/
+node_modules/
