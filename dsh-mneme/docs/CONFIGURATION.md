@@ -13,6 +13,15 @@
 - 绝大多数行为开关与部分阈值/路由键在 `settings.js` 的白名单里，可在面板「功能开关」
   逐项启停（线上回滚开关）；未入白名单的键（路径、词典、枚举外的杂项）只能改 bundle 配置。
 
+## 设置入口与配置权威
+
+DSH 设置左侧的 **Amadeus 记忆 / Amadeus Memory** 页面与 Plugin Manager 共用权威：
+
+- 结构参数（语言、整理阈值、注入/向量阈值等）走 DSH Config Forms；Plugin Manager 与独立页读写同一份 Config。
+- 运行时开关（自动记忆、autoDream、Sleep、偏好、受信 intake、实体抽取、rerank）走既有 feature flags；独立页与原 Memory 面板写同一份存储，重载后生效。
+- Embedding Provider/模型沿用既有 Config/feature flags；OpenAI 兼容 Base URL/模型/密钥沿用既有 `vector` 设置，密钥只显示掩码。
+- 独立页不建立第二套配置或偏好数据库；修改后需要重载的项会明确提示。
+
 ## 全局与存储
 
 | 键 | 默认 | 作用 | 开启后果 / 冲突 |

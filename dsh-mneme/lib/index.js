@@ -21,6 +21,7 @@ import { createStandaloneApi } from "./api-standalone.js";
 // #275 存储生命周期第一批：无损回收（手动入口，不挂启动路径）。
 import { createMaintenance } from "./maintenance.js";
 import { createSettings } from "./settings.js";
+import { mountAdminApi } from "./admin-api.js";
 import { createCommandManager } from "./commands.js";
 import { createExecutionRecorder } from "./pipeline-runner.js";
 import { registerMoRunCommand } from "./pipeline-command.js";
@@ -174,8 +175,61 @@ export function createEntityStreamAdapter({ llm, agentDefaultModel, logger, serv
 // 保留 barrel 再出口 —— test/reindex-backfill.test.js 仍从本模块 import,调用方零改动。
 export { backfillMissingEmbeddings } from "./semantic.js";
 
+// DSH Config Forms serves *only* fields marked volatile. The fields listed in
+// the native settings page are marked volatile in config.js, so Config() yields
+// stable references for them. This adapter dereferences those references on
+// every read, while preserving feature-flag precedence and light-mode behavior.
+const VOLATILE_WRITE = Symbol.for("cosmokit.volatile.write");
+function isVolatileRef(value) {
+  return Boolean(value && typeof value === "object" &&
+    typeof value.get === "function" && VOLATILE_WRITE in value);
+}
+function plainConfigValue(value) {
+  if (isVolatileRef(value)) return plainConfigValue(value.get());
+  if (Array.isArray(value)) return value.map(plainConfigValue);
+  if (value && typeof value === "object") {
+    try {
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plainConfigValue(child)]));
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+function createLiveConfig(rawCfg, flatFlags, nestedFlags) {
+  const read = (prop) => {
+    if (typeof prop !== "string") return rawCfg[prop];
+    if (Object.hasOwn(flatFlags, prop)) return flatFlags[prop];
+    if (Object.hasOwn(nestedFlags, prop)) {
+      return { ...(plainConfigValue(rawCfg[prop]) ?? {}), ...nestedFlags[prop] };
+    }
+    return plainConfigValue(rawCfg[prop]);
+  };
+  return new Proxy({}, {
+    get(_target, prop) {
+      if (prop === "then") return undefined;
+      return read(prop);
+    },
+    has(_target, prop) { return prop in rawCfg || prop in flatFlags || prop in nestedFlags; },
+    ownKeys() {
+      return [...new Set([...Reflect.ownKeys(rawCfg), ...Object.keys(flatFlags), ...Object.keys(nestedFlags)])];
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      if (prop in rawCfg || prop in flatFlags || prop in nestedFlags) {
+        return { enumerable: true, configurable: true, get: () => read(prop) };
+      }
+      return undefined;
+    }
+  });
+}
+
 export const apply = (ctx, config) => {
-  const rawCfg = Config(config);
+  // Cordis/DSH may hand apply() an already-validated Config whose volatile
+  // fields are stable references. Re-parsing that object through Config() would
+  // feed `{}` into the union validator, so only parse a raw/plain config.
+  const alreadyParsed = Boolean(config && typeof config === "object" &&
+    Object.values(config).some(isVolatileRef));
+  const rawCfg = alreadyParsed ? config : Config(config);
 
   // Resolve memoryDir: expand leading "~"
   const memoryDir = rawCfg.memoryDir.startsWith("~")
@@ -227,10 +281,16 @@ export const apply = (ctx, config) => {
       flatFlags[key] = value;
     }
   }
-  const cfg = { ...applyLightModePreset({ ...rawCfg, lightMode }), ...flatFlags };
-  for (const [objKey, sub] of Object.entries(nestedFlags)) {
-    cfg[objKey] = { ...(cfg[objKey] ?? {}), ...sub };
-  }
+  const cfg = lightMode
+    ? (() => {
+        const base = applyLightModePreset({ ...plainConfigValue(rawCfg), lightMode });
+        const merged = { ...base, ...flatFlags };
+        for (const [objKey, sub] of Object.entries(nestedFlags)) {
+          merged[objKey] = { ...(merged[objKey] ?? {}), ...sub };
+        }
+        return merged;
+      })()
+    : createLiveConfig(rawCfg, flatFlags, nestedFlags);
 
   // 失败表的启动期清理也放在装配之后（此前它在 createStore 之后、装配之前，写死
   // 90 天）。保留期现在是显式配置键 reflectionFailureRetentionDays；等它进面板
@@ -596,6 +656,11 @@ export const apply = (ctx, config) => {
       list: () => []
     }, embedder, { vectorIndex, reranker }, cfg.apiToken, cfg, maintenance, extractProfileDraft);
     disposers.push(api.dispose);
+    // Native settings page data plane: owner-authenticated and deliberately
+    // smaller than the token API. No API key, memory body or SQLite path is
+    // returned. Kept separate from the token-gated panel routes so an ordinary
+    // user does not need to copy a token into the browser.
+    mountAdminApi(ctx, { service, settings, store, config: cfg, embedder, vectorIndex, reranker });
   }
 
   // M.O. 自动沉淀（v0.9.3）：项目里重复走的那套动作，自动变成 memoryDir 里的一条

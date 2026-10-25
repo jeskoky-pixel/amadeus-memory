@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { Script } from "node:vm";
+import vm from "node:vm";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const clientSource = readFileSync(join(root, "lib/client.js"), "utf8");
@@ -35,20 +36,137 @@ test("status card: hasData counts the archive metric", () => {
   assert.match(m[0], /d\.archive\?\.total/, "hasData must count archive.total, not just runs/active rows");
 });
 
-// The memory entry lives at the sidebar foot, not in the settings modal: the
-// migration must register into `sidebar.footer.action` (the list slot the
-// sidebar shell renders beside Settings) and must not keep a `settings.section`
-// registration, or the entry would appear twice under different hosts.
-test("memory entry registers into the sidebar foot slot", () => {
+test("local config save revision is not misreported as an external conflict", () => {
+  let loaded;
+  const fakeReact = {
+    Fragment: Symbol("Fragment"),
+    createElement(type) { return { type }; },
+    useState(value) { return [value, () => {}]; },
+    useRef(value) { return { current: value }; },
+    useEffect() {},
+    useCallback(fn) { return fn; },
+    useMemo(fn) { return fn(); }
+  };
+  const sandbox = {
+    __DSH_MNEME_TEST__: true,
+    window: { __ModuleLoader__: { load(spec) { loaded = spec; } } },
+    document: {
+      hidden: false,
+      addEventListener() {},
+      removeEventListener() {},
+      querySelector() { return null; },
+      createElement() { return { dataset: {}, style: {}, textContent: "" }; },
+      head: { appendChild() {} }
+    },
+    navigator: { language: "zh-CN" },
+    console,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    URL,
+    fetch: async () => ({ ok: false, status: 503, json: async () => ({}) })
+  };
+  vm.runInNewContext(clientSource, sandbox, { filename: join(root, "lib/client.js") });
+  const module = loaded.factory(() => fakeReact);
+  const fields = [{ key: "maxInjectedItems", default: 5 }];
+  const previous = { maxInjectedItems: 5 };
+  const prior = { status: "ready", revision: 1, value: { maxInjectedItems: 5 } };
+  const saved = { status: "ready", revision: 2, value: { maxInjectedItems: 6 } };
+
+  // subscribe() during the local mutate, before React commits the draft.
+  const inFlight = module.__test.configFormTransition(previous, saved, prior, fields, { localSave: true });
+  assert.equal(inFlight.conflict, false);
+  assert.deepEqual(inFlight.values, previous);
+
+  // subscribe() after the local mutate: rebase to the accepted revision.
+  const accepted = { revision: 2, values: { maxInjectedItems: 6 } };
+  const after = module.__test.configFormTransition(previous, saved, prior, fields, { localAccepted: accepted });
+  assert.equal(after.conflict, false);
+  assert.deepEqual(after.values, { maxInjectedItems: 6 });
+
+  // A real second page changes the same field: reject the stale draft.
+  const external = { status: "ready", revision: 3, value: { maxInjectedItems: 7 } };
+  const conflict = module.__test.configFormTransition(previous, external, saved, fields, { localAccepted: accepted });
+  assert.equal(conflict.conflict, true);
+  assert.deepEqual(conflict.values, previous);
+});
+
+test("native settings section registers even when Config Forms never serves dsh-mneme", () => {
+  let loaded;
+  let react;
+  const fakeReact = {
+    Fragment: Symbol("Fragment"),
+    createElement(type) { return { type }; },
+    useState(value) { return [value, () => {}]; },
+    useRef(value) { return { current: value }; },
+    useEffect() {},
+    useCallback(fn) { return fn; },
+    useMemo(fn) { return fn(); }
+  };
+  const sandbox = {
+    window: { __ModuleLoader__: { load(spec) { loaded = spec; } }, addEventListener() {}, removeEventListener() {} },
+    document: {
+      hidden: false,
+      addEventListener() {},
+      removeEventListener() {},
+      querySelector() { return null; },
+      createElement() { return { dataset: {}, style: {}, textContent: "" }; },
+      head: { appendChild() {} }
+    },
+    navigator: { language: "zh-CN" },
+    console,
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    URL,
+    fetch: async () => ({ ok: false, status: 503, json: async () => ({}) })
+  };
+  vm.runInNewContext(clientSource, sandbox, { filename: join(root, "lib/client.js") });
+  assert.ok(loaded && loaded.id === pkg.name);
+  react = fakeReact;
+  const module = loaded.factory(() => react);
+  const registrations = [];
+  const injectedNames = [];
+  const ctx = {
+    locale: { register() {}, bind() { return (key) => key; } },
+    effect(fn) { return fn(); },
+    slots: {
+      inject(name, register) { injectedNames.push(name); return register(); },
+      register(spec, render) { registrations.push({ spec, render }); return () => {}; }
+    },
+    configForms: {
+      // Simulate the real failure: the namespace is never served. The page must
+      // still appear; Config Forms can only enrich it later.
+      whileServed() { return () => {}; }
+    },
+    logger: { info() {}, warn() {} }
+  };
+  module.apply(ctx);
+  assert.ok(injectedNames.includes("settings.section"), "settings.section must be injected immediately");
+  const section = registrations.find((entry) => entry.spec.name === "settings.section");
+  assert.ok(section, "settings.section must register without whileServed activation");
+  assert.equal(section.spec.id, "amadeus-memory");
+  assert.equal(section.spec.order, 24);
+  assert.equal(typeof section.spec.label, "function");
+});
+
+// The memory library entry lives at the sidebar foot; the native DSH settings
+// page is a separate, explicitly registered settings.section. Both may coexist:
+// the settings section is configuration, not a second memory launcher.
+test("memory entry registers into the sidebar foot slot and native settings page", () => {
   assert.ok(
     clientSource.includes('ctx.slots.inject("sidebar.footer.action"'),
     "client must inject into sidebar.footer.action"
   );
   assert.equal(
-    clientSource.includes('"settings.section"'),
-    false,
-    "the old settings.section registration must be gone"
+    (clientSource.match(/name:\s*"settings\.section"/g) || []).length,
+    1,
+    "exactly one native settings.section registration"
   );
+  assert.ok(clientSource.includes('id: "amadeus-memory"'), "settings page id must be stable");
+  assert.ok(clientSource.includes("configForms.whileServed"), "settings page must follow Config Forms lifecycle");
 });
 
 // The tab era is over: the in-conversation memory tab fought the floating
@@ -356,8 +474,8 @@ test("better-sidebar tab mounts via an inner sub-plugin, standalone mode intact"
   // 整个 entry pending（"1 entry did not activate"）。tab 注册必须挂在内层
   // 动态子插件（dsh-server-deck 同款模式），外层入口零 inject 立即激活。
   assert.ok(
-    /const inject = \["slots", "locale"\]/.test(clientSource),
-    "the module inject must not declare betterSidebar (hard-wait regression)"
+    /const inject = \["slots", "locale", "configForms"\]/.test(clientSource),
+    "the module inject must include only the settings/locale services, not betterSidebar"
   );
   assert.ok(
     /ctx\.plugin\?\.\(\{[\s\S]*?inject: \["betterSidebar"\][\s\S]*?apply: \(bsCtx\) =>/.test(clientSource),
@@ -1683,8 +1801,14 @@ test("maintenance card: VACUUM defaults to off and a failed run is reported verb
 // summarizeSub 撞名，node --check 报 "Identifier 'summarizeSub' has already
 // been declared"，而当时 CI 全绿）。
 test("client bundle parses: 面板产物必须是合法 JS（无重复声明等语法错误）", () => {
-  const result = spawnSync(process.execPath, ["--check", join(root, "lib/client.js")], { encoding: "utf8" });
-  assert.equal(result.status, 0, `lib/client.js 解析失败：\n${result.stderr || result.stdout}`);
+  // Parse in-process rather than spawning `node --check`: the DSH sandbox may
+  // reject piped child stdio (EPERM), which would make the parse gate itself
+  // fail for an environmental reason. A vm Script still catches duplicate
+  // declarations and syntax errors without executing browser globals.
+  assert.doesNotThrow(
+    () => new Script(clientSource, { filename: join(root, "lib/client.js") }),
+    "lib/client.js must be valid JavaScript"
+  );
 });
 
 // #399 的两个留存键（distillRecords.enabled / retentionDays）此前只有后端

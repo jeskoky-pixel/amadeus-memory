@@ -1,0 +1,53 @@
+# Security Policy
+
+This policy covers the Amadeus Memory enhanced bundle in this repository
+(`dsh-mneme/`, package `@modusensus/dsh-mneme`). The upstream import and license
+are recorded in [UPSTREAM.md](UPSTREAM.md); installation and rollback are in
+[INSTALL.md](dsh-mneme/docs/INSTALL.md).
+
+## Supported Versions
+
+| Version | Supported |
+| --- | --- |
+| 0.9.x | Current Amadeus Memory enhanced line |
+| < 0.9 | Historical upstream release; upgrade before reporting an issue |
+
+## 支持版本
+
+| Version | Supported |
+| --- | --- |
+| 0.9.x | 当前 Amadeus Memory 增强线 |
+| < 0.9 | 历史上游版本；报告问题前请先升级 |
+
+## Reporting a Vulnerability / 报告漏洞
+
+Do not open a public issue for an unpatched vulnerability. Report it privately
+to the repository owner, include the affected package version, a minimal
+reproduction, and whether memory text, credentials, or the local SQLite file
+were exposed. Do not attach a real memory database or API key. The owner will
+acknowledge the report and coordinate a fix and disclosure.
+
+For repository security design and the API route policy table, see
+[dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)
+and [LICENSE](dsh-mneme/LICENSE). The Memory host API is owner-authenticated; remote
+Embedding and host-model consolidation are described in the README privacy
+sections.
+
+## Open reads (API route policy)
+
+- **Open reads:** `/`, `/info`, `/version-check`, `/list`, `/recall-stats`, `/search`, `/profile`, `/persona`, `/llm-providers`, `/semantic`, `/semantic/llm-audit`, `/semantic/llm-audit/stats`, `/semantic/graph/ego`, `/semantic/graph/entity-attrs`, `/entities`, `/memories/entities`, `/dream-status`, `/inject-status`, `/inject-preview`, `/pipeline`, `/candidates`, `/rules`, `/mode`, `/features`, `/commands`, `/nudge`
+- **开放读:** `/`, `/info`, `/version-check`, `/list`, `/recall-stats`, `/search`, `/profile`, `/persona`, `/llm-providers`, `/semantic`, `/semantic/llm-audit`, `/semantic/llm-audit/stats`, `/semantic/graph/ego`, `/semantic/graph/entity-attrs`, `/entities`, `/memories/entities`, `/dream-status`, `/inject-status`, `/inject-preview`, `/pipeline`, `/candidates`, `/rules`, `/mode`, `/features`, `/commands`, `/nudge`
+
+The `profile`, `persona`, `rules`, `mode`, `features`, `commands` and `nudge`
+entries are token-write routes: reads are open, writes require the configured
+token. They are listed here because this section documents read exposure.
+
+## Gated routes
+
+- **Gated routes:** `/profile`, `/profile/extract`, `/persona`, `/test-model`, `/delete`, `/update`, `/create`, `/maintenance/reclaim`, `/rules`, `/vector-config`, `/vector-reindex`, `/runtime/provision`, `/identity/aliases`, `/identity/external-ids`, `/identity/candidates`, `/identity/merge-preview`, `/identity/merge`, `/identity/merge-undo`, `/identity/links`, `/identity/history`, `/identity/entity-detail`, `/identity/pending`, `/preferences`, `/intake`, `/intake/provenance`, `/export`, `/import`, `/conflicts`, `/conflicts/resolve`, `/health`, `/mode`, `/external-api`, `/features`, `/commands`, `/nudge`
+- **受门控的路由:** `/profile`, `/profile/extract`, `/persona`, `/test-model`, `/delete`, `/update`, `/create`, `/maintenance/reclaim`, `/rules`, `/vector-config`, `/vector-reindex`, `/runtime/provision`, `/identity/aliases`, `/identity/external-ids`, `/identity/candidates`, `/identity/merge-preview`, `/identity/merge`, `/identity/merge-undo`, `/identity/links`, `/identity/history`, `/identity/entity-detail`, `/identity/pending`, `/preferences`, `/intake`, `/intake/provenance`, `/export`, `/import`, `/conflicts`, `/conflicts/resolve`, `/health`, `/mode`, `/external-api`, `/features`, `/commands`, `/nudge`
+
+The standalone API must be bound to loopback, use a distinct token, and remain
+disabled when not needed. The native settings admin API is same-origin and
+owner-only. No route returns a plaintext API key or memory body in the overview
+payload.

@@ -5,7 +5,8 @@ export const Config = z.object({
   // 记忆语言：生成记忆、注入标题与后台 LLM 提示词所用语言；'zh'（默认，
   // 行为不变）/ 'en'。启动时读入，切换后重启生效。
   language: z.union([z.const("zh"), z.const("en")]).default("zh")
-    .description("记忆语言：生成的记忆条目、注入标题与后台 LLM 提示词所用语言（zh=默认中文，en=英文）。"),
+    .description("记忆语言：生成的记忆条目、注入标题与后台 LLM 提示词所用语言（zh=默认中文，en=英文）。")
+    .volatile(),
   memoryDir: z.string().default("~/.dsh/memory"),
   autoInject: z.boolean().default(true),
   autoSummarize: z.boolean().default(true),
@@ -69,20 +70,20 @@ export const Config = z.object({
   distillRateLimitIntervalMs: z.natural().min(0).max(60000).default(1000),
   distillRateLimitRetries: z.natural().min(0).max(10).default(3),
   distillRateLimitBaseDelayMs: z.natural().min(100).max(60000).default(1000),
-  maxInjectedItems: z.natural().min(1).max(20).default(5),
+  maxInjectedItems: z.natural().min(1).max(20).default(5).volatile(),
   // Issue #205：注入位跨轮轮换。同一会话里，最近 N 个不同用户查询轮次注入过
   // 的记忆本轮不再优先（新鲜优先、原序回填，槽位数不变）；长会话中避免相邻
   // 轮次反复注入同一条（实测 15.5h 会话 86 次注入 93% 重复）。0 = 关闭（默认，
   // 保持既有行为）。会话边界自动重置：新会话从零开始。
-  injectRotationTurns: z.natural().min(0).max(20).default(0),
+  injectRotationTurns: z.natural().min(0).max(20).default(0).volatile(),
   // Issue #164①：注入单条正文截断上限可配（原硬编码 300）。截断时尾部带
   // 提示：上限/原长/全文 memory_get 指引（BUDGET_EXCEEDED 原则——绝不静默）。
   // 默认 300 = 与既有行为一致。
-  injectContentMaxChars: z.natural().min(60).max(4000).default(300),
+  injectContentMaxChars: z.natural().min(60).max(4000).default(300).volatile(),
   // Issue #34（v0.7.2 引入；v0.7.11 误删后随 #333 恢复）：对话开始注入一次当前
   // 时间。默认关 = 与既有行为一致；格式与键名不变，存量 feature_flags 恢复即生效。
   injectTimePrefix: z.boolean().default(false),
-  importanceThreshold: z.natural().min(1).max(5).default(3),
+  importanceThreshold: z.natural().min(1).max(5).default(3).volatile(),
   // Issue #239（第 5 项）：注入条数的查询自适应（默认关）。确定性强的话题收缩注入
   // 条数（减半、下限 1），模糊话题（回指/时间线索，或极短查询）维持
   // maxInjectedItems 上限——只做**单向收缩**，绝不越过用户配置的上限；判据只看
@@ -149,9 +150,9 @@ export const Config = z.object({
   // 关闭时按原样透传。
   escapePromptVariables: z.boolean().default(true),
   autoDream: z.boolean().default(true),
-  dreamThresholdCount: z.natural().min(1).max(1000).default(10),
-  dreamThresholdChars: z.natural().min(100).max(100000).default(5000),
-  dreamDelayMs: z.natural().min(0).max(60000).default(2000),
+  dreamThresholdCount: z.natural().min(1).max(1000).default(10).volatile(),
+  dreamThresholdChars: z.natural().min(100).max(100000).default(5000).volatile(),
+  dreamDelayMs: z.natural().min(0).max(60000).default(2000).volatile(),
   // autoDream 触发最小间隔（分钟，0 = 不限制，Issue #89 请求 2）：高频写入
   // 场景下防止巩固调用（含失败重试）连发刷爆配额。间隔从每次实际开跑时刻
   // 起算，失败/degraded 的 run 也占用间隔；间隔内的触发请求静默跳过，下一次
@@ -414,15 +415,15 @@ export const Config = z.object({
   runtimeMirror: z.string().default(""),
 
   // Vector search tuning.
-  vectorSearchTopK: z.natural().min(1).max(100).default(20),
-  vectorSearchThreshold: z.number().min(0).max(1).default(0.65),
-  hybridSearchVectorWeight: z.number().min(0).max(1).default(0.6),
+  vectorSearchTopK: z.natural().min(1).max(100).default(20).volatile(),
+  vectorSearchThreshold: z.number().min(0).max(1).default(0.65).volatile(),
+  hybridSearchVectorWeight: z.number().min(0).max(1).default(0.6).volatile(),
   hybridSearchKeywordWeight: z.number().min(0).max(1).default(0.4),
   // Lazy auto-backfill of missing embeddings on boot (Bug2): when the vector
   // API is configured and rows still lack an embedding, the index is rebuilt
   // in the background after a short delay, rate-limited in batches. On by
   // default; set false to keep the backfill manual only.
-  autoReindexOnBoot: z.boolean().default(true),
+  autoReindexOnBoot: z.boolean().default(true).volatile(),
   // Backfill pacing (previously hardcoded 500 / 10 / 200 in semantic.js). A
   // fixed 500-per-boot cap meant a 4k-row backlog needed nine restarts to
   // clear, and nothing reported that the run had been capped.
@@ -592,7 +593,7 @@ export const Config = z.object({
   // autoDream so the two never overlap.
   sleepModeEnabled: z.boolean().default(false),
   // Quiet window before a cycle fires (minutes).
-  sleepIdleMinutes: z.natural().min(1).max(60).default(5),
+  sleepIdleMinutes: z.natural().min(1).max(60).default(5).volatile(),
   // Minimum gap between two sleep runs (hours) — a second idle window within
   // this interval does not retrigger.
   sleepMinIntervalHours: z.natural().min(1).max(168).default(8),
@@ -1050,7 +1051,18 @@ const LIGHT_MODE_OFF = [
  */
 export function applyLightModePreset(cfg) {
   if (cfg?.lightMode !== true) return cfg;
-  const preset = { ...cfg, lightMode: true };
+  // Config forms use volatile fields: dereference them before taking the
+  // light-mode snapshot, otherwise the preset would write `false` over a
+  // stable-reference wrapper and leave numeric knobs as `{get()}`.
+  const plain = (value) => {
+    if (value && typeof value === "object" && typeof value.get === "function") return plain(value.get());
+    if (Array.isArray(value)) return value.map(plain);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, plain(child)]));
+    }
+    return value;
+  };
+  const preset = { ...plain(cfg), lightMode: true };
   for (const key of LIGHT_MODE_OFF) {
     // 点分键（#380 preInjectGate.enabled）：对象子键的预设翻转——浅拷贝父对象后
     // 改子键，避免直接改到用户 config 里的同一引用。平铺键照旧直赋。

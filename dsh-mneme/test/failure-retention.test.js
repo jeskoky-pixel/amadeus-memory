@@ -90,7 +90,9 @@ test("接线锁：启动期失败表清理排在 cfg 装配之后，读键而不
   assert.ok(callAt > 0, "index.js 必须调用 store.deleteOldFailures");
 
   // 装配前读 rawCfg 会漏掉面板/预设合进来的值；失败表此前正好排在装配之前。
-  const cfgAt = index.indexOf("const cfg = { ...applyLightModePreset(");
+  // 装配现在按 lightMode 走“纯快照 / live volatile 代理”两条分支，唯一的公共
+  // 判据是 `const cfg =` 已经落在这条清理调用之前。
+  const cfgAt = index.indexOf("const cfg =");
   assert.ok(cfgAt > 0 && cfgAt < callAt, "清理必须排在 cfg 装配之后，否则读不到配置值");
 
   const block = index.slice(callAt - 700, callAt + 200);

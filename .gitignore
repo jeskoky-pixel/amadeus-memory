@@ -8,4 +8,5 @@
 /logs/
 /memory/
 /profiles/
+/dist/
 node_modules/

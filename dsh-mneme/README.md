@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/@modusensus/dsh-mneme?color=blue&label=npm)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Awesome](https://awesome-dsh-plugin.com/badge.svg)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-[![tests](https://img.shields.io/badge/tests-2302%20passed-success)](https://github.com/slow-stack/mneme)
+[![tests](https://img.shields.io/badge/tests-2378%20passed-success)](https://github.com/slow-stack/mneme)
 [![CI](https://img.shields.io/github/actions/workflow/status/slow-stack/mneme/ci.yml)](https://github.com/slow-stack/mneme/actions)
 [![node](https://img.shields.io/badge/node-22%2B-blue)](https://nodejs.org)
 [![npm downloads](https://img.shields.io/npm/d18m/@modusensus/dsh-mneme.svg?color=blue&label=downloads)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
@@ -220,6 +220,16 @@ Amadeus 分支在实体层之上增加三块**默认不影响旧行为**的能�
 配置键、API、迁移/回滚与合成基准见
 [Amadeus 记忆增强文档](docs/AMADEUS_MEMORY_ENHANCER.md)。
 
+### Amadeus Memory 产品化（0.9.5-amadeus.1）
+
+- **发行身份**：同包名 `@modusensus/dsh-mneme`、同插件 ID `dsh-mneme` 的增强版本，升级继承原 `memoryDir`、配置、Embedding 与 SQLite；不是第二个 Memory 包，不能与上游同时启用。上游/许可见 `UPSTREAM.md` 与 `LICENSE`。
+- **系统设置入口**：DSH 设置左侧 **Amadeus 记忆 / Amadeus Memory**，提供运行概览、自动记忆/autoDream/Sleep、注入参数、Embedding 状态与配置、Tag/实体偏好、打开原完整面板。
+- **配置权威**：结构参数走 DSH Config Forms（与 Plugin Manager 同源）；运行时开关与原面板共用既有 feature flags；偏好权重复用既有表；Embedding 密钥不回传浏览器。
+- **动态数据**：`/api/amadeus-memory/admin/*` 使用 same-origin + DSH Connection owner + 写请求 marker，不暴露记忆正文或明文密钥。
+- **安装/升级/回滚**：[INSTALL](docs/INSTALL.md) · [用户指南](docs/USER_GUIDE.zh.md) · [备份回滚](docs/BACKUP_ROLLBACK.md) · [发行说明](docs/RELEASE_NOTES.md)。
+
+最终 tarball、SHA-256 和实机验收边界见 [RELEASE_NOTES](docs/RELEASE_NOTES.md) 与仓库交付报告。
+
 ### 记忆质量过滤 🧼（v0.4.6，默认开）
 
 写库前对每条记忆做**启发式质量打分**（纯函数，无 I/O、无共享状态）：元记忆词汇（谈论记忆系统本身）、自指类型标签、内容过短、重复度高、与近期记忆近似重复都会扣分（0-100）：
@@ -358,7 +368,7 @@ dsh web
 ```bash
 cd dsh-mneme
 npm pack                       # 产出 modusensus-dsh-mneme-<版本>.tgz
-dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-0.9.0.tgz"
+dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz"
 ```
 
 > 必须用 `npm pack`，别用 `pnpm pack`：`bin/cli.mjs` 在工作区里是 CRLF，pnpm 会以 `ERR_PNPM_BIN_CRLF` 直接失败。
@@ -707,7 +717,7 @@ src/
 ├── api.js            # HTTP 路由（Web 面板数据通道，含 /conflicts 冲突队列）
 └── index.js          # 插件接线
 lib/                  # src 的同步分发产物（npm run sync，prepack 钩子在发布时自动跑；一致性由 scripts/check-sync.js 在 CI 与 release.yml 校验——它只查不同步；唯一手写例外 lib/client.js——Web 面板 bundle，sync 不覆盖）
-test/                 # 2302 个 node:test 测试（审计与三轴线压测不变量；src↔lib 一致性由 scripts/check-sync.js 发布闸门校验）
+test/                 # 2378 个 node:test 测试（审计与三轴线压测不变量；src↔lib 一致性由 scripts/check-sync.js 发布闸门校验）
 scripts/              # e2e-dsh.js 端到端演示 · stress-dsh.js 三轴线压测 · sync-lib.js 同步 · check-sync.js 发布闸门 · benchmark-recall.js / benchmark-embed.js / benchmark-rerank.js 基准 · sync-test-badge.mjs 测试徽章 · build-runtime-manifest.mjs 运行时清单
 ```
 
@@ -716,7 +726,7 @@ scripts/              # e2e-dsh.js 端到端演示 · stress-dsh.js 三轴线压
 ```bash
 cd dsh-mneme
 npm install        # 安装 peer 依赖（以 devDependencies 形式，用于本地测试）
-npm test           # 运行 2302 个测试
+npm test           # 运行 2378 个测试
 npm run stress     # 三轴线压测：长会话检索 / 冲突仲裁 / 多 Agent 并发（离线 mock LLM）
 npm run sync       # 把 src/ 同步到 lib/（发布时由 prepack 钩子自动执行）
 ```

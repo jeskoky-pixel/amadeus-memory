@@ -253,11 +253,25 @@ window.__ModuleLoader__.load({
       return fetch(path, { ...opts, headers });
     }
 
+    // Native settings page data plane: same-origin owner auth, never the panel
+    // API token. Writes carry the explicit marker required by the Host.
+    function adminFetch(path, opts = {}) {
+      const headers = { "x-amadeus-memory": "1", ...(opts.headers || {}) };
+      if (opts.body !== undefined && !headers["Content-Type"] && !headers["content-type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+      return fetch(`/api/amadeus-memory/admin${path}`, {
+        credentials: "same-origin",
+        ...opts,
+        headers
+      });
+    }
+
     // ⚠️ 'betterSidebar' 绝不能进模块级 inject（issue #88 实锤）：loader 对
     // inject 声明的服务是硬等待——未安装 better-sidebar 的环境里整个 entry
     // 永远 pending（"1 entry did not activate" → Failed to load plugins）。
     // 软依赖靠内层动态子插件探测（见 apply 内 better-sidebar 挂载块）。
-    const inject = ["slots", "locale"];
+    const inject = ["slots", "locale", "configForms"];
 
     const NS = "memory";
 
@@ -271,6 +285,107 @@ window.__ModuleLoader__.load({
         "memory.tab.decision": "决策",
         "memory.tab.history": "历史",
         "memory.tab.summary": "小结",
+        "memory.am.nav": "Amadeus 记忆",
+        "memory.am.title": "Amadeus Memory",
+        "memory.am.subtitle": "查看记忆库运行状态，调整常用记忆、自动整理与向量检索设置。完整图谱与审计仍在原记忆面板。",
+        "memory.am.loading": "正在读取状态…",
+        "memory.am.refresh": "刷新状态",
+        "memory.am.openPanel": "打开完整记忆管理",
+        "memory.am.section.overview": "运行概览",
+        "memory.am.section.core": "自动记忆与整理",
+        "memory.am.section.config": "注入与记忆参数",
+        "memory.am.section.embedding": "向量检索与 Embedding",
+        "memory.am.section.preferences": "Tag 与实体偏好",
+        "memory.am.section.advanced": "高级与诊断",
+        "memory.am.runState": "记忆库状态",
+        "memory.am.memories": "记忆",
+        "memory.am.archived": "已归档",
+        "memory.am.forgotten": "已遗忘",
+        "memory.am.running": "运行中",
+        "memory.am.paused": "已暂停",
+        "memory.am.database": "SQLite",
+        "memory.am.autoMemory": "自动记忆/总结",
+        "memory.am.lastError": "最近错误",
+        "memory.am.none": "无",
+        "memory.am.version": "版本",
+        "memory.am.lastDream": "最近自动巩固",
+        "memory.am.lastSleep": "最近 Sleep",
+        "memory.am.never": "尚未运行",
+        "memory.am.vector": "向量检索",
+        "memory.am.vectorReady": "可用",
+        "memory.am.vectorInitializing": "初始化中",
+        "memory.am.vectorDisabled": "未配置/不可用",
+        "memory.am.dimension": "维度",
+        "memory.am.coverage": "索引覆盖",
+        "memory.am.featureHint": "开关改的是同一份运行时覆盖；保存后按提示重载插件。",
+        "memory.am.configUnavailable": "当前 DSH 没有提供 Config Forms；请到插件管理器修改这些参数。",
+        "memory.am.configHint": "这些结构参数与插件管理器使用同一份 Config Forms；保存后插件会重载。",
+        "memory.am.conflict": "配置已被其他页面修改；请取消后重新编辑，避免覆盖别人的保存。",
+        "memory.am.save": "保存",
+        "memory.am.cancel": "取消",
+        "memory.am.restoreDefaults": "恢复默认",
+        "memory.am.saved": "已保存。",
+        "memory.am.savedRestart": "已保存；插件重载后生效。",
+        "memory.am.restartHint": "已写入，重载插件后生效。",
+        "memory.am.embedHint": "只显示服务方、模型、维度与索引状态；密钥永不回传浏览器。",
+        "memory.am.vectorEnabled": "启用向量检索",
+        "memory.am.vectorEnabledHint": "关闭后仍可使用关键词检索。",
+        "memory.am.local": "本地 ONNX",
+        "memory.am.baseUrl": "Base URL",
+        "memory.am.model": "模型",
+        "memory.am.apiKey": "API Key",
+        "memory.am.apiKeyKeep": "留空或保持掩码 = 保留现有密钥。",
+        "memory.am.saveEmbedding": "保存 Embedding 配置",
+        "memory.am.embeddingSavedRestart": "已保存；模型/提供方变化会重建索引，重载插件后生效。",
+        "memory.am.test": "测试连通性",
+        "memory.am.testing": "测试中…",
+        "memory.am.testWarning": "会发起一次真实远端请求（若当前是远端 Provider）。",
+        "memory.am.testOk": "连通成功",
+        "memory.am.testFailed": "连通失败",
+        "memory.am.preferenceHint": "复用记忆库已有的权重存储；恢复默认只清权重，不删除任何记忆。",
+        "memory.am.tagWeights": "Tag 权重",
+        "memory.am.entityWeights": "实体权重",
+        "memory.am.delete": "删除",
+        "memory.am.reset": "恢复默认权重",
+        "memory.am.resetConfirm": "确认恢复默认权重",
+        "memory.am.invalid": "数值超出允许范围。",
+        "memory.am.noChanges": "没有改动。",
+        "memory.am.package": "插件包",
+        "memory.am.dataDir": "数据库路径",
+        "memory.am.vectorIndex": "向量索引",
+        "memory.am.trustedIntake": "受信经历入口",
+        "memory.am.enabled": "已启用",
+        "memory.am.disabled": "未启用",
+        "memory.am.advancedTitle": "展开高级与诊断信息",
+        "memory.am.advancedHint": "更复杂的图谱、别名、合并、维护与审计请用「打开完整记忆管理」。",
+        "memory.am.languageZh": "中文",
+        "memory.am.languageEn": "English",
+        "memory.am.field.language": "记忆语言",
+        "memory.am.field.dreamThresholdCount": "自动整理触发条数",
+        "memory.am.field.dreamThresholdChars": "自动整理触发字符数",
+        "memory.am.field.dreamDelayMs": "自动整理延迟（毫秒）",
+        "memory.am.field.sleepIdleMinutes": "Sleep 空闲分钟数",
+        "memory.am.field.maxInjectedItems": "每轮最多注入条数",
+        "memory.am.field.importanceThreshold": "自动注入重要性门槛",
+        "memory.am.field.injectContentMaxChars": "注入正文截断字符数",
+        "memory.am.field.injectRotationTurns": "注入轮换轮数",
+        "memory.am.field.vectorSearchTopK": "向量候选数",
+        "memory.am.field.vectorSearchThreshold": "向量相似度阈值",
+        "memory.am.field.hybridSearchVectorWeight": "混合检索向量权重",
+        "memory.am.field.autoReindexOnBoot": "启动时自动补齐索引",
+        "memory.am.fieldHint.language": "记忆标题与后台提示词语言。",
+        "memory.am.fieldHint.dreamThresholdCount": "新增记忆达到该条数后触发自动整理。",
+        "memory.am.fieldHint.dreamThresholdChars": "新增正文达到该字符数后触发自动整理。",
+        "memory.am.fieldHint.dreamDelayMs": "触发后等待多久再开始整理。",
+        "memory.am.fieldHint.sleepIdleMinutes": "空闲多久后运行 Sleep。",
+        "memory.am.fieldHint.maxInjectedItems": "每轮自动注入的条数上限。",
+        "memory.am.fieldHint.importanceThreshold": "达到该重要性的记忆才会自动注入。",
+        "memory.am.fieldHint.injectContentMaxChars": "单条注入正文的截断上限。",
+        "memory.am.fieldHint.injectRotationTurns": "避免连续多轮注入同一批记忆。",
+        "memory.am.fieldHint.vectorSearchTopK": "语义检索进入融合池的候选数。",
+        "memory.am.fieldHint.vectorSearchThreshold": "低于该相似度的向量不参与。",
+        "memory.am.fieldHint.hybridSearchVectorWeight": "混合检索时向量分数的权重。",
+        "memory.am.fieldHint.autoReindexOnBoot": "启动后补齐缺失向量的索引。",
         "memory.settings.title": "记忆库设置",
         "memory.settings.group.identity": "身份与偏好",
         "memory.settings.identity.title": "身份与偏好权重",
@@ -1049,6 +1164,107 @@ window.__ModuleLoader__.load({
         "memory.tab.decision": "Decisions",
         "memory.tab.history": "History",
         "memory.tab.summary": "Summaries",
+        "memory.am.nav": "Amadeus Memory",
+        "memory.am.title": "Amadeus Memory",
+        "memory.am.subtitle": "Check memory health, tune everyday memory, consolidation and vector settings. The full graph and audit tools stay in the Memory panel.",
+        "memory.am.loading": "Loading status…",
+        "memory.am.refresh": "Refresh status",
+        "memory.am.openPanel": "Open full memory manager",
+        "memory.am.section.overview": "Overview",
+        "memory.am.section.core": "Automatic memory & consolidation",
+        "memory.am.section.config": "Injection & memory parameters",
+        "memory.am.section.embedding": "Vector retrieval & Embedding",
+        "memory.am.section.preferences": "Tag & entity preferences",
+        "memory.am.section.advanced": "Advanced & diagnostics",
+        "memory.am.runState": "Memory state",
+        "memory.am.memories": "Memories",
+        "memory.am.archived": "Archived",
+        "memory.am.forgotten": "Forgotten",
+        "memory.am.running": "Running",
+        "memory.am.paused": "Paused",
+        "memory.am.database": "SQLite",
+        "memory.am.autoMemory": "Auto memory/summary",
+        "memory.am.lastError": "Last error",
+        "memory.am.none": "None",
+        "memory.am.version": "Version",
+        "memory.am.lastDream": "Last auto consolidation",
+        "memory.am.lastSleep": "Last Sleep",
+        "memory.am.never": "Never",
+        "memory.am.vector": "Vector retrieval",
+        "memory.am.vectorReady": "Ready",
+        "memory.am.vectorInitializing": "Initializing",
+        "memory.am.vectorDisabled": "Not configured",
+        "memory.am.dimension": "Dimension",
+        "memory.am.coverage": "Index coverage",
+        "memory.am.featureHint": "These switches use the same runtime override store as the full panel; reload when prompted.",
+        "memory.am.configUnavailable": "This DSH build does not expose Config Forms; edit these values in Plugin Manager.",
+        "memory.am.configHint": "These structural values share the same Config Forms authority as Plugin Manager; saving reloads the plugin.",
+        "memory.am.conflict": "Another page changed the configuration. Cancel and reopen before saving so you do not overwrite it.",
+        "memory.am.save": "Save",
+        "memory.am.cancel": "Cancel",
+        "memory.am.restoreDefaults": "Restore defaults",
+        "memory.am.saved": "Saved.",
+        "memory.am.savedRestart": "Saved; effective after the plugin reloads.",
+        "memory.am.restartHint": "Stored; effective after the plugin reloads.",
+        "memory.am.embedHint": "Only provider, model, dimension and index state are shown; keys never return to the browser.",
+        "memory.am.vectorEnabled": "Enable vector retrieval",
+        "memory.am.vectorEnabledHint": "Keyword search remains available when this is off.",
+        "memory.am.local": "Local ONNX",
+        "memory.am.baseUrl": "Base URL",
+        "memory.am.model": "Model",
+        "memory.am.apiKey": "API Key",
+        "memory.am.apiKeyKeep": "Leave blank or keep the mask to retain the existing key.",
+        "memory.am.saveEmbedding": "Save Embedding config",
+        "memory.am.embeddingSavedRestart": "Saved; model/provider changes rebuild the index and apply after reload.",
+        "memory.am.test": "Test connectivity",
+        "memory.am.testing": "Testing…",
+        "memory.am.testWarning": "This makes one real remote request when the provider is remote.",
+        "memory.am.testOk": "Connected",
+        "memory.am.testFailed": "Connection failed",
+        "memory.am.preferenceHint": "Uses the existing memory weight store; restoring defaults removes weights only, never memories.",
+        "memory.am.tagWeights": "Tag weights",
+        "memory.am.entityWeights": "Entity weights",
+        "memory.am.delete": "Delete",
+        "memory.am.reset": "Restore default weights",
+        "memory.am.resetConfirm": "Confirm restore defaults",
+        "memory.am.invalid": "Value is outside the allowed range.",
+        "memory.am.noChanges": "No changes.",
+        "memory.am.package": "Package",
+        "memory.am.dataDir": "Database path",
+        "memory.am.vectorIndex": "Vector index",
+        "memory.am.trustedIntake": "Trusted intake",
+        "memory.am.enabled": "Enabled",
+        "memory.am.disabled": "Disabled",
+        "memory.am.advancedTitle": "Show advanced diagnostics",
+        "memory.am.advancedHint": "Use “Open full memory manager” for graph, aliases, merges, maintenance and audit.",
+        "memory.am.languageZh": "中文",
+        "memory.am.languageEn": "English",
+        "memory.am.field.language": "Memory language",
+        "memory.am.field.dreamThresholdCount": "Consolidation trigger count",
+        "memory.am.field.dreamThresholdChars": "Consolidation trigger chars",
+        "memory.am.field.dreamDelayMs": "Consolidation delay (ms)",
+        "memory.am.field.sleepIdleMinutes": "Sleep idle minutes",
+        "memory.am.field.maxInjectedItems": "Max injected items",
+        "memory.am.field.importanceThreshold": "Auto-inject importance threshold",
+        "memory.am.field.injectContentMaxChars": "Injected content truncation",
+        "memory.am.field.injectRotationTurns": "Injection rotation turns",
+        "memory.am.field.vectorSearchTopK": "Vector candidates",
+        "memory.am.field.vectorSearchThreshold": "Vector similarity threshold",
+        "memory.am.field.hybridSearchVectorWeight": "Hybrid vector weight",
+        "memory.am.field.autoReindexOnBoot": "Backfill index on boot",
+        "memory.am.fieldHint.language": "Language for memory titles and background prompts.",
+        "memory.am.fieldHint.dreamThresholdCount": "Trigger consolidation after this many new memories.",
+        "memory.am.fieldHint.dreamThresholdChars": "Trigger consolidation after this much new text.",
+        "memory.am.fieldHint.dreamDelayMs": "How long to wait before starting consolidation.",
+        "memory.am.fieldHint.sleepIdleMinutes": "Idle minutes before Sleep runs.",
+        "memory.am.fieldHint.maxInjectedItems": "Upper bound on automatically injected memories each turn.",
+        "memory.am.fieldHint.importanceThreshold": "Only memories at or above this importance are auto-injected.",
+        "memory.am.fieldHint.injectContentMaxChars": "Per-memory truncation limit in the injected block.",
+        "memory.am.fieldHint.injectRotationTurns": "Avoid injecting the same memories on adjacent turns.",
+        "memory.am.fieldHint.vectorSearchTopK": "Semantic candidates entering the fusion pool.",
+        "memory.am.fieldHint.vectorSearchThreshold": "Vectors below this similarity are ignored.",
+        "memory.am.fieldHint.hybridSearchVectorWeight": "Weight of vector scores in hybrid retrieval.",
+        "memory.am.fieldHint.autoReindexOnBoot": "Fill missing vector rows after startup.",
         "memory.settings.title": "Memory Settings",
         "memory.settings.group.identity": "Identity & preferences",
         "memory.settings.identity.title": "Identity & preference weights",
@@ -4187,6 +4403,626 @@ window.__ModuleLoader__.load({
       );
     }
 
+    const AM_CONFIG_FIELDS = [
+      { key: "language", type: "enum", options: ["zh", "en"], default: "zh" },
+      { key: "dreamThresholdCount", type: "integer", min: 1, max: 1000, default: 10 },
+      { key: "dreamThresholdChars", type: "integer", min: 100, max: 100000, default: 5000 },
+      { key: "dreamDelayMs", type: "integer", min: 0, max: 60000, default: 2000 },
+      { key: "sleepIdleMinutes", type: "integer", min: 1, max: 60, default: 5 },
+      { key: "maxInjectedItems", type: "integer", min: 1, max: 20, default: 5 },
+      { key: "importanceThreshold", type: "integer", min: 1, max: 5, default: 3 },
+      { key: "injectContentMaxChars", type: "integer", min: 60, max: 4000, default: 300 },
+      { key: "injectRotationTurns", type: "integer", min: 0, max: 20, default: 0 },
+      { key: "vectorSearchTopK", type: "integer", min: 1, max: 100, default: 20 },
+      { key: "vectorSearchThreshold", type: "number", min: 0, max: 1, step: 0.01, default: 0.65 },
+      { key: "hybridSearchVectorWeight", type: "number", min: 0, max: 1, step: 0.05, default: 0.6 },
+      { key: "autoReindexOnBoot", type: "boolean", default: true }
+    ];
+    const AM_FEATURE_KEYS = [
+      "autoInject", "autoSummarize", "autoDream", "sleepModeEnabled",
+      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled"
+    ];
+
+    function configValuesFromSnapshot(snapshot, fields = AM_CONFIG_FIELDS) {
+      const values = {};
+      const accepted = (snapshot && snapshot.value) || {};
+      for (const field of fields) {
+        values[field.key] = accepted[field.key] === undefined ? field.default : accepted[field.key];
+      }
+      return values;
+    }
+
+    function sanitizeConfigSnapshot(snapshot, fields = AM_CONFIG_FIELDS) {
+      if (!snapshot || typeof snapshot !== "object") return snapshot;
+      const value = {};
+      const accepted = snapshot.value || {};
+      for (const field of fields) {
+        if (accepted[field.key] !== undefined) value[field.key] = accepted[field.key];
+      }
+      return { status: snapshot.status, revision: snapshot.revision, writable: snapshot.writable, value };
+    }
+
+    // Pure snapshot transition used by the settings form. A successful local
+    // mutate updates the accepted revision and fires subscribe() before React
+    // has committed the new draft; that must not look like a second page's
+    // conflict. An actual external revision change while the draft is dirty
+    // still wins and marks the conflict.
+    function configFormTransition(previous, snapshot, priorSnapshot, fields = AM_CONFIG_FIELDS, {
+      localSave = false, localAccepted = null
+    } = {}) {
+      if (previous === null || previous === undefined) {
+        return { values: configValuesFromSnapshot(snapshot, fields), conflict: false, clearLocal: false };
+      }
+      const accepted = (snapshot && snapshot.value) || {};
+      const dirty = fields.some((field) => previous[field.key] !== accepted[field.key]);
+      if (localSave) return { values: previous, conflict: false, clearLocal: false };
+      if (localAccepted && snapshot && snapshot.revision === localAccepted.revision) {
+        return { values: localAccepted.values, conflict: false, clearLocal: true };
+      }
+      if (snapshot && snapshot.status === "ready" && dirty && priorSnapshot &&
+        snapshot.revision !== priorSnapshot.revision) {
+        return { values: previous, conflict: true, clearLocal: false };
+      }
+      return {
+        values: dirty ? previous : configValuesFromSnapshot(snapshot, fields),
+        conflict: false,
+        clearLocal: false
+      };
+    }
+
+    function memoryConfigForm(ctx) {
+      const service = ctx && ctx.configForms;
+      if (!service || typeof service.get !== "function") return null;
+      for (const ns of ["dsh-mneme", "@modusensus/dsh-mneme"]) {
+        try {
+          const form = service.get(ns);
+          if (form) return form;
+        } catch { /* try the next accepted namespace */ }
+      }
+      return null;
+    }
+
+    function AmadeusMemorySettings({ ctx, t }) {
+      const [overview, setOverview] = useState(null);
+      const [features, setFeatures] = useState(null);
+      const [prefs, setPrefs] = useState(null);
+      const [vector, setVector] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState("");
+      const [message, setMessage] = useState("");
+      const [busy, setBusy] = useState("");
+      const [vectorTest, setVectorTest] = useState(null);
+      const [vectorDraft, setVectorDraft] = useState({ enabled: false, baseUrl: "", model: "", apiKey: "" });
+      const [tagDraft, setTagDraft] = useState({ tag: "", weight: "1.2" });
+      const [entityDraft, setEntityDraft] = useState({ entity: "", weight: "1.2" });
+      const [entityCandidates, setEntityCandidates] = useState([]);
+      const [resetConfirm, setResetConfirm] = useState(false);
+      const [configUnavailable, setConfigUnavailable] = useState(false);
+      const [formSnapshot, setFormSnapshot] = useState(null);
+      const [formValues, setFormValues] = useState(null);
+      const [formConflict, setFormConflict] = useState(false);
+      const formRef = useRef(null);
+      const formSnapRef = useRef(null);
+      const localSaveRef = useRef(false);
+      const localAcceptedRef = useRef(null);
+
+      const adminJson = useCallback(async (path, opts = {}) => {
+        const res = await adminFetch(path, opts);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.ok === false) {
+          const err = new Error(body.error || `HTTP ${res.status}`);
+          err.candidates = Array.isArray(body.candidates) ? body.candidates : [];
+          throw err;
+        }
+        return body.data;
+      }, []);
+
+      const load = useCallback(async () => {
+        setLoading(true);
+        setError("");
+        try {
+          const [ov, ft, pf, vc] = await Promise.all([
+            adminJson("/overview"),
+            adminJson("/features"),
+            adminJson("/preferences"),
+            adminJson("/vector")
+          ]);
+          setOverview(ov);
+          setFeatures(ft);
+          setPrefs(pf);
+          setVector(vc);
+          setVectorDraft((prev) => (prev.baseUrl || prev.model || prev.apiKey || prev.enabled
+            ? prev
+            : { enabled: vc.enabled === true, baseUrl: vc.base_url || "", model: vc.model || "", apiKey: "" }));
+        } catch (e) {
+          setError(String(e && e.message ? e.message : e));
+        } finally {
+          setLoading(false);
+        }
+      }, [adminJson]);
+
+      useEffect(() => { load(); }, [load]);
+
+      // DSH Config Forms is the authority for the structural/basic fields below;
+      // feature switches above use the same override store as the full panel.
+      useEffect(() => {
+        let dead = false;
+        let form = null;
+        try { form = memoryConfigForm(ctx); } catch { form = null; }
+        if (!form) {
+          setConfigUnavailable(true);
+          return undefined;
+        }
+        formRef.current = form;
+        setConfigUnavailable(false);
+        const sync = () => {
+          if (dead) return;
+          const snap = sanitizeConfigSnapshot(form.getSnapshot());
+          const prior = formSnapRef.current;
+          formSnapRef.current = snap;
+          setFormSnapshot(snap);
+          setFormValues((previous) => {
+            const result = configFormTransition(previous, snap, prior, AM_CONFIG_FIELDS, {
+              localSave: localSaveRef.current,
+              localAccepted: localAcceptedRef.current
+            });
+            if (result.conflict) setFormConflict(true);
+            if (result.clearLocal) localAcceptedRef.current = null;
+            return result.values;
+          });
+        };
+        sync();
+        const unsubscribe = form.subscribe(sync);
+        return () => {
+          dead = true;
+          try { unsubscribe(); } catch { /* ignore */ }
+          try { form.dispose(); } catch { /* ignore */ }
+          formRef.current = null;
+        };
+      }, [ctx]);
+
+      const refreshFeature = async (key, value) => {
+        setBusy(key);
+        setMessage("");
+        try {
+          const next = await adminJson("/features", {
+            method: "POST", body: JSON.stringify({ [key]: value })
+          });
+          setFeatures(next);
+          setMessage(next.pendingRestart && next.pendingRestart.includes(key)
+            ? t("memory.am.restartHint") : t("memory.am.saved"));
+          await load();
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally {
+          setBusy("");
+        }
+      };
+
+      const saveVector = async () => {
+        setBusy("vector");
+        setMessage("");
+        try {
+          const next = await adminJson("/vector", {
+            method: "POST",
+            body: JSON.stringify({
+              enabled: vectorDraft.enabled,
+              baseUrl: vectorDraft.baseUrl,
+              model: vectorDraft.model,
+              apiKey: vectorDraft.apiKey
+            })
+          });
+          setVector(next);
+          setVectorDraft((prev) => ({ ...prev, enabled: next.enabled === true, baseUrl: next.base_url || "", model: next.model || "", apiKey: "" }));
+          setMessage(t("memory.am.embeddingSavedRestart"));
+          await load();
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally {
+          setBusy("");
+        }
+      };
+
+      const testVector = async () => {
+        setBusy("vector-test");
+        setVectorTest(null);
+        try {
+          const result = await adminJson("/vector/test", { method: "POST", body: "{}" });
+          setVectorTest({ ok: true, ...result });
+        } catch (e) {
+          setVectorTest({ ok: false, error: String(e.message || e) });
+        } finally {
+          setBusy("");
+        }
+      };
+
+      const saveTag = async (tag, weight) => {
+        setBusy("tag:" + tag);
+        setError("");
+        try {
+          const result = await adminJson("/preferences", {
+            method: "POST", body: JSON.stringify({ action: "set-tag", tag, weight: Number(weight) })
+          });
+          setPrefs(result.state);
+          setMessage(t("memory.am.saved"));
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally {
+          setBusy("");
+        }
+      };
+      const deleteTag = async (tag) => {
+        setBusy("tag:" + tag);
+        try {
+          const result = await adminJson("/preferences", {
+            method: "POST", body: JSON.stringify({ action: "delete-tag", tag })
+          });
+          setPrefs(result.state);
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally { setBusy(""); }
+      };
+      const saveEntity = async (entity, weight) => {
+        setBusy("entity");
+        setError("");
+        setEntityCandidates([]);
+        try {
+          const result = await adminJson("/preferences", {
+            method: "POST", body: JSON.stringify({ action: "set-entity", entity, weight: Number(weight) })
+          });
+          setPrefs(result.state);
+          setMessage(t("memory.am.saved"));
+          setEntityDraft({ entity: "", weight: "1.2" });
+        } catch (e) {
+          if (Array.isArray(e.candidates) && e.candidates.length) setEntityCandidates(e.candidates);
+          else setError(String(e.message || e));
+        } finally { setBusy(""); }
+      };
+      const deleteEntity = async (entityId) => {
+        setBusy("entity");
+        try {
+          const result = await adminJson("/preferences", {
+            method: "POST", body: JSON.stringify({ action: "delete-entity", entity_id: entityId })
+          });
+          setPrefs(result.state);
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally { setBusy(""); }
+      };
+      const resetPreferences = async () => {
+        if (!resetConfirm) { setResetConfirm(true); return; }
+        setBusy("reset");
+        setResetConfirm(false);
+        try {
+          const result = await adminJson("/preferences", { method: "POST", body: JSON.stringify({ action: "reset" }) });
+          setPrefs(result.state);
+          setMessage(t("memory.am.saved"));
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally { setBusy(""); }
+      };
+
+      const acceptedValues = (formSnapshot && formSnapshot.value) || {};
+      const dirty = !!formValues && AM_CONFIG_FIELDS.some((field) => formValues[field.key] !== acceptedValues[field.key]);
+      const fieldError = (field) => {
+        if (!formValues) return "";
+        const value = formValues[field.key];
+        if (field.type === "integer" && (!Number.isInteger(Number(value)) || Number(value) < field.min || Number(value) > field.max)) return t("memory.am.invalid");
+        if (field.type === "number" && (!Number.isFinite(Number(value)) || Number(value) < field.min || Number(value) > field.max)) return t("memory.am.invalid");
+        if (field.type === "enum" && !field.options.includes(value)) return t("memory.am.invalid");
+        return "";
+      };
+      const invalidFields = AM_CONFIG_FIELDS.filter((field) => fieldError(field));
+      const saveConfig = async () => {
+        const form = formRef.current;
+        if (!form || !formValues || formConflict) return;
+        if (invalidFields.length) { setError(t("memory.am.invalid")); return; }
+        setBusy("config");
+        localSaveRef.current = true;
+        localAcceptedRef.current = null;
+        try {
+          const ops = AM_CONFIG_FIELDS
+            .filter((field) => formValues[field.key] !== acceptedValues[field.key])
+            .map((field) => ({
+              op: "set",
+              path: [field.key],
+              value: field.type === "integer" ? Number(formValues[field.key])
+                : field.type === "number" ? Number(formValues[field.key]) : formValues[field.key]
+            }));
+          if (!ops.length) { setMessage(t("memory.am.noChanges")); return; }
+          const ok = await form.mutate(ops, formSnapshot.revision);
+          if (!ok) {
+            setFormConflict(true);
+            setError(t("memory.am.conflict"));
+            return;
+          }
+          const latest = sanitizeConfigSnapshot(form.getSnapshot());
+          const values = configValuesFromSnapshot(latest);
+          localAcceptedRef.current = { revision: latest.revision, values };
+          formSnapRef.current = latest;
+          setFormSnapshot(latest);
+          setFormValues(values);
+          setFormConflict(false);
+          setMessage(t("memory.am.savedRestart"));
+          await load();
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally {
+          localSaveRef.current = false;
+          setBusy("");
+        }
+      };
+      const cancelConfig = () => {
+        const form = formRef.current;
+        if (!form) return;
+        const snap = formSnapRef.current;
+        if (!snap) return;
+        const values = configValuesFromSnapshot(snap);
+        localAcceptedRef.current = null;
+        localSaveRef.current = false;
+        setFormSnapshot(snap);
+        setFormValues(values);
+        setFormConflict(false);
+        setError("");
+      };
+      const restoreConfig = async () => {
+        const form = formRef.current;
+        if (!form || formSnapshot?.status !== "ready") return;
+        setBusy("config");
+        localSaveRef.current = true;
+        localAcceptedRef.current = null;
+        try {
+          const ok = await form.mutate(
+            AM_CONFIG_FIELDS.map((field) => ({ op: "unset", path: [field.key] })),
+            formSnapshot.revision
+          );
+          if (!ok) {
+            setFormConflict(true);
+            setError(t("memory.am.conflict"));
+            return;
+          }
+          const latest = sanitizeConfigSnapshot(form.getSnapshot());
+          const values = configValuesFromSnapshot(latest);
+          localAcceptedRef.current = { revision: latest.revision, values };
+          formSnapRef.current = latest;
+          setFormSnapshot(latest);
+          setFormValues(values);
+          setFormConflict(false);
+          setMessage(t("memory.am.savedRestart"));
+          await load();
+        } catch (e) {
+          setError(String(e.message || e));
+        } finally {
+          localSaveRef.current = false;
+          setBusy("");
+        }
+      };
+
+      const flagOn = (key) => Boolean(features && features.effective && features.effective[key]);
+      const pending = new Set((features && features.pendingRestart) || []);
+      const featureRow = (key) => h("div", { className: "mneme-featrow", key },
+        h("div", { className: "mneme-featmain" },
+          h("div", { className: "mneme-featname" }, t(`memory.features.${key}`)),
+          h("div", { className: "mneme-feathint" }, t(`memory.features.${key}.hint`))),
+        pending.has(key) && h("span", { className: "mneme-set-hint" }, t("memory.features.tagPending")),
+        h("button", {
+          type: "button",
+          className: flagOn(key) ? "mneme-switch mneme-on" : "mneme-switch",
+          role: "switch",
+          "aria-checked": String(flagOn(key)),
+          "aria-label": t(`memory.features.${key}`),
+          disabled: !!busy,
+          onClick: () => refreshFeature(key, !flagOn(key))
+        }));
+
+      const provider = (features && features.effective && features.effective.embedProvider) || "openai";
+      const configField = (field) => {
+        const value = formValues ? formValues[field.key] : field.default;
+        const invalid = !!fieldError(field);
+        if (field.type === "boolean") {
+          return h("div", { className: "mneme-featrow", key: field.key },
+            h("div", { className: "mneme-featmain" },
+              h("div", { className: "mneme-featname" }, t(`memory.am.field.${field.key}`)),
+              h("div", { className: "mneme-feathint" }, t(`memory.am.fieldHint.${field.key}`))),
+            h("button", {
+              type: "button", className: value ? "mneme-switch mneme-on" : "mneme-switch",
+              role: "switch", "aria-checked": String(!!value), disabled: !!busy,
+              onClick: () => setFormValues((prev) => ({ ...prev, [field.key]: !value }))
+            }));
+        }
+        return h("label", { className: "mneme-featnum", key: field.key },
+          h("span", { className: "mneme-featmain" },
+            h("span", { className: "mneme-featname" }, t(`memory.am.field.${field.key}`)),
+            h("span", { className: "mneme-feathint" }, t(`memory.am.fieldHint.${field.key}`))),
+          field.type === "enum"
+            ? h("select", {
+                className: "mneme-set-input", style: { width: 130, marginBottom: 0 },
+                value, disabled: !!busy,
+                onChange: (e) => setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+              }, field.options.map((option) => h("option", { key: option, value: option },
+                option === "zh" ? t("memory.am.languageZh") : t("memory.am.languageEn"))))
+            : h("input", {
+                className: "mneme-set-input", style: { width: 130, marginBottom: 0 },
+                type: "number", min: field.min, max: field.max, step: field.step || 1,
+                value: value ?? "", disabled: !!busy,
+                "aria-invalid": invalid ? "true" : "false",
+                onChange: (e) => setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+              }),
+          invalid && h("span", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, t("memory.am.invalid"))
+        );
+      };
+
+      if (loading && !overview) {
+        return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
+          h("div", { className: "mneme-set-title" }, t("memory.am.title")),
+          h("div", { className: "mneme-set-hint" }, t("memory.am.loading"))));
+      }
+      return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
+        h("div", { className: "mneme-set-title" }, t("memory.am.title")),
+        h("div", { className: "mneme-set-desc" }, t("memory.am.subtitle")),
+        error && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)", marginBottom: 10 } }, error),
+        message && h("div", { className: "mneme-saved", style: { marginBottom: 10 } }, message),
+
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.overview")),
+        h("div", { className: "mneme-set-card" },
+          overview ? h("div", null,
+            h("div", { className: "mneme-set-row", style: { marginBottom: 8 } },
+              h("div", { style: { flex: 1 } },
+                h("div", { className: "mneme-set-ruletext" }, t("memory.am.runState")),
+                h("div", { className: "mneme-set-hint" },
+                  `${t("memory.am.memories")}: ${overview.memories.active} / ${overview.memories.total} · ` +
+                  `${t("memory.am.archived")}: ${overview.memories.archived} · ${t("memory.am.forgotten")}: ${overview.memories.forgotten}`)),
+              h("span", { className: "mneme-badge " + (overview.runtime.auto_dream ? "mneme-badge--default" : "mneme-badge--pending") },
+                overview.runtime.auto_dream ? t("memory.am.running") : t("memory.am.paused"))),
+            h("div", { className: "mneme-set-hint" },
+              `${t("memory.am.database")}: ${overview.database.quick_check} · ${overview.database.journal_mode || "—"} · ` +
+              `${t("memory.am.version")}: ${overview.package.version || "—"}`),
+            h("div", { className: "mneme-set-hint" },
+              `${t("memory.am.autoMemory")}: ${overview.runtime.auto_inject ? t("memory.am.enabled") : t("memory.am.disabled")} / ` +
+              `${overview.runtime.auto_summarize ? t("memory.am.enabled") : t("memory.am.disabled")}`),
+            h("div", { className: "mneme-set-hint" },
+              `${t("memory.am.lastDream")}: ${overview.last_dream?.created_at || t("memory.am.never")} · ` +
+              `${t("memory.am.lastSleep")}: ${overview.last_sleep?.created_at || t("memory.am.never")}`),
+            h("div", { className: "mneme-set-hint" },
+              `${t("memory.am.lastError")}: ${overview.recent_runs?.find((run) => run.error)?.error || t("memory.am.none")}`),
+            h("div", { className: "mneme-set-hint" },
+              `${t("memory.am.vector")}: ${overview.semantic.configured ? (overview.semantic.ready ? t("memory.am.vectorReady") : t("memory.am.vectorInitializing")) : t("memory.am.vectorDisabled")} · ` +
+              `${overview.semantic.provider || "—"} / ${overview.semantic.model || "—"} · ` +
+              `${t("memory.am.dimension")}: ${overview.semantic.dimension || "—"} · ` +
+              `${t("memory.am.coverage")}: ${overview.semantic.index.ratio == null ? "—" : Math.round(overview.semantic.index.ratio * 100) + "%"}`)
+          ) : h("div", { className: "mneme-set-hint" }, t("memory.am.loading"))
+        ),
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8 } },
+          h("button", { className: "mneme-btn", onClick: load, disabled: loading }, t("memory.am.refresh")),
+          h("button", { className: "mneme-btn", onClick: () => openLibraryAboveSettings() }, t("memory.am.openPanel"))),
+
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.core")),
+        h("div", { className: "mneme-set-card" }, AM_FEATURE_KEYS.map(featureRow)),
+        h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.featureHint")),
+
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.config")),
+        h("div", { className: "mneme-set-card" },
+          configUnavailable
+            ? h("div", { className: "mneme-set-hint" }, t("memory.am.configUnavailable"))
+            : h("div", null,
+                h("div", { className: "mneme-set-hint", style: { marginBottom: 10 } }, t("memory.am.configHint")),
+                formConflict && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, t("memory.am.conflict")),
+                AM_CONFIG_FIELDS.map(configField),
+                h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+                  h("button", { className: "mneme-btn", onClick: saveConfig, disabled: !!busy || !dirty || invalidFields.length > 0 || formConflict || !formSnapshot || formSnapshot.status !== "ready" }, t("memory.am.save")),
+                  h("button", { className: "mneme-btn", onClick: cancelConfig, disabled: !!busy || !dirty }, t("memory.am.cancel")),
+                  h("button", { className: "mneme-btn", onClick: restoreConfig, disabled: !!busy || !formSnapshot || formSnapshot.status !== "ready" }, t("memory.am.restoreDefaults"))),
+                h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.savedRestart")))
+        ),
+
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.embedding")),
+        h("div", { className: "mneme-set-card" },
+          h("label", { className: "mneme-featnum" },
+            h("span", { className: "mneme-featmain" },
+              h("span", { className: "mneme-featname" }, t("memory.features.embedProvider")),
+              h("span", { className: "mneme-feathint" }, t("memory.am.embedHint"))),
+            h("select", {
+              className: "mneme-set-input", style: { width: 150, marginBottom: 0 }, value: provider,
+              disabled: !!busy,
+              onChange: (e) => refreshFeature("embedProvider", e.target.value)
+            },
+              h("option", { value: "openai" }, "OpenAI compatible"),
+              h("option", { value: "local" }, t("memory.am.local")),
+              h("option", { value: "ollama" }, "Ollama"))),
+          provider === "openai"
+            ? h("div", null,
+                h("div", { className: "mneme-featrow" },
+                  h("div", { className: "mneme-featmain" },
+                    h("div", { className: "mneme-featname" }, t("memory.am.vectorEnabled")),
+                    h("div", { className: "mneme-feathint" }, t("memory.am.vectorEnabledHint"))),
+                  h("button", { type: "button", className: vectorDraft.enabled ? "mneme-switch mneme-on" : "mneme-switch",
+                    role: "switch", "aria-checked": String(vectorDraft.enabled), disabled: !!busy,
+                    onClick: () => setVectorDraft({ ...vectorDraft, enabled: !vectorDraft.enabled }) })),
+                h("label", { className: "mneme-featnum" }, h("span", { className: "mneme-featmain" }, h("span", { className: "mneme-featname" }, t("memory.am.baseUrl"))),
+                  h("input", { className: "mneme-set-input", style: { width: 320, marginBottom: 0 }, value: vectorDraft.baseUrl, disabled: !!busy || !vector,
+                    onChange: (e) => setVectorDraft({ ...vectorDraft, baseUrl: e.target.value }) })),
+                h("label", { className: "mneme-featnum" }, h("span", { className: "mneme-featmain" }, h("span", { className: "mneme-featname" }, t("memory.am.model"))),
+                  h("input", { className: "mneme-set-input", style: { width: 240, marginBottom: 0 }, value: vectorDraft.model, disabled: !!busy || !vector,
+                    onChange: (e) => setVectorDraft({ ...vectorDraft, model: e.target.value }) })),
+                h("label", { className: "mneme-featnum" }, h("span", { className: "mneme-featmain" },
+                  h("span", { className: "mneme-featname" }, t("memory.am.apiKey")),
+                  h("span", { className: "mneme-feathint" }, t("memory.am.apiKeyKeep"))),
+                  h("input", { className: "mneme-set-input", style: { width: 240, marginBottom: 0 }, type: "password",
+                    placeholder: vector?.api_key_configured ? (vector.api_key_masked || "***") : "",
+                    value: vectorDraft.apiKey, disabled: !!busy || !vector,
+                    onChange: (e) => setVectorDraft({ ...vectorDraft, apiKey: e.target.value }) })),
+                h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+                  h("button", { className: "mneme-btn", onClick: saveVector, disabled: !!busy }, t("memory.am.saveEmbedding"))))
+            : provider === "local"
+              ? h("div", null,
+                  h("div", { className: "mneme-set-hint" }, `${t("memory.am.model")}: ${overview?.semantic.model || "—"} · ${t("memory.am.dimension")}: ${overview?.semantic.dimension || "—"}`),
+                  h("label", { className: "mneme-featnum" }, h("span", { className: "mneme-featmain" }, h("span", { className: "mneme-featname" }, t("memory.features.localEmbedModel"))),
+                    h("input", { className: "mneme-set-input", style: { width: 280, marginBottom: 0 }, defaultValue: features?.effective?.localEmbedModel || "",
+                      disabled: !!busy, onBlur: (e) => refreshFeature("localEmbedModel", e.target.value) })))
+              : h("div", null,
+                  h("label", { className: "mneme-featnum" }, h("span", { className: "mneme-featmain" }, h("span", { className: "mneme-featname" }, t("memory.am.baseUrl"))),
+                    h("input", { className: "mneme-set-input", style: { width: 300, marginBottom: 0 }, defaultValue: features?.effective?.ollamaBaseUrl || "",
+                      disabled: !!busy, onBlur: (e) => refreshFeature("ollamaBaseUrl", e.target.value) })),
+                  h("label", { className: "mneme-featnum" }, h("span", { className: "mneme-featmain" }, h("span", { className: "mneme-featname" }, t("memory.features.ollamaModel"))),
+                    h("input", { className: "mneme-set-input", style: { width: 240, marginBottom: 0 }, defaultValue: features?.effective?.ollamaModel || "",
+                      disabled: !!busy, onBlur: (e) => refreshFeature("ollamaModel", e.target.value) }))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+            h("button", { className: "mneme-btn", onClick: testVector, disabled: !!busy }, busy === "vector-test" ? t("memory.am.testing") : t("memory.am.test")),
+            h("span", { className: "mneme-set-hint" }, t("memory.am.testWarning"))),
+          vectorTest && h("div", { className: "mneme-set-hint", style: { color: vectorTest.ok ? "var(--mneme-ok)" : "var(--mneme-danger)", marginTop: 8 } },
+            vectorTest.ok
+              ? `${t("memory.am.testOk")} · ${vectorTest.provider || "—"} / ${vectorTest.dimension || "—"} · ${vectorTest.elapsed_ms ?? "—"}ms`
+              : `${t("memory.am.testFailed")}: ${vectorTest.error || "—"}`)),
+
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.preferences")),
+        h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-hint" }, t("memory.am.preferenceHint")),
+          h("div", { className: "mneme-set-grouphead", style: { marginTop: 8 } }, t("memory.am.tagWeights")),
+          (prefs?.tags || []).length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.settings.empty")),
+          (prefs?.tags || []).map((row) => h("div", { className: "mneme-set-row", key: "tag:" + row.tag + ":" + row.weight },
+            h("span", { className: "mneme-set-ruletext" }, row.tag),
+            h("input", { className: "mneme-set-input", style: { width: 90, marginBottom: 0 }, type: "number", min: 0.5, max: 2, step: 0.1, defaultValue: row.weight,
+              onBlur: (e) => { const n = Number(e.target.value); if (n !== row.weight) saveTag(row.tag, n); } }),
+            h("button", { className: "mneme-btn", disabled: !!busy, onClick: () => deleteTag(row.tag) }, t("memory.am.delete")))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8 } },
+            h("input", { className: "mneme-set-input", style: { flex: 1, marginBottom: 0 }, placeholder: t("memory.settings.identity.tagPlaceholder"), value: tagDraft.tag,
+              onChange: (e) => setTagDraft({ ...tagDraft, tag: e.target.value }) }),
+            h("input", { className: "mneme-set-input", style: { width: 90, marginBottom: 0 }, type: "number", min: 0.5, max: 2, step: 0.1, value: tagDraft.weight,
+              onChange: (e) => setTagDraft({ ...tagDraft, weight: e.target.value }) }),
+            h("button", { className: "mneme-btn", disabled: !!busy || !tagDraft.tag.trim(), onClick: () => saveTag(tagDraft.tag.trim(), Number(tagDraft.weight)) }, t("memory.settings.identity.addTag"))),
+          h("div", { className: "mneme-set-grouphead", style: { marginTop: 14 } }, t("memory.am.entityWeights")),
+          (prefs?.entities || []).length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.settings.empty")),
+          (prefs?.entities || []).map((row) => h("div", { className: "mneme-set-row", key: "entity:" + row.entity_id + ":" + row.weight },
+            h("span", { className: "mneme-set-ruletext" }, `${row.name || row.entity_id} [${row.type || "unknown"}]`),
+            h("input", { className: "mneme-set-input", style: { width: 90, marginBottom: 0 }, type: "number", min: 0.5, max: 2, step: 0.1, defaultValue: row.weight,
+              onBlur: (e) => { const n = Number(e.target.value); if (n !== row.weight) saveEntity(row.entity_id, n); } }),
+            h("button", { className: "mneme-btn", disabled: !!busy, onClick: () => deleteEntity(row.entity_id) }, t("memory.am.delete")))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8 } },
+            h("input", { className: "mneme-set-input", style: { flex: 1, marginBottom: 0 }, placeholder: t("memory.settings.identity.entityPlaceholder"), value: entityDraft.entity,
+              onChange: (e) => { setEntityDraft({ ...entityDraft, entity: e.target.value }); setEntityCandidates([]); } }),
+            h("input", { className: "mneme-set-input", style: { width: 90, marginBottom: 0 }, type: "number", min: 0.5, max: 2, step: 0.1, value: entityDraft.weight,
+              onChange: (e) => setEntityDraft({ ...entityDraft, weight: e.target.value }) }),
+            h("button", { className: "mneme-btn", disabled: !!busy || !entityDraft.entity.trim(), onClick: () => saveEntity(entityDraft.entity.trim(), Number(entityDraft.weight)) }, t("memory.settings.identity.addEntity"))),
+          entityCandidates.length > 0 && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.settings.identity.candidatesHint")),
+          entityCandidates.map((candidate) => h("button", { key: candidate.id, className: "mneme-btn", style: { marginRight: 6, marginTop: 6 }, disabled: !!busy,
+            onClick: () => saveEntity(candidate.id, Number(entityDraft.weight)) },
+            `${candidate.name} [${candidate.type}] ${candidate.id.slice(0, 8)}`)),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+            h("button", { className: "mneme-btn " + (resetConfirm ? "mneme-btndangerconfirm" : ""), disabled: !!busy, onClick: resetPreferences },
+              resetConfirm ? t("memory.am.resetConfirm") : t("memory.am.reset")))),
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.advanced")),
+        h("details", { className: "mneme-set-card" },
+          h("summary", { style: { cursor: "pointer", fontSize: 13, fontWeight: 600 } }, t("memory.am.advancedTitle")),
+          overview && h("div", { style: { marginTop: 10 } },
+            h("div", { className: "mneme-set-hint" }, `${t("memory.am.dataDir")}: ${overview.database.file || "—"}`),
+            h("div", { className: "mneme-set-hint" }, `${t("memory.am.package")}: ${overview.package.name} ${overview.package.version} (${overview.package.edition})`),
+            h("div", { className: "mneme-set-hint" }, `${t("memory.am.vectorIndex")}: ${overview.semantic.index.embedded}/${overview.semantic.index.total}`),
+            h("div", { className: "mneme-set-hint" }, `${t("memory.am.trustedIntake")}: ${overview.runtime.trusted_intake ? t("memory.am.enabled") : t("memory.am.disabled")}`),
+            h("div", { className: "mneme-set-hint" }, t("memory.am.advancedHint")))
+        )
+      ));
+    }
+
     function SettingsContent({ t }) {
       const [profile, setProfile] = react.useState("");
       const [rules, setRules] = react.useState([]);
@@ -5152,6 +5988,16 @@ window.__ModuleLoader__.load({
       // 对着一个已经过期的计数（裁决走别的路径、或后台 autoDream 刚写过库时，
       // 计数不该等 60s 兜底轮询才对齐）。
       conflictBadgeCount.refresh();
+    }
+
+    function openLibraryAboveSettings() {
+      openLibrary();
+      requestAnimationFrame(() => {
+        const backdrop = document.querySelector(".mneme-backdrop");
+        const overlay = document.querySelector(".mneme-overlay");
+        if (backdrop) backdrop.style.zIndex = "3000";
+        if (overlay) overlay.style.zIndex = "3001";
+      });
     }
 
     // --- Hero fallback overlay state (module-level pub/sub) ---
@@ -9129,6 +9975,39 @@ window.__ModuleLoader__.load({
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, dictionaries), "dsh-mneme: dictionaries");
 
+      // Native DSH Settings → Amadeus Memory. Do not gate the section solely on
+      // configForms.whileServed: the Mneme Config is a Zod/Schemastery schema,
+      // and a DSH build may not expose that namespace as a live Config Form.
+      // Register immediately, and let whileServed only *re-run* the idempotent
+      // activation when the form is actually served.
+      let memorySettingsActivated = false;
+      let memorySettingsDisposer = null;
+      const activateMemorySettings = () => {
+        if (!memorySettingsActivated) {
+          memorySettingsActivated = true;
+          try {
+            const dispose = ctx.slots.inject("settings.section", () => ctx.slots.register({
+              name: "settings.section",
+              id: "amadeus-memory",
+              order: 24,
+              label: () => t("memory.am.nav")
+            }, () => h(AmadeusMemorySettings, { ctx, t })));
+            memorySettingsDisposer = typeof dispose === "function" ? dispose : null;
+          } catch (err) {
+            console.warn("[dsh-mneme] settings.section registration failed:", err);
+          }
+        }
+        return () => {
+          try { memorySettingsDisposer?.(); } catch { /* ignore teardown failure */ }
+          memorySettingsDisposer = null;
+          memorySettingsActivated = false;
+        };
+      };
+      activateMemorySettings();
+      if (ctx.configForms && typeof ctx.configForms.whileServed === "function") {
+        ctx.effect(() => ctx.configForms.whileServed(["dsh-mneme"], activateMemorySettings), "dsh-mneme: settings page");
+      }
+
       // 记忆库唯一入口：sidebar.footer.action 注册作为锚点与回退；真实按钮
       // 由 SidebarTopEntry portal 到侧边栏工作区上方。overlay 从这个常驻
       // 插槽挂载（portal 到 body），会话切换不影响它的开关状态。
@@ -9220,6 +10099,9 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply;
     exports.inject = inject;
+    if (typeof globalThis !== "undefined" && globalThis.__DSH_MNEME_TEST__ === true) {
+      exports.__test = { configFormTransition };
+    }
     return module.exports;
   }
 });

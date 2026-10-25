@@ -1,8 +1,13 @@
 {
   "name": "@modusensus/dsh-mneme",
-  "description": "Cross-session memory plugin for DeepSeek Harness with autoDream consolidation: SQLite store, Markdown mirrors, 10 model tools, automatic injection, session summarization, user profile/rules, custom slash commands, vector (semantic) search, and a Web GUI panel",
-  "version": "0.9.4",
+  "description": "Amadeus Memory (enhanced Mneme 0.9.4): cross-session memory with stable typed identities, native DSH settings, SQLite storage, autoDream, vector retrieval and 13 model tools.",
+  "version": "0.9.5-amadeus.1",
   "license": "MIT",
+  "amadeus": {
+    "edition": "enhanced",
+    "upstream": "@modusensus/dsh-mneme@0.9.4",
+    "product": "memory"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/slow-stack/mneme.git"
@@ -48,7 +53,9 @@
     "client": {
       "inject": [
         "slots",
-        "locale"
+        "locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ],
       "platform": "web"
     },

@@ -388,6 +388,7 @@ in Settings → Connections & safety → API Token.
 | `/api/dsh-mneme/preferences` | GET/POST | token | Read state / set or delete weights |
 | `/api/dsh-mneme/intake` | POST | token | Trusted intake (token mandatory) |
 | `/api/dsh-mneme/intake/provenance` | GET | token | Provenance rows for a memory UUID |
+| `/api/amadeus-memory/admin/*` | GET/POST | owner (same-origin) | Native settings status, feature flags, preferences and masked Embedding config |
 
 Graph reads accept a UUID in `id`; the legacy `entity=<name>` form works only
 when the name is the exact public display name and is unique. Aliases and typed
@@ -415,6 +416,28 @@ Two DSH model tools are read-only and never call private HTTP routes:
 
 Because these two tools expose library-wide names and aliases without per-session
 scope labels, they are not registered when `strictScope` is enabled.
+
+### 5.2 Native settings data plane
+
+`/api/amadeus-memory/admin/*` backs the DSH **Amadeus Memory** settings section.
+It is deliberately separate from the token-gated panel API and the open public
+graph API:
+
+- same-origin Host/Origin check, no cross-site writes;
+- POST requests must carry `x-amadeus-memory: 1`;
+- DSH Connection admission must resolve `peer.principal.kind === "owner"`;
+- no API key, memory body, SQLite row or arbitrary query is returned;
+- Embedding status exposes only provider/model/dimension/index coverage and a
+  masked key; `vector/test` is the only route that calls the provider, only after
+  an explicit user click;
+- Feature switches and preference weights use the existing stores, so the full
+  Memory panel and the native page edit the same authority rather than a second
+  database.
+
+The native page edits structural fields through DSH Config Forms and runtime
+feature switches through the same feature-flag store as the full panel. It does
+not create a second configuration store. Changes that require a Host reload are
+labelled as such; the page never claims an immediate effect it cannot prove.
 
 ## 6. UI
 
