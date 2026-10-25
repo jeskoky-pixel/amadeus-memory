@@ -135,6 +135,18 @@ Fixed concrete review findings:
    Measured: B equals A (0.3333 Recall@5 / 0.3333 MRR), C and D both 0.8492 /
    1.0; pool expansion alone does not improve this fixture, tag weights drive the
    measured gain, and entity weights add no measurable gain here.
+5. **Read-only model tools.** `memory_preference_get` exposes the current
+   preference state (bounds, Tag weights, canonical-entity weights) without any
+   mutation path; both weight lists are capped at 200 with explicit truncation
+   flags. `memory_identity_lookup` accepts an exact name/alias or UUID and uses
+   the existing identity read APIs to return the canonical UUID/type/name,
+   aliases, member IDs and a bounded relation summary (20 items, 10 candidates,
+   50 aliases/members). Same-name candidates stay ambiguous; unresolved names
+   return no entity. It never matches external IDs, confirms aliases, merges,
+   writes provenance, or creates entities. Both tools keep the existing tool
+   registration/disable behavior; with `organizeEnabled` off the registry now
+   has 13 tools (14 with organize). Both are hidden when `strictScope` is on,
+   because their library-wide names do not carry per-session scope labels.
 
 ## Files changed
 
@@ -185,6 +197,7 @@ Added:
 - `dsh-mneme/test/memory-enhancer-retrieval.test.js`
 - `dsh-mneme/test/memory-enhancer-quality-regressions.test.js` (Codex red tests, unmodified)
 - `dsh-mneme/test/memory-enhancer-quality-extra.test.js`
+- `dsh-mneme/test/memory-enhancer-tools.test.js`
 - `dsh-mneme/test/memory-enhancer-identity-continuity.test.js` (Codex red test, unmodified)
 - `docs/verification/MEMORY_ENHANCER_WORKER.md` (this file)
 
@@ -218,6 +231,7 @@ Commands run from `dsh-mneme/`.
 | `test/memory-enhancer-retrieval.test.js` | 5 | PASS |
 | `test/memory-enhancer-quality-regressions.test.js` (Codex) | 10 | PASS |
 | `test/memory-enhancer-quality-extra.test.js` | 12 | PASS |
+| `test/memory-enhancer-tools.test.js` (read-only tools) | 8 | PASS |
 | `test/memory-enhancer-identity-continuity.test.js` (Codex) | 3 | PASS |
 | `test/standalone-api.test.js` (spoof addition) | 30 | PASS |
 
@@ -267,6 +281,7 @@ Post-repair affected-file rerun (all green):
 ```
 quality-regressions 10/10 · quality-extra 12/12 · identity-continuity 3/3
 preferences 8/8 · trusted-intake 6/6 · enhancer-api 11/11
+enhancer-tools 8/8 · tools 30/30 · tools-dto-matrix 7/7
 standalone-api 30/30 · api 76/76 · api-routes-gaps 30/30
 route-policy 6/6 · service-search 8/8 · inject 28/28 · lib-smoke 6/6
 ```

@@ -398,6 +398,24 @@ require the UI/API caller to choose a UUID. The open legacy endpoints never
 return aliases, external identifiers, evidence, member UUIDs, relation provenance
 or per-member attributes; those are only served by `token` routes.
 
+### 5.1 Read-only model tools
+
+Two DSH model tools are read-only and never call private HTTP routes:
+
+- `memory_preference_get` returns `service.getPreferenceState()` as a bounded DTO
+  (enabled/bounds/floor, Tag weights, canonical-entity weights). Weight lists are
+  capped at 200 with explicit truncation flags. There is no mutation parameter.
+- `memory_identity_lookup` accepts a nonempty exact display name/alias or UUID.
+  It uses the existing identity read APIs and returns the canonical UUID, type,
+  display name, aliases (confirmed flag), member IDs and a relation summary
+  bounded to 20 items. Same-name candidates return `ambiguous`; no match returns
+  `unresolved`. It never falls back to external IDs, guesses/creates an entity,
+  confirms aliases, merges, or writes provenance. Aliases/member lists are capped
+  at 50 and candidate groups at 10, with truncation flags.
+
+Because these two tools expose library-wide names and aliases without per-session
+scope labels, they are not registered when `strictScope` is enabled.
+
 ## 6. UI
 
 The hand-authored `lib/client.js` panel is extended in both Chinese and English:

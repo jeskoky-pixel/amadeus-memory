@@ -7,7 +7,7 @@
 // 工具：换一个工具、换一个键，同类事故可以原样重演。
 //
 // 这里把护栏提到矩阵层，四层断言各管一段：
-//   A 实跑：9 个工具每个可安全触达的分支，拿**真实 execute 的返回值**过生产同款校验器
+//   A 实跑：14 个工具每个可安全触达的分支，拿**真实 execute 的返回值**过生产同款校验器
 //      （validateJsonSchemaValue）——不写手抄的期望值，让运行时自己说话；
 //   B 产地：DTO 的唯一产地 service.toApiList 在全形态数据下的输出 ⊆ MEMORY_ITEM_SCHEMA，
 //      并反向要求声明里的每个键都被至少一种形态真实产出（声明了却永不出现的键＝死声明，
@@ -40,6 +40,8 @@ const TOOL_NAMES = [
   "memory_register_document",
   "memory_runtime",
   "memory_organize",
+  "memory_preference_get",
+  "memory_identity_lookup",
   "set_scope_state"
 ];
 
@@ -126,7 +128,7 @@ test("工具矩阵与 TOOL_NAMES 清单一致（新增工具必须补进矩阵�
   assert.deepEqual(Object.keys(byName).sort(), [...TOOL_NAMES].sort());
 });
 
-test("A 实跑：12 个工具每个可安全触达的分支，真实返回 ⊆ 声明的 output schema", async () => {
+test("A 实跑：14 个工具每个可安全触达的分支，真实返回 ⊆ 声明的 output schema", async () => {
   const { store, service, byName } = setup({ documentMemoryEnabled: true, organizeEnabled: true });
   const shapes = seedShapes(store);
   const annotated = shapes[shapes.length - 1];
@@ -171,6 +173,26 @@ test("A 实跑：12 个工具每个可安全触达的分支，真实返回 ⊆ �
   await drive(byName, "memory_get", { id: plain.id });
   await drive(byName, "memory_get", { id: annotated.id });
   note("memory_get");
+
+  // --- enhancer read tools: preference state + resolved identity lookup ---
+  const matrixPerson = service.identity.resolveEntityForWrite({
+    name: "Matrix Person", type: "person", platform: "qq", external_id: "matrix-195-person"
+  }).entity;
+  const matrixProject = store.createEntity({ name: "Matrix Project", type: "project" });
+  store.saveRelation({
+    from_entity: matrixPerson.id, to_entity: matrixProject.id,
+    relation_type: "related_to", memory_id: plain.id, source: "test"
+  });
+  service.setTagWeight({ tag: "matrix-weight", weight: 1.5, actor: "matrix" });
+  service.setEntityWeight({ entity_id: matrixPerson.id, weight: 1.2, actor: "matrix" });
+  await drive(byName, "memory_preference_get", {});
+  note("memory_preference_get");
+  const identityFound = await drive(byName, "memory_identity_lookup", { query: "Matrix Person" });
+  assert.equal(identityFound.status, "resolved");
+  assert.equal(identityFound.entity.id, matrixPerson.id);
+  assert.equal(identityFound.entity.relation_summary.total, 1);
+  await drive(byName, "memory_identity_lookup", { query: "No Such Matrix Entity" });
+  note("memory_identity_lookup");
 
   // --- memory_update：字段修正 + 显式 scope 纠正（另一条会展开条件键的写路径） ---
   await drive(byName, "memory_update", { id: plain.id, title: "shape-0 renamed", importance: 4 });
@@ -337,7 +359,7 @@ test("B' search / list / get 三个消费方共用同一份 item schema（#184 �
 
 // 同清单比对那条：opt-in 工具在默认配置下不在注册表里，C 层按 TOOL_NAMES 取
 // byName[name]，所以必须用暴露闸全开的配置，否则新工具的 schema 结构从未被检查。
-test("C 结构：全部 12 个工具的 output schema 闭合、required ⊆ properties、每项带 type", () => {
+test("C 结构：全部 14 个工具的 output schema 闭合、required ⊆ properties、每项带 type", () => {
   const { byName } = setup({ organizeEnabled: true });
   for (const name of TOOL_NAMES) {
     const schema = byName[name].output.schema;

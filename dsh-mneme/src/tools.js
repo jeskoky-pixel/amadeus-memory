@@ -9,8 +9,16 @@ import { TOOL_GUIDE, CONTINUITY_TOOL_RULE } from "./guide.js";
 import { injectChildEnabled } from "./config.js";
 import { normalizeScopeStateDimension, normalizeScopeStateValue, normalizeScopeStateState } from "./scope-state.js";
 import { lastUserQuery } from "./inject.js";
+import { normalizeIdentityKey } from "./identity.js";
 
 const TEXT_OUTPUT = (text) => [{ type: "text", text }];
+// Read-only enhancer tools stay small and bounded even when the underlying
+// identity/preference tables grow. Truncation is disclosed in the DTO.
+const PREFERENCE_MAX_WEIGHTS = 200;
+const IDENTITY_MAX_CANDIDATES = 10;
+const IDENTITY_MAX_ALIASES = 50;
+const IDENTITY_MAX_MEMBERS = 50;
+const IDENTITY_MAX_RELATIONS = 20;
 // Per-registry tool-name registry: guards against duplicate registration on
 // live patch reload (DSH Desktop `patchReload: "live"`) where a plugin may be
 // re-applied on the same tools registry without an intervening unregister.
@@ -47,6 +55,132 @@ const MEMORY_ITEM_SCHEMA = {
 };
 // 导出供回归测试断言 memory_get 与共享 schema 同源（#184 防漂移护栏）。
 export { MEMORY_ITEM_SCHEMA };
+
+const PREFERENCE_GET_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    enabled: { type: "boolean", required: true },
+    weight_min: { type: "number", required: true },
+    weight_max: { type: "number", required: true },
+    default_weight: { type: "number", required: true },
+    factor_min: { type: "number", required: true },
+    factor_max: { type: "number", required: true },
+    relevance_floor: { type: "number", required: true },
+    tags: {
+      type: "array", required: true,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          tag: { type: "string", required: true },
+          weight: { type: "number", required: true },
+          updated_at: { type: "string", required: true },
+          updated_by: { type: "string" }
+        }
+      }
+    },
+    entities: {
+      type: "array", required: true,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          entity_id: { type: "string", required: true },
+          canonical_id: { type: "string", required: true },
+          name: { type: "string", required: true },
+          type: { type: "string", required: true },
+          merged: { type: "boolean", required: true },
+          weight: { type: "number", required: true },
+          updated_at: { type: "string", required: true },
+          updated_by: { type: "string" }
+        }
+      }
+    },
+    tags_truncated: { type: "boolean", required: true },
+    entities_truncated: { type: "boolean", required: true }
+  }
+};
+
+const IDENTITY_LOOKUP_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    status: { type: "string", required: true, enum: ["resolved", "unresolved", "ambiguous"] },
+    query: { type: "string", required: true },
+    candidates: {
+      type: "array", required: true,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", required: true },
+          canonical_id: { type: "string", required: true },
+          name: { type: "string", required: true },
+          type: { type: "string", required: true }
+        }
+      }
+    },
+    candidates_truncated: { type: "boolean", required: true },
+    entity: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        id: { type: "string", required: true },
+        canonical_id: { type: "string", required: true },
+        name: { type: "string", required: true },
+        type: { type: "string", required: true },
+        aliases: {
+          type: "array", required: true,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              alias: { type: "string", required: true },
+              confirmed: { type: "boolean", required: true }
+            }
+          }
+        },
+        aliases_truncated: { type: "boolean", required: true },
+        member_ids: { type: "array", required: true, items: { type: "string" } },
+        member_ids_truncated: { type: "boolean", required: true },
+        relation_summary: {
+          type: "object", required: true,
+          additionalProperties: false,
+          properties: {
+            total: { type: "integer", required: true },
+            by_type: {
+              type: "array", required: true,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  relation_type: { type: "string", required: true },
+                  count: { type: "integer", required: true }
+                }
+              }
+            },
+            items: {
+              type: "array", required: true,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  entity_id: { type: "string", required: true },
+                  name: { type: "string", required: true },
+                  type: { type: "string", required: true },
+                  direction: { type: "string", required: true, enum: ["outgoing", "incoming"] },
+                  relation_type: { type: "string", required: true }
+                }
+              }
+            },
+            truncated: { type: "boolean", required: true }
+          }
+        }
+      }
+    }
+  }
+};
 
 // v0.8.0 A2：occurred 时间窗参数 → store 过滤选项（list/count 同口径）；
 // 未传参返回空对象，既有调用方不受影响。（A3 复核：此处入参仅含 occurred 边界。）
@@ -102,6 +236,128 @@ export function createTools(ctx, service, config, embedder) {
     if (injectChildEnabled(config, "continuityRescueEnabled") && CONTINUITY_TOOL_RULE[name]) text += CONTINUITY_TOOL_RULE[name];
     return text;
   };
+
+  function preferenceStateDto() {
+    const state = service.getPreferenceState?.() ?? {};
+    const allTags = Array.isArray(state.tags) ? state.tags : [];
+    const allEntities = Array.isArray(state.entities) ? state.entities : [];
+    return {
+      enabled: state.enabled === true,
+      weight_min: Number(state.weight_min),
+      weight_max: Number(state.weight_max),
+      default_weight: Number(state.default_weight),
+      factor_min: Number(state.factor_min),
+      factor_max: Number(state.factor_max),
+      relevance_floor: Number(state.relevance_floor),
+      tags: allTags.slice(0, PREFERENCE_MAX_WEIGHTS).map((row) => ({
+        tag: String(row.tag ?? ""),
+        weight: Number(row.weight),
+        updated_at: String(row.updated_at ?? ""),
+        ...(row.updated_by ? { updated_by: String(row.updated_by) } : {})
+      })),
+      entities: allEntities.slice(0, PREFERENCE_MAX_WEIGHTS).map((row) => ({
+        entity_id: String(row.entity_id ?? ""),
+        canonical_id: String(row.canonical_id ?? row.entity_id ?? ""),
+        name: String(row.name ?? ""),
+        type: String(row.type ?? "unknown"),
+        merged: row.merged === true,
+        weight: Number(row.weight),
+        updated_at: String(row.updated_at ?? ""),
+        ...(row.updated_by ? { updated_by: String(row.updated_by) } : {})
+      })),
+      tags_truncated: allTags.length > PREFERENCE_MAX_WEIGHTS,
+      entities_truncated: allEntities.length > PREFERENCE_MAX_WEIGHTS
+    };
+  }
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const identityCandidate = (group) => ({
+    id: String(group.id),
+    canonical_id: String(group.canonical_id ?? group.id),
+    name: String(group.name ?? ""),
+    type: String(group.type ?? "unknown")
+  });
+
+  function identityRelationSummary(group) {
+    const relations = service.getRelations(group.id) ?? [];
+    const otherIds = [...new Set(relations.map((rel) =>
+      rel.from_entity === group.id ? rel.to_entity : rel.from_entity
+    ).filter(Boolean))];
+    const otherGroups = service.groupsForEntityIds(otherIds) ?? [];
+    const otherById = new Map(otherGroups.map((other) => [other.id, other]));
+    const byTypeMap = new Map();
+    for (const rel of relations) {
+      byTypeMap.set(rel.relation_type, (byTypeMap.get(rel.relation_type) ?? 0) + 1);
+    }
+    const items = relations.map((rel) => {
+      const outgoing = rel.from_entity === group.id;
+      const otherId = outgoing ? rel.to_entity : rel.from_entity;
+      const other = otherById.get(otherId);
+      return {
+        entity_id: String(otherId),
+        name: String(other?.name ?? otherId),
+        type: String(other?.type ?? "unknown"),
+        direction: outgoing ? "outgoing" : "incoming",
+        relation_type: String(rel.relation_type)
+      };
+    }).sort((a, b) =>
+      a.relation_type.localeCompare(b.relation_type) ||
+      a.name.localeCompare(b.name) ||
+      a.entity_id.localeCompare(b.entity_id)
+    );
+    return {
+      total: relations.length,
+      by_type: [...byTypeMap.entries()]
+        .map(([relation_type, count]) => ({ relation_type, count }))
+        .sort((a, b) => b.count - a.count || a.relation_type.localeCompare(b.relation_type)),
+      items: items.slice(0, IDENTITY_MAX_RELATIONS),
+      truncated: items.length > IDENTITY_MAX_RELATIONS
+    };
+  }
+
+  function identityEntityDto(group) {
+    const aliases = (group.aliases ?? []).slice(0, IDENTITY_MAX_ALIASES).map((alias) => ({
+      alias: String(alias.alias),
+      confirmed: alias.confirmed === true
+    }));
+    const memberIds = (group.member_ids ?? [group.id]);
+    return {
+      ...identityCandidate(group),
+      aliases,
+      aliases_truncated: (group.aliases ?? []).length > IDENTITY_MAX_ALIASES,
+      member_ids: memberIds.slice(0, IDENTITY_MAX_MEMBERS).map(String),
+      member_ids_truncated: memberIds.length > IDENTITY_MAX_MEMBERS,
+      relation_summary: identityRelationSummary(group)
+    };
+  }
+
+  function identityLookupDto(rawQuery) {
+    const query = String(rawQuery ?? "").normalize("NFKC").trim();
+    if (!query) throw new Error("entity query must be non-empty");
+    const isUuid = UUID_RE.test(query);
+    let groups;
+    if (isUuid) {
+      const group = service.identity.groupForEntity(query);
+      groups = group ? [group] : [];
+    } else {
+      const key = normalizeIdentityKey(query);
+      const found = service.findEntityGroup(query)?.groups ?? [];
+      groups = found.filter((group) =>
+        normalizeIdentityKey(group.name) === key ||
+        (group.aliases ?? []).some((alias) => alias.normalized_alias === key)
+      );
+    }
+    groups = [...new Map(groups.map((group) => [group.id, group])).values()];
+    const candidates = groups.slice(0, IDENTITY_MAX_CANDIDATES).map(identityCandidate);
+    const base = {
+      query,
+      candidates,
+      candidates_truncated: groups.length > IDENTITY_MAX_CANDIDATES
+    };
+    if (groups.length === 0) return { status: "unresolved", ...base };
+    if (groups.length > 1) return { status: "ambiguous", ...base };
+    return { status: "resolved", ...base, entity: identityEntityDto(groups[0]) };
+  }
 
   // 复核项 4（issue #170）：strictScope 下他 scope（explicit）的行对工具侧按
   // 「不存在」处理——update/delete 与 memory_get 同款无存在性泄漏。strictScope
@@ -345,6 +601,89 @@ export function createTools(ctx, service, config, embedder) {
           throw new Error("memory not found");
         }
         return { memory: service.toApiList([memory])[0] };
+      }
+    }),
+
+    defineTool({
+      name: "memory_preference_get",
+      description:
+        "Read the current opt-in memory preference state: whether preference weighting is enabled, " +
+        "its weight/factor bounds and relevance floor, Tag weights and canonical-entity weights. " +
+        "Read-only: this tool cannot set, delete or otherwise change any weight.",
+      parameters: {},
+      output: {
+        schema: PREFERENCE_GET_SCHEMA,
+        render: (_args, value) => {
+          const tags = (value.tags ?? []).map((row) =>
+            `  tag ${row.tag} = ${row.weight}${row.updated_by ? ` (${row.updated_by})` : ""}`
+          );
+          const entities = (value.entities ?? []).map((row) =>
+            `  entity ${row.name} [${row.type}] (${row.entity_id}) = ${row.weight}`
+          );
+          const lines = [
+            `Memory preferences: ${value.enabled ? "enabled" : "disabled"}.`,
+            `Weights ${value.weight_min}-${value.weight_max} (default ${value.default_weight}); ` +
+              `factor clamp ${value.factor_min}-${value.factor_max}; relevance floor ${value.relevance_floor}.`,
+            `Tag weights (${value.tags.length}${value.tags_truncated ? ", truncated" : ""}):`,
+            ...(tags.length ? tags : ["  (none)"]),
+            `Entity weights (${value.entities.length}${value.entities_truncated ? ", truncated" : ""}):`,
+            ...(entities.length ? entities : ["  (none)"])
+          ];
+          return TEXT_OUTPUT(lines.join("\n"));
+        }
+      },
+      async execute() {
+        return preferenceStateDto();
+      }
+    }),
+
+    defineTool({
+      name: "memory_identity_lookup",
+      description:
+        "Look up an existing entity by exact display name/alias or UUID. Returns the canonical entity ID, " +
+        "type, display name, aliases, member IDs and a bounded relation summary. Ambiguous or unresolved names " +
+        "return candidates/status instead of guessing, merging or creating an entity. Read-only; it never " +
+        "confirms aliases or writes provenance.",
+      parameters: {
+        query: {
+          type: "string",
+          required: true,
+          description: "Non-empty exact entity name/alias or canonical entity UUID"
+        }
+      },
+      output: {
+        schema: IDENTITY_LOOKUP_SCHEMA,
+        render: (_args, value) => {
+          if (value.status === "unresolved") {
+            return TEXT_OUTPUT(`No entity matches "${value.query}". No entity was created.`);
+          }
+          if (value.status === "ambiguous") {
+            const candidates = value.candidates
+              .map((candidate) => `  ${candidate.name} [${candidate.type}] ${candidate.id}`)
+              .join("\n");
+            return TEXT_OUTPUT(
+              `Multiple entities match "${value.query}"${value.candidates_truncated ? " (truncated)" : ""}; ` +
+              `ask which one is meant:\n${candidates}`
+            );
+          }
+          const entity = value.entity;
+          const aliases = entity.aliases.length
+            ? entity.aliases.map((alias) => alias.alias + (alias.confirmed ? "*" : "")).join(", ")
+            : "(none)";
+          const types = entity.relation_summary.by_type
+            .map((row) => `${row.relation_type}:${row.count}`)
+            .join(", ") || "(none)";
+          return TEXT_OUTPUT(
+            `${entity.name} [${entity.type}] ${entity.id}\n` +
+            `Aliases: ${aliases}${entity.aliases_truncated ? " (truncated)" : ""}\n` +
+            `Members: ${entity.member_ids.length}${entity.member_ids_truncated ? " (truncated)" : ""}\n` +
+            `Relations: ${entity.relation_summary.total}${entity.relation_summary.truncated ? " (summary truncated)" : ""}` +
+            ` (${types})`
+          );
+        }
+      },
+      async execute(args) {
+        return identityLookupDto(args?.query);
       }
     }),
 
@@ -1040,6 +1379,13 @@ export function createTools(ctx, service, config, embedder) {
   const hiddenTools = new Set();
   if (config?.disableMemorySearch === true) hiddenTools.add("memory_search");
   if (config?.disableMemoryArchive === true) hiddenTools.add("memory_archive");
+  // Entity aliases, relation summaries and saved preference names are library-wide.
+  // They have no per-session scope marker, so do not expose them as model tools
+  // when strict visibility is requested for this session.
+  if (config?.strictScope === true) {
+    hiddenTools.add("memory_identity_lookup");
+    hiddenTools.add("memory_preference_get");
+  }
   // #231 第二批是**反向**语义：memory_organize 默认不在场，organizeEnabled 打开才
   // 注册。仍走同一个闸门而不是在数组里条件展开——模型看不到就不会调，这比在描述里
   // 劝它别用可靠（上面那段 v0.8.5 的定性对两个方向都成立）。

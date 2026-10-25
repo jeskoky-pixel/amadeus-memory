@@ -49,7 +49,10 @@ dsh web
   - 逐 type 记录 `committed / failed / pending` 回执，健康端点区分 `ok / degraded / unknown`
   - 状态写失败不静默：同步失败落日志并留债务，重启自动收敛
 
-### 模型工具（默认注册 11 个；开 `organizeEnabled` 后 12 个）
+### 模型工具（默认注册 13 个；开 `organizeEnabled` 后 14 个）
+
+启用 `strictScope` 时，库级的 `memory_preference_get` 和 `memory_identity_lookup`
+不注册，以免跨会话暴露未标注 scope 的实体别名与全局偏好。
 
 
 | 工具 | 功能 |
@@ -58,6 +61,8 @@ dsh web
 | `memory_search` | 全文搜索（中文子串友好，可启用向量语义搜索；可选 `occurred_from` / `occurred_to` 按事件发生时间过滤） |
 | `memory_list` | 按类型分页列出（`include_archived=true` 可查看已归档；可选 `occurred_from` / `occurred_to` 时间过滤） |
 | `memory_get` | 读取单条记忆完整正文（v0.7.25，按 id；memory_search / memory_list 命中后读全文） |
+| `memory_preference_get` | 只读返回当前偏好状态：开关、权重/因子边界、Tag 与规范实体权重；不能修改任何权重 |
+| `memory_identity_lookup` | 只读按精确显示名/别名或 UUID 查实体：规范 ID/类型/显示名/别名/成员 ID 与有界关系摘要；同名歧义或未命中返回候选/状态，不猜、不建实体、不确认别名、不写 provenance；不外泄外部 ID |
 | `memory_update` | 修改已有记忆 |
 | `memory_delete` | 删除记忆（按记忆 ID 精确删除） |
 | `memory_forget` | 抑制注入（降权不删除，可恢复） |
@@ -665,7 +670,7 @@ Claude Code 挂载示例（项目根 `.mcp.json`；token 在面板「设置 → 
 │  服务层：saveWithDedupe / injectCandidates        │
 │         / mergeHumanEdits / onWrite 钩子          │
 ├─────────────────────────────────────────────────┤
-│  模型接口：11 个工具 + 自动注入 + 会话摘要         │
+│  模型接口：13 个工具 + 自动注入 + 会话摘要         │
 ├─────────────────────────────────────────────────┤
 │  autoDream：阈值调度 → LLM 决策清单               │
 │            → 校验（fail-safe）→ 应用 → 摘要       │
@@ -683,7 +688,7 @@ src/
 ├── service.js        # 领域逻辑（去重合并、注入筛选、写入钩子、scope 加权/硬过滤、冲突队列）
 ├── scope.js          # 作用域解析（agentPreset + workspace registry 反查，issue #17）
 ├── config.js         # schemastery 配置 schema
-├── tools.js          # 11 个模型工具（defineTool；memory_organize 要 organizeEnabled 打开才注册，开了是 12 个）
+├── tools.js          # 13 个模型工具（defineTool；memory_organize 要 organizeEnabled 打开才注册，开了是 14 个）
 ├── user-settings.js  # 「用户设置」注入块（人格 → 画像 → 规则）的唯一渲染处，注入与面板预览共用
 ├── profile-extract.js # 从活跃记忆提取「助手眼中的用户」画像草稿（只出草稿，不写 user_settings）
 ├── organize.js       # agent 主动整理：dryRun 比对报告 → agent 判断 → apply 落库（筛除=归档不删，留 dream_runs 回执）
