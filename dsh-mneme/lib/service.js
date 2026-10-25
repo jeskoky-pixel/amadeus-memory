@@ -16,6 +16,7 @@ import { anchorSeeds, normalizePath, cascadeDepths, HOP_QUOTA } from "./graph/an
 import { createIdentityService } from "./identity.js";
 import { createPreferenceService } from "./preferences.js";
 import { createIntakeService } from "./intake.js";
+import { normalizeEventTag, stripEventTags, eventTagForKind, isEventTag } from "./trusted-events.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
 // 原先不收——本机活跃库实测 378/1820（20.8%）因此永不可自动注入，而它们在同一库
@@ -78,12 +79,9 @@ const CONTENT_HISTORY_MAX = 20;
 // 不许被更新抹掉）。
 const SIGNAL_TAGS = ["low_quality", "duplicate", "meta", "repetitive", "short_content", "self_referential", "evidence_degraded"];
 
-// Amadeus trusted-intake vocabulary: only the structured intake route may mint
-// these event tags. An LLM calling memory_save (or any normal caller) cannot
-// turn "it was planned" into "it happened" by adding a tag.
-const TRUSTED_EVENT_TAGS = new Set([
-  "event:self_action", "event:direct_interaction", "event:reported_by_other", "event:observation"
-]);
+// Amadeus trusted-intake vocabulary: only the controlled private intake writer
+// may mint these tags. `source=trusted_intake` on an ordinary save is metadata,
+// not authority; every event:* spelling is stripped outside that writer.
 
 // scopeKeyOf 已上提到 ./scope.js（v0.8.1，issue #170 第 2 步）：与 sleep 的跨
 // scope 配对共用同一把比较钥匙，避免两处定义漂移。
@@ -251,6 +249,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
   // never leaves the mirror file diverged from the database; transaction()
   // replays them exactly once against the committed state.
   let txDepth = 0;
+  // Set only by the closure-private writeTrustedIntake callback passed to the
+  // intake service; no public service method can set it.
+  let trustedWriteContext = null;
 
   // Amadeus memory enhancer: stable identity/canonical view and opt-in
   // preference weights. Both are always constructed (schema is additive), but
@@ -1005,7 +1006,12 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // active with a non-default weight; otherwise every fetch below is
     // byte-identical to the legacy path.
     const preferenceScorer = preferences.createScorer();
-    const recallLimit = preferenceScorer.active
+    // Test-only ablation gate: expand the candidate pool while keeping weights
+    // neutral. Not in the config schema/feature flags and false by default, so
+    // production behavior is unchanged unless a benchmark explicitly sets it.
+    const poolOnlyAblation = config?.__preferenceAblationPoolOnly === true;
+    const preferencePoolActive = preferenceScorer.active || poolOnlyAblation;
+    const recallLimit = preferencePoolActive
       ? Math.min(200, Math.max(lim * 8, 60))
       : lim;
 
@@ -1092,8 +1098,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
     merged = mode === "keyword" ? merged : semanticDeduplicate(merged);
     // With preferences on, keep the larger pool alive until after rerank and
     // scope/epistemic weighting; the final topK cut happens in rerankRows.
-    const beforeFinalCut = preferenceScorer.active ? merged : merged.slice(0, lim);
-    const rerankWindow = preferenceScorer.active
+    const beforeFinalCut = preferencePoolActive ? merged : merged.slice(0, lim);
+    const rerankWindow = preferencePoolActive
       ? Math.min(recallLimit, Math.max(lim * 2, lim + 10))
       : lim;
     let result = useRerank && reranker && beforeFinalCut.length
@@ -1109,7 +1115,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
           score: (m.score ?? 0) * (EPISTEMIC_WEIGHTS[m.epistemic_status] ?? 1)
         }))
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-      if (!preferenceScorer.active) result = result.slice(0, lim);
+      if (!preferencePoolActive) result = result.slice(0, lim);
     }
 
     // v0.8.0 A2（issue #17）：scope 检索加权——两维都无法确立 foreign 的候选
@@ -1121,7 +1127,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       result = result
         .map((m) => ({ ...m, score: (m.score ?? 0) * scopeMultiplier(m, scope) }))
         .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-      if (!preferenceScorer.active) result = result.slice(0, lim);
+      if (!preferencePoolActive) result = result.slice(0, lim);
     }
     // Preference reranking (opt-in): modest bounded factors over a larger
     // relevant pool, applied before the final topK cut and after scope,
@@ -1131,6 +1137,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
       const before = result;
       const reranked = preferences.rerankRows(before, { scorer: preferenceScorer, scoreKey: "score", lim });
       result = reranked === before ? before.slice(0, lim) : reranked;
+    } else if (preferencePoolActive) {
+      result = result.slice(0, lim);
     }
 
     // Recall layer receipt: with recordRecall on, hand the actual merged
@@ -1282,8 +1290,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
    * and notifies subscribers, but re-embedding is left to the caller (the dream
    * flow re-embeds through maintainIndexAfterDream).
    */
-  function transaction(fn) {
-    store.db.exec("BEGIN");
+  function transaction(fn, { immediate = false } = {}) {
+    store.db.exec(immediate ? "BEGIN IMMEDIATE" : "BEGIN");
     txDepth++;
     // #372: 记住本层事务开始时的队列深度——回滚时截断回这里。本层（及更深的
     // 嵌套层）入队的抽取随回滚一并丢弃，外层已提交未 drain 的条目不受牵连。
@@ -1435,6 +1443,38 @@ export function createService({ store, mirror, config, onWrite, logger, document
    *                                      explicitly searchable via includeArchived)
    * @returns {{action: "created"|"merged", memory: object}}
    */
+  /**
+   * Event tags backed by committed trusted provenance for a memory. Ordinary
+   * writes preserve these, and only these, across updates/title-dedupe merges.
+   */
+  function trustedEventTagsForMemory(memoryId) {
+    if (!memoryId) return [];
+    try {
+      return store.db.prepare(
+        "SELECT DISTINCT kind FROM memory_trusted_provenance WHERE memory_id = ?"
+      ).all(memoryId).map((row) => eventTagForKind(row.kind)).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Closure-private writer used only by the intake service. It is never exposed
+   * on the service surface, so no HTTP/tool caller can set the event authority
+   * by supplying `source` or a `_trusted` flag.
+   */
+  function writeTrustedIntake(memory, { kind, forceNew = false } = {}) {
+    const eventTag = eventTagForKind(kind);
+    if (!eventTag) throw new Error(`unknown trusted event kind: ${String(kind)}`);
+    const previous = trustedWriteContext;
+    trustedWriteContext = { eventTag, forceNew };
+    try {
+      return saveWithDedupe(memory);
+    } finally {
+      trustedWriteContext = previous;
+    }
+  }
+
   function saveWithDedupe(memory) {
     // #230 写入权分离：document 行只能经 registerDocument 铸造（注册校验 +
     // doc_path + evidence 三样俱全）。通用保存路径（memory_save 工具 / MCP /
@@ -1443,12 +1483,16 @@ export function createService({ store, mirror, config, onWrite, logger, document
     if (memory?.type === "document") {
       throw new Error("type 'document' is minted only via registerDocument (summary + doc_path + evidence)");
     }
-    // Trusted-intake event tags are provenance, not free-form labels. Strip them
-    // from every normal write; only submitTrustedMemory (source=trusted_intake)
-    // may set them.
-    if (memory?.source !== "trusted_intake" && Array.isArray(memory?.tags)) {
-      const filtered = memory.tags.filter((tag) => !TRUSTED_EVENT_TAGS.has(String(tag)));
-      if (filtered.length !== memory.tags.length) memory = { ...memory, tags: filtered };
+    // Event claims are authority-bearing provenance, not free-form labels.
+    // Every ordinary write loses all event:* spellings; the private trusted
+    // writer adds back only the tag derived from its validated kind.
+    const trustedContext = trustedWriteContext;
+    if (Array.isArray(memory?.tags)) {
+      const filtered = stripEventTags(memory.tags);
+      if (trustedContext?.eventTag && !filtered.includes(trustedContext.eventTag)) {
+        filtered.push(trustedContext.eventTag);
+      }
+      memory = { ...memory, tags: filtered };
     }
     // Bug7: score quality once (after dedupe lookup, before write). Failures
     // inside the evaluator are impossible (pure function), but the write that
@@ -1489,7 +1533,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 实现。目标已被并发删除时回落到常规匹配。显式目标同样过 scope 门：跨作用域
     // 的语义相似不并入（防泄漏），回落为独立新行。
     const explicitTarget = memory._mergeInto ? store.getById(memory._mergeInto) : undefined;
-    const existing = explicitTarget
+    const existing = trustedContext?.forceNew
+      ? undefined
+      : explicitTarget
       ? (scopeMatches(explicitTarget) ? explicitTarget : undefined)
       : (memory.type === "summary" && memory.source === "dream")
         ? (candidates.find((m) => m.source === "dream" && scopeMatches(m))
@@ -1523,10 +1569,17 @@ export function createService({ store, mirror, config, onWrite, logger, document
         scopeUpgrade.workspace_scope_source = "explicit";
       }
       if (Object.keys(scopeUpgrade).length) scopeUpgrade.scope_decided_at = new Date().toISOString();
+      const incomingTags = Array.isArray(memory.tags)
+        ? memory.tags
+        : stripEventTags(existing.tags ?? []);
+      const mergedTags = [...new Set([
+        ...incomingTags,
+        ...trustedEventTagsForMemory(existing.id)
+      ])];
       const merged = store.update(existing.id, {
         content,
         importance,
-        tags: memory.tags ?? existing.tags,
+        tags: mergedTags,
         title: memory.title ?? existing.title,
         ...(memory.evidence !== undefined ? { evidence: memory.evidence } : {}),
         content_history: pushContentHistory(existing, direct
@@ -2192,13 +2245,19 @@ export function createService({ store, mirror, config, onWrite, logger, document
     }));
   }
 
+  function displayTagsForMemory(m) {
+    if (!Array.isArray(m?.tags) || !m.tags.some((tag) => isEventTag(tag))) return m?.tags;
+    const trusted = new Set(trustedEventTagsForMemory(m.id));
+    return m.tags.filter((tag) => !isEventTag(tag) || trusted.has(normalizeEventTag(tag)));
+  }
+
   function toApiList(rows, { includePreference = true } = {}) {
     return rows.map((m) => ({
       id: m.id,
       type: m.type,
       title: m.title,
       content: m.content,
-      tags: m.tags,
+      tags: displayTagsForMemory(m),
       importance: m.importance,
       source: m.source,
       created_at: m.created_at,
@@ -2559,7 +2618,14 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 记忆里恰好缺的 2 条就是被 update 过的，并因此误判过归档来源）。把 existing
     // 的系统信号标签并集保留；用户自传的标签照常生效。
     let patch = (p && Array.isArray(p.tags) && old && Array.isArray(old.tags))
-      ? { ...p, tags: [...new Set([...p.tags, ...old.tags.filter((t) => SIGNAL_TAGS.includes(t))])] }
+      ? {
+          ...p,
+          tags: [...new Set([
+            ...stripEventTags(p.tags),
+            ...old.tags.filter((t) => SIGNAL_TAGS.includes(t)),
+            ...trustedEventTagsForMemory(id)
+          ])]
+        }
       : p;
     // v0.8.1 底座（issue #170）：显式 scope 修正。patch 携带 agent_scope /
     // workspace_scope 键（undefined=该维不动）时归一化并盖 explicit 章 +
@@ -2945,6 +3011,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
       return { groups, ambiguous: groups.length > 1 };
     },
     entityHistory: (opts) => identity.history(opts),
+    listPendingAssertions: (opts) => identity.listPendingAssertions(opts),
+    listPendingRelations: (opts) => identity.listPendingRelations(opts),
+    resolvePendingAssertion: (opts) => identity.resolvePendingAssertion(opts),
     getAttrsByMemory: (id) => store.getAttrsByMemory(id),
     // 记忆详情侧栏：一条记忆关联到的实体（entity_attrs.memory_id 反查，纯读）。
     // Canonical view: duplicates in one group collapse, member UUIDs stay visible.
@@ -2984,7 +3053,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
   };
   // Trusted intake is constructed after the service surface exists (it submits
   // through the normal save/dedupe path, not through SQL).
-  const intake = createIntakeService({ service: serviceApi, store });
+  const intake = createIntakeService({ service: serviceApi, store, writeTrustedIntake });
   serviceApi.submitTrustedMemory = (body) => intake.submit(body);
   serviceApi.validateTrustedIntake = (body) => intake.validate(body);
   serviceApi.trustedProvenanceFor = (memoryId) => intake.provenanceFor(memoryId);

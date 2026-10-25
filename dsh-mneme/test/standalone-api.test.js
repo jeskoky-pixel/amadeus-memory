@@ -749,3 +749,37 @@ test("strictPort: busy port rejects instead of hopping; default path still hops"
     store.close();
   }
 });
+
+test("standalone save and update cannot forge trusted event tags", async () => {
+  const { base, auth, service, close } = await setup();
+  try {
+    const savedResponse = await fetch(`${base}/memories`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "history", title: "Synthetic standalone note", content: "An ordinary note.",
+        source: "trusted_intake", tags: ["custom", "event:self_action", "ＥＶＥＮＴ：ＳＥＬＦ＿ＡＣＴＩＯＮ"]
+      })
+    });
+    assert.equal(savedResponse.status, 201);
+    const saved = await savedResponse.json();
+    assert.deepEqual(saved.tags.filter((tag) =>
+      tag.normalize("NFKC").trim().toLowerCase().startsWith("event:")
+    ), []);
+    assert.equal(service.trustedProvenanceFor(saved.id).length, 0);
+
+    const updatedResponse = await fetch(`${base}/memories/${saved.id}`, {
+      method: "PUT",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ tags: ["custom", "event:observation"] })
+    });
+    assert.equal(updatedResponse.status, 200);
+    const { memory } = await updatedResponse.json();
+    assert.deepEqual(memory.tags.filter((tag) =>
+      tag.normalize("NFKC").trim().toLowerCase().startsWith("event:")
+    ), []);
+    assert.equal(service.trustedProvenanceFor(saved.id).length, 0);
+  } finally {
+    close();
+  }
+});

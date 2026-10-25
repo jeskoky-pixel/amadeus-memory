@@ -4,8 +4,9 @@
 // extractor: the caller (Life) must state source, actor, participation and
 // status explicitly. Only this path derives event:* tags; an LLM reading casual
 // chat can never invent that a planned action was completed.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { scopeKeyOf, normalizeExplicitScope } from "./scope.js";
+import { eventTagForKind, isEventTag } from "./trusted-events.js";
 
 export const TRUSTED_INTAKE_KINDS = Object.freeze([
   "self_action", "direct_interaction", "reported_by_other", "observation"
@@ -22,12 +23,6 @@ const INTAKE_TYPES = new Set([
   "preference", "project", "decision", "history", "summary", "pattern",
   "rejected_solution", "pitfall", "constraint"
 ]);
-const EVENT_TAG = {
-  self_action: "event:self_action",
-  direct_interaction: "event:direct_interaction",
-  reported_by_other: "event:reported_by_other",
-  observation: "event:observation"
-};
 // kind -> allowed participation / trust source. These are structural, not
 // advisory: a self action cannot claim it was merely observed, and a report
 // cannot claim the reporting agent performed it.
@@ -56,6 +51,19 @@ CREATE TABLE IF NOT EXISTS memory_trusted_provenance (
 );
 CREATE INDEX IF NOT EXISTS idx_trusted_provenance_memory ON memory_trusted_provenance(memory_id);
 CREATE INDEX IF NOT EXISTS idx_trusted_provenance_kind ON memory_trusted_provenance(kind, created_at);
+-- Durable request-id idempotency. Additive table only: old databases may have
+-- duplicate historical request_id values in memory_trusted_provenance, so no
+-- unique index is added there. The request_key is the atomic idempotency key.
+CREATE TABLE IF NOT EXISTS memory_trusted_requests (
+  request_key   TEXT PRIMARY KEY,
+  request_id    TEXT NOT NULL,
+  actor_key     TEXT NOT NULL,
+  fingerprint   TEXT NOT NULL,
+  memory_id     TEXT NOT NULL,
+  provenance_id TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_requests_actor ON memory_trusted_requests(actor_key, created_at);
 `;
 
 export class IntakeError extends Error {
@@ -168,6 +176,15 @@ export function validateTrustedIntake(body) {
   if (!Number.isInteger(importance) || importance < 1 || importance > 5) {
     throw new IntakeError("invalid-importance", "importance must be an integer 1-5");
   }
+  const extraTags = Array.isArray(body.tags)
+    ? body.tags.filter((tag) => typeof tag === "string").map((tag) => tag.trim()).filter(Boolean).slice(0, 20)
+    : [];
+  if (extraTags.some((tag) => isEventTag(tag))) {
+    throw new IntakeError(
+      "invalid-event-tag",
+      "event:* tags are derived only from the trusted kind; they cannot be supplied as extra tags"
+    );
+  }
   return {
     kind,
     status,
@@ -183,14 +200,49 @@ export function validateTrustedIntake(body) {
     workspaceScope: normalizeExplicitScope(scopeInput.workspace_scope),
     evidence: normalizeEvidence(body.evidence),
     requestId: optionalText(body.request_id, "request-id", 120),
-    extraTags: Array.isArray(body.tags)
-      ? body.tags.filter((tag) => typeof tag === "string").map((tag) => tag.trim()).filter(Boolean).slice(0, 20)
-      : []
+    extraTags
   };
 }
 
-export function createIntakeService({ service, store } = {}) {
+/** Caller identity scope for durable request-id idempotency. */
+export function intakeActorKey(actor) {
+  return String(actor ?? "").normalize("NFKC").trim().toLowerCase();
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Deterministic fingerprint of a validated intake payload. */
+export function intakeFingerprint(payload) {
+  const material = {
+    kind: payload.kind,
+    status: payload.status,
+    participation: payload.participation,
+    trust_source: payload.trustSource,
+    actor: payload.actor,
+    title: payload.title,
+    content: payload.content,
+    type: payload.type,
+    importance: payload.importance,
+    occurred_at: payload.occurredAt ?? null,
+    agent_scope: payload.agentScope,
+    workspace_scope: payload.workspaceScope,
+    evidence: payload.evidence,
+    tags: [...payload.extraTags].sort()
+  };
+  return createHash("sha256").update(stableJson(material)).digest("hex");
+}
+
+export function createIntakeService({ service, store, writeTrustedIntake } = {}) {
   if (!service || !store) throw new Error("createIntakeService: service and store are required");
+  if (typeof writeTrustedIntake !== "function") {
+    throw new Error("createIntakeService: the private writeTrustedIntake channel is required");
+  }
   const db = store.db;
   db.exec(INTAKE_SCHEMA);
 
@@ -202,6 +254,13 @@ export function createIntakeService({ service, store } = {}) {
       scopeKeyOf(row.agent_scope) === payload.agentScope &&
       scopeKeyOf(row.workspace_scope) === payload.workspaceScope
     );
+  }
+
+  function toProvenance(row) {
+    if (!row) return null;
+    let evidence = [];
+    try { evidence = JSON.parse(row.evidence); } catch { evidence = []; }
+    return { ...row, evidence: Array.isArray(evidence) ? evidence : [] };
   }
 
   function saveProvenance(payload, memoryId) {
@@ -217,72 +276,127 @@ export function createIntakeService({ service, store } = {}) {
       payload.status, payload.occurredAt ?? null, payload.agentScope, payload.workspaceScope,
       JSON.stringify(payload.evidence), payload.requestId ?? null, at
     );
+    return toProvenance(db.prepare(
+      "SELECT * FROM memory_trusted_provenance WHERE id = ?"
+    ).get(id));
+  }
+
+  function provenanceById(id) {
+    return toProvenance(db.prepare(
+      "SELECT * FROM memory_trusted_provenance WHERE id = ?"
+    ).get(String(id ?? "")));
+  }
+
+  function requestKeyFor(payload) {
+    return `${intakeActorKey(payload.actor)}\u0000${payload.requestId}`;
+  }
+
+  function memoryInput(payload, tags) {
     return {
-      id,
-      memory_id: memoryId,
-      kind: payload.kind,
-      actor: payload.actor,
-      participation: payload.participation,
-      trust_source: payload.trustSource,
-      status: payload.status,
-      occurred_at: payload.occurredAt ?? null,
+      type: payload.type,
+      title: payload.title,
+      content: payload.content,
+      tags,
+      importance: payload.importance,
+      source: "trusted_intake",
+      occurred_at: payload.occurredAt,
       agent_scope: payload.agentScope,
+      agent_scope_source: "explicit",
       workspace_scope: payload.workspaceScope,
-      evidence: payload.evidence,
-      request_id: payload.requestId ?? null,
-      created_at: at
+      workspace_scope_source: "explicit"
     };
   }
 
   /**
-   * Validate, save through the normal dedupe/importance/forget/archive path,
-   * and attach provenance atomically with the memory row. Tags are derived by
-   * this code alone (never by the LLM extractor).
+   * Validate, save through the normal dedupe/importance/forget/archive path
+   * via the closure-private trusted writer, and attach provenance atomically.
+   * Event tags are derived here only; `request_id` uses a durable fingerprinted
+   * idempotency key scoped by normalized actor identity.
    */
   function submit(body) {
     const payload = validateTrustedIntake(body);
-    const existing = findExisting(payload);
-    const eventTag = EVENT_TAG[payload.kind];
-    const tags = [...new Set([
-      ...(existing?.tags ?? []),
-      ...payload.extraTags,
-      eventTag
-    ])];
+    const eventTag = eventTagForKind(payload.kind);
+    if (!eventTag) throw new IntakeError("invalid-kind", "unsupported trusted event kind");
+
+    if (!payload.requestId) {
+      // Legacy compatibility: no request id → retain ordinary title dedupe.
+      const existing = findExisting(payload);
+      const tags = [...new Set([...(existing?.tags ?? []), ...payload.extraTags])];
+      let provenance = null;
+      let result = null;
+      service.transaction(() => {
+        result = writeTrustedIntake(memoryInput(payload, tags), { kind: payload.kind, forceNew: false });
+        provenance = saveProvenance(payload, result.memory.id);
+      });
+      return {
+        action: result.action,
+        memory: service.toApiList([result.memory])[0],
+        provenance,
+        derived_tags: [eventTag],
+        replayed: false
+      };
+    }
+
+    const requestKey = requestKeyFor(payload);
+    const fingerprint = intakeFingerprint(payload);
     let provenance = null;
     let result = null;
+    let replayed = false;
     service.transaction(() => {
-      result = service.saveWithDedupe({
-        type: payload.type,
-        title: payload.title,
-        content: payload.content,
-        tags,
-        importance: payload.importance,
-        source: "trusted_intake",
-        occurred_at: payload.occurredAt,
-        agent_scope: payload.agentScope,
-        agent_scope_source: "explicit",
-        workspace_scope: payload.workspaceScope,
-        workspace_scope_source: "explicit"
+      const prior = db.prepare(
+        "SELECT * FROM memory_trusted_requests WHERE request_key = ?"
+      ).get(requestKey);
+      if (prior) {
+        if (prior.fingerprint !== fingerprint) {
+          throw new IntakeError(
+            "request-id-conflict",
+            "request_id was already used with a different trusted-intake payload",
+            { request_id: payload.requestId }
+          );
+        }
+        const memory = store.getById(prior.memory_id);
+        const priorProvenance = provenanceById(prior.provenance_id);
+        if (!memory || !priorProvenance) {
+          throw new IntakeError(
+            "request-id-conflict",
+            "request_id points at a missing stored experience",
+            { request_id: payload.requestId }
+          );
+        }
+        result = { action: "replayed", memory };
+        provenance = priorProvenance;
+        replayed = true;
+        return;
+      }
+      // ID-bearing distinct experiences never title-dedupe into an earlier one.
+      result = writeTrustedIntake(memoryInput(payload, payload.extraTags), {
+        kind: payload.kind,
+        forceNew: true
       });
       provenance = saveProvenance(payload, result.memory.id);
-    });
+      db.prepare(
+        `INSERT INTO memory_trusted_requests
+           (request_key, request_id, actor_key, fingerprint, memory_id, provenance_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        requestKey, payload.requestId, intakeActorKey(payload.actor), fingerprint,
+        result.memory.id, provenance.id, new Date().toISOString()
+      );
+    }, { immediate: true });
+
     return {
       action: result.action,
       memory: service.toApiList([result.memory])[0],
       provenance,
-      derived_tags: [eventTag]
+      derived_tags: [eventTag],
+      replayed
     };
   }
 
   function provenanceFor(memoryId) {
     return db.prepare(
       "SELECT * FROM memory_trusted_provenance WHERE memory_id = ? ORDER BY created_at DESC, id"
-    ).all(String(memoryId ?? "")).map((row) => ({
-      ...row,
-      evidence: (() => {
-        try { return JSON.parse(row.evidence); } catch { return []; }
-      })()
-    }));
+    ).all(String(memoryId ?? "")).map(toProvenance);
   }
 
   return { submit, validate: validateTrustedIntake, provenanceFor };

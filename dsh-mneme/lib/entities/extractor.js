@@ -1,6 +1,10 @@
 const VALID_TYPES = new Set(["person", "group", "project", "concept", "technology", "organization"]);
 const VALID_RELATIONS = new Set(["uses", "depends_on", "part_of", "related_to"]);
 const MAX_MEMORY_CHARS = 4000;
+// Hard ceiling for LLM-returned relations. Ten entities can produce at most 90
+// distinct ordered pairs; 100 leaves a small duplicate margin and keeps normal
+// extraction behavior unchanged.
+const MAX_RELATIONS = 100;
 
 function buildSystemPrompt(config) {
   const maxEntities = config.entityExtractionMaxEntities ?? 10;
@@ -118,7 +122,7 @@ function sanitizeExtractedData(data, config) {
   
   const relations = [];
   if (Array.isArray(data.relations)) {
-    for (const rawRel of data.relations) {
+    for (const rawRel of data.relations.slice(0, MAX_RELATIONS)) {
       if (!rawRel || typeof rawRel.from !== "string" || typeof rawRel.to !== "string") continue;
       if (!seenNames.has(rawRel.from) || !seenNames.has(rawRel.to)) continue;
       relations.push({
@@ -195,6 +199,7 @@ export async function extractEntities(memory, { store, config, callLLM, logger, 
     
     const resolvedEntities = [];
     const unresolved = [];
+    const unresolvedRaw = new Map();
     const entityIdMap = new Map();
     let skipCount = 0;
 
@@ -205,9 +210,10 @@ export async function extractEntities(memory, { store, config, callLLM, logger, 
           { kind: "memory", value: memory.id ?? null }
         ]);
         if (!resolution.ok) {
-          // Ambiguous or type-boundary: keep the LLM's assertion in the return
-          // value for human review, never write attrs against a guessed UUID.
+          // Ambiguous or name-only: keep the assertion durable as pending data,
+          // never write attrs/relations against a guessed UUID.
           skipCount++;
+          unresolvedRaw.set(entity.name, { entity, resolution });
           unresolved.push({
             name: entity.name,
             type: entity.type,
@@ -253,13 +259,48 @@ export async function extractEntities(memory, { store, config, callLLM, logger, 
       }
     }
     
-    // Record relations
+    // Record relations. A relation with an unresolved endpoint is persisted as
+    // a durable pending relation (not discarded), and is retried after human
+    // confirmation of both ends. Existing rows for this memory are reused to
+    // avoid duplicate edges on re-extraction.
     const savedRelations = [];
+    const entityTypeByName = new Map(entities.map((entity) => [entity.name, entity.type]));
+    const existingRelations = typeof store.getRelationsByMemory === "function"
+      ? store.getRelationsByMemory(memory.id)
+      : [];
+    const relationKey = (from, to, type) => `${from}|${to}|${type}`;
+    const existingByKey = new Map(existingRelations.map((rel) =>
+      [relationKey(rel.from_entity, rel.to_entity, rel.relation_type), rel]
+    ));
     for (const rel of relations) {
       const fromId = entityIdMap.get(rel.from);
       const toId = entityIdMap.get(rel.to);
-      if (!fromId || !toId) continue;
-      
+      if (!fromId || !toId) {
+        if (memory.id && identity?.recordPendingRelation) {
+          try {
+            identity.recordPendingRelation({
+              memory_id: memory.id,
+              from_name: rel.from,
+              from_entity_id: fromId ?? null,
+              from_entity_type: entityTypeByName.get(rel.from) ?? "",
+              to_name: rel.to,
+              to_entity_id: toId ?? null,
+              to_entity_type: entityTypeByName.get(rel.to) ?? "",
+              relation_type: rel.type,
+              evidence: [{ kind: "memory", value: memory.id }]
+            });
+          } catch (err) {
+            skipCount++;
+            logger?.warn?.(`[extractor] Failed to persist pending relation "${rel.from} -> ${rel.to}":`, err.message);
+          }
+        }
+        continue;
+      }
+      const key = relationKey(fromId, toId, rel.type);
+      if (existingByKey.has(key)) {
+        savedRelations.push(existingByKey.get(key));
+        continue;
+      }
       try {
         const saved = store.saveRelation({
           from_entity: fromId,
@@ -272,12 +313,42 @@ export async function extractEntities(memory, { store, config, callLLM, logger, 
           source: "llm"
         });
         savedRelations.push(saved);
+        existingByKey.set(key, saved);
       } catch (err) {
         skipCount++;
         logger?.warn?.(`[extractor] Failed to save relation "${rel.from} -> ${rel.to}":`, err.message);
       }
     }
     
+    // Persist unresolved name-only assertions together with their source
+    // memory. Ambiguous candidates remain pending; a human confirmation (or an
+    // explicit selection) can recover them later without re-running the LLM.
+    // Relations live in identity_pending_relations so an unresolved other end
+    // cannot be lost when this assertion's attributes are applied.
+    if (memory.id && identity?.recordPendingAssertion) {
+      for (const entry of unresolved) {
+        const raw = unresolvedRaw.get(entry.name);
+        if (!raw) continue;
+        try {
+          const pending = identity.recordPendingAssertion({
+            memory_id: memory.id,
+            display_name: entry.name,
+            entity_type: entry.type,
+            attrs: raw.entity.attrs,
+            relations: [],
+            candidates: raw.resolution.candidates ?? [],
+            evidence: [
+              { kind: "memory", value: memory.id },
+              { kind: "extraction", value: raw.resolution.reason ?? "unresolved" }
+            ]
+          });
+          if (pending) entry.pending_id = pending.id;
+        } catch (err) {
+          logger?.warn?.(`[extractor] Failed to persist pending assertion for "${entry.name}":`, err.message);
+        }
+      }
+    }
+
     return {
       ok: true,
       entities: resolvedEntities,

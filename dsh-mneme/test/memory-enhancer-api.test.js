@@ -62,6 +62,7 @@ test("all enhancer routes declare a policy and are mounted", () => {
       "/api/dsh-mneme/identity/links",
       "/api/dsh-mneme/identity/history",
       "/api/dsh-mneme/identity/entity-detail",
+      "/api/dsh-mneme/identity/pending",
       "/api/dsh-mneme/preferences",
       "/api/dsh-mneme/intake"
     ]) {
@@ -135,6 +136,47 @@ test("entity directory pages past 1000 with a true total and legacy redacted sha
     const searchBody = JSON.parse(search.body);
     assert.equal(searchBody.total, 100);
     assert.equal(searchBody.has_more, false);
+  } finally {
+    h.close();
+  }
+});
+
+test("trusted intake request_id replays idempotently and conflicts with 409", async () => {
+  const h = setup({ trustedIntakeEnabled: true });
+  try {
+    const payload = {
+      kind: "self_action",
+      status: "completed",
+      participation: "agent",
+      trust_source: "system",
+      actor: "life-api-test",
+      title: "Synthetic idempotent experience",
+      content: "Life completed a synthetic idempotent experience.",
+      scope: { agent_scope: "amadeus", workspace_scope: "life-test" },
+      request_id: "synthetic-request-1",
+      evidence: [{ kind: "receipt", value: "synthetic-r1" }]
+    };
+    const first = new FakeRes();
+    await h.route("/api/dsh-mneme/intake").handler(
+      req("POST", "/api/dsh-mneme/intake", payload, auth), first
+    );
+    assert.equal(first.statusCode, 200);
+    const firstBody = JSON.parse(first.body);
+    const replay = new FakeRes();
+    await h.route("/api/dsh-mneme/intake").handler(
+      req("POST", "/api/dsh-mneme/intake", payload, auth), replay
+    );
+    assert.equal(replay.statusCode, 200);
+    const replayBody = JSON.parse(replay.body);
+    assert.equal(replayBody.memory.id, firstBody.memory.id);
+    assert.equal(replayBody.provenance.id, firstBody.provenance.id);
+    assert.equal(replayBody.replayed, true);
+    const conflict = new FakeRes();
+    await h.route("/api/dsh-mneme/intake").handler(
+      req("POST", "/api/dsh-mneme/intake", { ...payload, content: "Different synthetic content." }, auth), conflict
+    );
+    assert.equal(conflict.statusCode, 409);
+    assert.equal(JSON.parse(conflict.body).error, "request-id-conflict");
   } finally {
     h.close();
   }
@@ -264,6 +306,7 @@ test("new identity/provenance routes fail closed when no server token is configu
       ["/api/dsh-mneme/identity/links", ""],
       ["/api/dsh-mneme/identity/history", `?entity_id=${entity.id}`],
       ["/api/dsh-mneme/identity/entity-detail", `?id=${entity.id}`],
+      ["/api/dsh-mneme/identity/pending", ""],
       ["/api/dsh-mneme/preferences", ""],
       ["/api/dsh-mneme/intake/provenance", "?memoryId=synthetic"],
       ["/api/dsh-mneme/identity/merge-preview", ""]
@@ -295,6 +338,7 @@ test("configured token still rejects unauthenticated reads of new sensitive rout
       ["/api/dsh-mneme/identity/links", ""],
       ["/api/dsh-mneme/identity/history", `?entity_id=${entity.id}`],
       ["/api/dsh-mneme/identity/entity-detail", `?id=${entity.id}`],
+      ["/api/dsh-mneme/identity/pending", ""],
       ["/api/dsh-mneme/preferences", ""],
       ["/api/dsh-mneme/intake/provenance", "?memoryId=synthetic"]
     ];

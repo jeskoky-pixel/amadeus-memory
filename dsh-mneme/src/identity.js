@@ -21,6 +21,11 @@ const ACTOR_MAX = 200;
 const EXTERNAL_ID_MAX = 200;
 const PLATFORM_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const ALIAS_MAX = 200;
+// Pending assertions are bounded so a hostile/verbose extraction cannot bloat
+// the durable graph state. Normal extraction is far below these ceilings.
+const MAX_PENDING_RELATIONS = 40;
+const MAX_PENDING_ATTRS = 40;
+const MAX_PENDING_PAYLOAD_BYTES = 16 * 1024;
 
 // Typed identifiers shipped before any UI/API had a type field: the original
 // entity type set. `group` is additive and only covers QQ groups for now.
@@ -83,6 +88,58 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_canonical_entity_active
   ON entity_canonical_links(entity_id) WHERE active = 1;
 CREATE INDEX IF NOT EXISTS idx_canonical_target_active
   ON entity_canonical_links(canonical_id) WHERE active = 1;
+
+CREATE TABLE IF NOT EXISTS identity_pending_assertions (
+  id                   TEXT PRIMARY KEY,
+  memory_id            TEXT NOT NULL,
+  display_name         TEXT NOT NULL,
+  normalized_name      TEXT NOT NULL,
+  entity_type          TEXT NOT NULL DEFAULT '',
+  status               TEXT NOT NULL DEFAULT 'pending',
+  payload              TEXT NOT NULL,
+  candidate_entity_ids TEXT,
+  evidence             TEXT,
+  created_at           TEXT NOT NULL,
+  updated_at           TEXT NOT NULL,
+  resolved_entity_id   TEXT,
+  resolved_at          TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_assertion_active
+  ON identity_pending_assertions(memory_id, normalized_name, entity_type)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_pending_assertion_name
+  ON identity_pending_assertions(normalized_name, status);
+CREATE INDEX IF NOT EXISTS idx_pending_assertion_status
+  ON identity_pending_assertions(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS identity_pending_relations (
+  id                TEXT PRIMARY KEY,
+  memory_id         TEXT NOT NULL,
+  from_name         TEXT NOT NULL,
+  from_normalized   TEXT NOT NULL,
+  from_entity_id    TEXT NOT NULL DEFAULT '',
+  from_entity_type  TEXT NOT NULL DEFAULT '',
+  to_name           TEXT NOT NULL,
+  to_normalized     TEXT NOT NULL,
+  to_entity_id      TEXT NOT NULL DEFAULT '',
+  to_entity_type    TEXT NOT NULL DEFAULT '',
+  relation_type     TEXT NOT NULL,
+  status            TEXT NOT NULL DEFAULT 'pending',
+  evidence          TEXT,
+  relation_id       TEXT,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  resolved_at       TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_relation_active
+  ON identity_pending_relations(memory_id, from_normalized, to_normalized, relation_type)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_pending_relation_from
+  ON identity_pending_relations(from_normalized, status);
+CREATE INDEX IF NOT EXISTS idx_pending_relation_to
+  ON identity_pending_relations(to_normalized, status);
+CREATE INDEX IF NOT EXISTS idx_pending_relation_status
+  ON identity_pending_relations(status, updated_at);
 
 CREATE TABLE IF NOT EXISTS entity_merge_reports (
   id              TEXT PRIMARY KEY,
@@ -997,10 +1054,556 @@ export function createIdentityService({ db, store, logger } = {}) {
     return toAlias(db.prepare("SELECT * FROM entity_aliases WHERE id = ?").get(id));
   }
 
+  function toPendingAssertion(row) {
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      memory_id: row.memory_id,
+      display_name: row.display_name,
+      normalized_name: row.normalized_name,
+      entity_type: row.entity_type || null,
+      status: row.status,
+      payload: parseJson(row.payload, {}),
+      candidate_entity_ids: parseJson(row.candidate_entity_ids, []),
+      evidence: parseJson(row.evidence, []),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      resolved_entity_id: row.resolved_entity_id ?? null,
+      resolved_at: row.resolved_at ?? null
+    };
+  }
+
+  function recordPendingAssertion({
+    memory_id, display_name, entity_type = "", attrs = [], relations = [],
+    candidates = [], evidence = [], actor = "entity_extractor"
+  }) {
+    const memoryId = String(memory_id ?? "");
+    const name = normalizeText(display_name);
+    if (!memoryId || !name) return undefined;
+    const type = String(entity_type ?? "");
+    const normalized = normalizeIdentityKey(name);
+    const candidateIds = [...new Set(candidates.flatMap((group) => [
+      group.id, ...(group.member_ids ?? [])
+    ]).filter(Boolean))];
+    const boundedAttrs = attrs.slice(0, MAX_PENDING_ATTRS).map((attr) => ({
+      key: attr.key,
+      value: attr.value,
+      confidence: attr.confidence ?? null
+    }));
+    let boundedRelations = relations.slice(0, MAX_PENDING_RELATIONS).map((rel) => ({
+      from_name: rel.from_name,
+      from_entity_id: rel.from_entity_id ?? null,
+      to_name: rel.to_name,
+      to_entity_id: rel.to_entity_id ?? null,
+      relation_type: rel.relation_type
+    }));
+    let truncated = attrs.length > MAX_PENDING_ATTRS || relations.length > MAX_PENDING_RELATIONS;
+    const serialized = () => JSON.stringify({
+      attrs: boundedAttrs,
+      relations: boundedRelations,
+      truncated
+    });
+    // Hard byte ceiling: drop trailing relations, then attrs, then fall back to
+    // names/evidence only. Material is never silently unbounded.
+    while (Buffer.byteLength(serialized(), "utf8") > MAX_PENDING_PAYLOAD_BYTES && boundedRelations.length) {
+      boundedRelations = boundedRelations.slice(0, -1);
+      truncated = true;
+    }
+    while (Buffer.byteLength(serialized(), "utf8") > MAX_PENDING_PAYLOAD_BYTES && boundedAttrs.length) {
+      boundedAttrs.pop();
+      truncated = true;
+    }
+    const payload = Buffer.byteLength(serialized(), "utf8") > MAX_PENDING_PAYLOAD_BYTES
+      ? JSON.stringify({ attrs: [], relations: [], truncated: true })
+      : serialized();
+    const evidenceJson = JSON.stringify(evidence ?? []);
+    const at = nowIso();
+    const existing = db.prepare(
+      `SELECT id FROM identity_pending_assertions
+       WHERE memory_id = ? AND normalized_name = ? AND entity_type = ? AND status = 'pending'`
+    ).get(memoryId, normalized, type);
+    if (existing) {
+      db.prepare(
+        `UPDATE identity_pending_assertions
+         SET payload = ?, candidate_entity_ids = ?, evidence = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(payload, JSON.stringify(candidateIds), evidenceJson, at, existing.id);
+      return toPendingAssertion(db.prepare("SELECT * FROM identity_pending_assertions WHERE id = ?").get(existing.id));
+    }
+    const id = randomUUID();
+    try {
+      db.prepare(
+        `INSERT INTO identity_pending_assertions
+           (id, memory_id, display_name, normalized_name, entity_type, status, payload,
+            candidate_entity_ids, evidence, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
+      ).run(id, memoryId, name, normalized, type, payload, JSON.stringify(candidateIds), evidenceJson, at, at);
+    } catch (error) {
+      if (!isUniqueConstraint(error)) throw error;
+      // A concurrent extraction won the pending row; reuse it.
+      const row = db.prepare(
+        `SELECT * FROM identity_pending_assertions
+         WHERE memory_id = ? AND normalized_name = ? AND entity_type = ? AND status = 'pending'`
+      ).get(memoryId, normalized, type);
+      return toPendingAssertion(row);
+    }
+    appendAudit({
+      event_type: "pending_identity_recorded",
+      entity_id: null,
+      actor: normalizeActor(actor),
+      payload: { memory_id: memoryId, name, entity_type: type, candidate_entity_ids: candidateIds },
+      evidence: evidence ?? []
+    });
+    return toPendingAssertion(db.prepare("SELECT * FROM identity_pending_assertions WHERE id = ?").get(id));
+  }
+
+  function toPendingRelation(row) {
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      memory_id: row.memory_id,
+      from_name: row.from_name,
+      from_normalized: row.from_normalized,
+      from_entity_id: row.from_entity_id || null,
+      from_entity_type: row.from_entity_type || null,
+      to_name: row.to_name,
+      to_normalized: row.to_normalized,
+      to_entity_id: row.to_entity_id || null,
+      to_entity_type: row.to_entity_type || null,
+      relation_type: row.relation_type,
+      status: row.status,
+      evidence: parseJson(row.evidence, []),
+      relation_id: row.relation_id ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      resolved_at: row.resolved_at ?? null
+    };
+  }
+
+  /**
+   * Persist a relation that involves at least one unresolved endpoint. The row
+   * is independent of the per-entity assertion rows so it can wait for both
+   * endpoints and is retried after each human confirmation.
+   */
+  function recordPendingRelation({
+    memory_id, from_name, from_entity_id, from_entity_type,
+    to_name, to_entity_id, to_entity_type, relation_type,
+    evidence = [], actor = "entity_extractor"
+  }) {
+    const memoryId = String(memory_id ?? "");
+    const from = normalizeText(from_name);
+    const to = normalizeText(to_name);
+    const fromKey = normalizeIdentityKey(from);
+    const toKey = normalizeIdentityKey(to);
+    const type = String(relation_type ?? "").trim();
+    if (!memoryId || !fromKey || !toKey || !type) return undefined;
+    const at = nowIso();
+    const existing = db.prepare(
+      `SELECT * FROM identity_pending_relations
+       WHERE memory_id = ? AND from_normalized = ? AND to_normalized = ?
+         AND relation_type = ? AND status = 'pending'`
+    ).get(memoryId, fromKey, toKey, type);
+    const fromId = String(from_entity_id ?? "");
+    const toId = String(to_entity_id ?? "");
+    if (existing) {
+      db.prepare(
+        `UPDATE identity_pending_relations
+         SET from_name = ?, from_entity_id = ?, from_entity_type = ?,
+             to_name = ?, to_entity_id = ?, to_entity_type = ?,
+             evidence = ?, updated_at = ?
+         WHERE id = ? AND status = 'pending'`
+      ).run(
+        from, fromId || existing.from_entity_id, String(from_entity_type || existing.from_entity_type || ""),
+        to, toId || existing.to_entity_id, String(to_entity_type || existing.to_entity_type || ""),
+        JSON.stringify(evidence ?? []), at, existing.id
+      );
+      return toPendingRelation(db.prepare("SELECT * FROM identity_pending_relations WHERE id = ?").get(existing.id));
+    }
+    const id = randomUUID();
+    try {
+      db.prepare(
+        `INSERT INTO identity_pending_relations
+           (id, memory_id, from_name, from_normalized, from_entity_id, from_entity_type,
+            to_name, to_normalized, to_entity_id, to_entity_type, relation_type, status,
+            evidence, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+      ).run(
+        id, memoryId, from, fromKey, fromId, String(from_entity_type ?? ""),
+        to, toKey, toId, String(to_entity_type ?? ""), type, JSON.stringify(evidence ?? []), at, at
+      );
+    } catch (error) {
+      if (!isUniqueConstraint(error)) throw error;
+      return toPendingRelation(db.prepare(
+        `SELECT * FROM identity_pending_relations
+         WHERE memory_id = ? AND from_normalized = ? AND to_normalized = ?
+           AND relation_type = ? AND status = 'pending'`
+      ).get(memoryId, fromKey, toKey, type));
+    }
+    appendAudit({
+      event_type: "pending_relation_recorded",
+      entity_id: null,
+      actor: normalizeActor(actor),
+      payload: { memory_id: memoryId, from, to, relation_type: type },
+      evidence: evidence ?? []
+    });
+    return toPendingRelation(db.prepare("SELECT * FROM identity_pending_relations WHERE id = ?").get(id));
+  }
+
+  function listPendingRelations({ status = "pending", limit = 200 } = {}) {
+    return db.prepare(
+      `SELECT * FROM identity_pending_relations
+       WHERE (? = '' OR status = ?) ORDER BY updated_at DESC, id LIMIT ?`
+    ).all(String(status ?? ""), String(status ?? ""), Math.max(1, Math.min(500, limit))).map(toPendingRelation);
+  }
+
+  function resolvePendingRelationEndpoint(row, side, snapshot, {
+    entity = null, normalizedAlias = null, explicit = null
+  } = {}) {
+    const name = row[`${side}_name`];
+    const key = row[`${side}_normalized`];
+    const expectedType = row[`${side}_entity_type`] || null;
+    const storedId = row[`${side}_entity_id`] || null;
+    const typeMatches = (candidate) =>
+      !expectedType || !candidate?.type || expectedType === candidate.type;
+    if (storedId) {
+      const stored = entityById(storedId);
+      if (!stored) return { ok: false, reason: "missing-stored-entity" };
+      if (!typeMatches(stored)) return { ok: false, reason: "type-boundary" };
+      return { ok: true, entity: stored };
+    }
+    if (explicit && explicit.memory_id === row.memory_id && explicit.normalized_name === key) {
+      if (!typeMatches(explicit.entity)) return { ok: false, reason: "type-boundary" };
+      return { ok: true, entity: explicit.entity };
+    }
+    // Same-name ambiguity is a hard barrier: even a confirmed alias is not
+    // enough when multiple stable-ID people/groups share the label. A stored ID
+    // or an explicit per-source selection is required.
+    const sameName = snapshot.groups.filter((group) => {
+      if (!typeMatches(group)) return false;
+      return normalizeIdentityKey(group.name) === key ||
+        group.aliases.some((alias) => alias.active && alias.normalized_alias === key);
+    });
+    if (sameName.length > 1) return { ok: false, reason: "ambiguous-entity" };
+    if (entity && normalizedAlias === key) {
+      if (!typeMatches(entity)) return { ok: false, reason: "type-boundary" };
+      return { ok: true, entity };
+    }
+    const confirmed = sameName.filter((group) =>
+      group.aliases.some((alias) => alias.active && alias.confirmed && alias.normalized_alias === key)
+    );
+    if (confirmed.length === 1) {
+      const resolved = snapshot.byId.get(confirmed[0].id) ?? entityById(confirmed[0].id);
+      if (!resolved) return { ok: false, reason: "missing-confirmed-entity" };
+      if (!typeMatches(resolved)) return { ok: false, reason: "type-boundary" };
+      return { ok: true, entity: resolved };
+    }
+    return { ok: false, reason: "unresolved" };
+  }
+
+  function markPendingRelationStale(row, actor, reason) {
+    const at = nowIso();
+    db.prepare(
+      `UPDATE identity_pending_relations
+       SET status = 'stale', resolved_at = ?, updated_at = ?
+       WHERE id = ? AND status = 'pending'`
+    ).run(at, at, row.id);
+    appendAudit({
+      event_type: "pending_relation_stale",
+      entity_id: null,
+      actor: normalizeActor(actor),
+      payload: { pending_relation_id: row.id, memory_id: row.memory_id, reason },
+      evidence: parseJson(row.evidence, [])
+    });
+  }
+
+  /**
+   * Retry pending relations involving one newly confirmed/selected endpoint.
+   * Relations are only written when both endpoints are unambiguous and their
+   * types still satisfy the person/group boundary.
+   */
+  function recoverPendingRelationsForEntity(entity, normalizedAlias, actor = "human", evidence = [], {
+    explicitMemoryId = null, explicitEntityId = null
+  } = {}) {
+    if (!entity || !normalizedAlias) return [];
+    const rows = db.prepare(
+      `SELECT * FROM identity_pending_relations
+       WHERE status = 'pending' AND (from_normalized = ? OR to_normalized = ?)`
+    ).all(normalizedAlias, normalizedAlias);
+    if (!rows.length) return [];
+    const ownTransaction = !db.isTransaction;
+    if (ownTransaction) db.exec("BEGIN IMMEDIATE");
+    const snapshot = loadSnapshot();
+    const explicit = explicitMemoryId && explicitEntityId
+      ? {
+          memory_id: explicitMemoryId,
+          normalized_name: normalizedAlias,
+          entity: entityById(explicitEntityId) ?? entity
+        }
+      : null;
+    const applied = [];
+    try {
+      for (const row of rows) {
+        const source = store.getById(row.memory_id);
+        if (!source || source.forgotten) {
+          markPendingRelationStale(row, actor, source ? "source-forgotten" : "source-missing");
+          continue;
+        }
+        const from = resolvePendingRelationEndpoint(row, "from", snapshot, {
+          entity, normalizedAlias, explicit
+        });
+        const to = resolvePendingRelationEndpoint(row, "to", snapshot, {
+          entity, normalizedAlias, explicit
+        });
+        if (from.ok && to.ok) {
+          let relation = store.getRelations(from.entity.id).find((candidate) =>
+            candidate.memory_id === row.memory_id &&
+            candidate.from_entity === from.entity.id &&
+            candidate.to_entity === to.entity.id &&
+            candidate.relation_type === row.relation_type
+          );
+          if (!relation) {
+            relation = store.saveRelation({
+              from_entity: from.entity.id,
+              to_entity: to.entity.id,
+              relation_type: row.relation_type,
+              memory_id: row.memory_id,
+              source: "pending_identity_recovery",
+              metadata: { recovered_from_pending_relation: row.id }
+            });
+          }
+          const at = nowIso();
+          db.prepare(
+            `UPDATE identity_pending_relations
+             SET status = 'applied', from_entity_id = ?, to_entity_id = ?,
+                 relation_id = ?, resolved_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'pending'`
+          ).run(from.entity.id, to.entity.id, relation?.id ?? null, at, at, row.id);
+          appendAudit({
+            event_type: "pending_relation_applied",
+            entity_id: from.entity.id,
+            related_entity_id: to.entity.id,
+            actor: normalizeActor(actor),
+            payload: {
+              pending_relation_id: row.id,
+              memory_id: row.memory_id,
+              relation_type: row.relation_type,
+              relation_id: relation?.id ?? null
+            },
+            evidence: parseJson(row.evidence, [])
+          });
+          applied.push({ id: row.id, relation_id: relation?.id ?? null });
+          continue;
+        }
+        // Preserve a human-confirmed UUID even while the other endpoint waits.
+        const fromId = from.ok ? from.entity.id : row.from_entity_id;
+        const toId = to.ok ? to.entity.id : row.to_entity_id;
+        if (fromId !== row.from_entity_id || toId !== row.to_entity_id) {
+          db.prepare(
+            `UPDATE identity_pending_relations
+             SET from_entity_id = ?, to_entity_id = ?, updated_at = ?
+             WHERE id = ? AND status = 'pending'`
+          ).run(fromId || "", toId || "", nowIso(), row.id);
+        }
+      }
+      if (ownTransaction) db.exec("COMMIT");
+      return applied;
+    } catch (error) {
+      if (ownTransaction) {
+        try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+      }
+      throw error;
+    }
+  }
+
+  function applyPendingAssertionRow(row, entity, actor, { markStale = false } = {}) {
+    const payload = parseJson(row.payload, {});
+    const attrs = Array.isArray(payload.attrs) ? payload.attrs : [];
+    const relations = Array.isArray(payload.relations) ? payload.relations : [];
+    const at = nowIso();
+    let appliedAttrs = 0;
+    let appliedRelations = 0;
+    const ownTransaction = !db.isTransaction;
+    if (ownTransaction) db.exec("BEGIN IMMEDIATE");
+    const body = () => {
+      const source = store.getById(row.memory_id);
+      if (!source || source.forgotten) {
+        const reason = source ? "source-forgotten" : "source-missing";
+        if (markStale) {
+          db.prepare(
+            `UPDATE identity_pending_assertions
+             SET status = 'stale', resolved_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'pending'`
+          ).run(at, at, row.id);
+          appendAudit({
+            event_type: "pending_identity_stale",
+            entity_id: entity.id,
+            actor: normalizeActor(actor),
+            payload: { pending_id: row.id, memory_id: row.memory_id, reason },
+            evidence: parseJson(row.evidence, [])
+          });
+          return false;
+        }
+        throw new IdentityError(
+          "pending-source-unavailable",
+          `source memory is ${source ? "forgotten" : "missing"}; pending assertion was not applied`
+        );
+      }
+      const unresolvedKey = row.normalized_name;
+      for (const attr of attrs) {
+        if (typeof attr.key !== "string" || typeof attr.value !== "string") continue;
+        store.saveAttr({
+          entity_id: entity.id,
+          attr_key: attr.key,
+          attr_value: attr.value,
+          memory_id: row.memory_id,
+          confidence: attr.confidence ?? null,
+          source: "pending_identity_recovery"
+        });
+        appliedAttrs++;
+      }
+      for (const rel of relations) {
+        if (!rel || typeof rel.relation_type !== "string") continue;
+        const fromNameKey = normalizeIdentityKey(rel.from_name);
+        const toNameKey = normalizeIdentityKey(rel.to_name);
+        let from = rel.from_entity_id ?? null;
+        let to = rel.to_entity_id ?? null;
+        if (!from && fromNameKey === unresolvedKey) from = entity.id;
+        if (!to && toNameKey === unresolvedKey) to = entity.id;
+        if (!from || !to) continue;
+        store.saveRelation({
+          from_entity: from,
+          to_entity: to,
+          relation_type: rel.relation_type,
+          memory_id: row.memory_id,
+          source: "pending_identity_recovery",
+          metadata: { recovered_from_pending: row.id }
+        });
+        appliedRelations++;
+      }
+      db.prepare(
+        `UPDATE identity_pending_assertions
+         SET status = 'applied', resolved_entity_id = ?, resolved_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'pending'`
+      ).run(entity.id, at, at, row.id);
+      appendAudit({
+        event_type: "pending_identity_applied",
+        entity_id: entity.id,
+        actor: normalizeActor(actor),
+        payload: {
+          pending_id: row.id,
+          memory_id: row.memory_id,
+          attrs: appliedAttrs,
+          relations: appliedRelations
+        },
+        evidence: parseJson(row.evidence, [])
+      });
+      return true;
+    };
+    try {
+      const applied = body();
+      if (ownTransaction) db.exec("COMMIT");
+      return applied
+        ? { attrs: appliedAttrs, relations: appliedRelations }
+        : { stale: true, attrs: 0, relations: 0 };
+    } catch (error) {
+      if (ownTransaction) {
+        try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+      }
+      throw error;
+    }
+  }
+
+  function recoverPendingAssertionsForEntity(entity, normalizedAlias, actor = "human", evidence = []) {
+    if (!entity || !normalizedAlias) return [];
+    const rows = db.prepare(
+      `SELECT * FROM identity_pending_assertions
+       WHERE normalized_name = ? AND status = 'pending'`
+    ).all(normalizedAlias);
+    if (!rows.length) return [];
+    const snapshot = loadSnapshot();
+    const target = snapshot.resolve(entity.id);
+    const applied = [];
+    for (const row of rows) {
+      if (row.entity_type && entity.type && row.entity_type !== entity.type) continue;
+      const candidates = parseJson(row.candidate_entity_ids, []);
+      const canonicalCandidates = [...new Set(candidates.map((id) => snapshot.resolve(id)))];
+      // Only a single safe canonical candidate may be recovered automatically.
+      // Ambiguous same-name assertions stay pending until an explicit selection.
+      if (canonicalCandidates.length !== 1 || canonicalCandidates[0] !== target) continue;
+      const result = applyPendingAssertionRow(row, entity, actor, { markStale: true });
+      if (!result.stale) applied.push({ id: row.id, ...result });
+    }
+    if (applied.length) {
+      appendAudit({
+        event_type: "pending_identity_recovery",
+        entity_id: entity.id,
+        actor: normalizeActor(actor),
+        payload: { applied },
+        evidence
+      });
+    }
+    return applied;
+  }
+
+  function resolvePendingAssertion({ id, entity_id, actor = "human", evidence = [] }) {
+    const row = db.prepare(
+      "SELECT * FROM identity_pending_assertions WHERE id = ? AND status = 'pending'"
+    ).get(String(id ?? ""));
+    if (!row) throw new IdentityError("pending-not-found", "pending assertion not found");
+    const entity = entityById(String(entity_id ?? ""));
+    if (!entity) throw new IdentityError("entity-not-found", "entity not found");
+    if (row.entity_type && entity.type && row.entity_type !== entity.type) {
+      throw new IdentityError("type-boundary", "pending assertion type does not match entity");
+    }
+    const ownTransaction = !db.isTransaction;
+    if (ownTransaction) db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = applyPendingAssertionRow(row, entity, actor);
+      const relations = recoverPendingRelationsForEntity(
+        entity, row.normalized_name, actor, evidence,
+        { explicitMemoryId: row.memory_id, explicitEntityId: entity.id }
+      );
+      if (ownTransaction) db.exec("COMMIT");
+      return { ...result, pending_relations: relations };
+    } catch (error) {
+      if (ownTransaction) {
+        try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+      }
+      throw error;
+    }
+  }
+
+  function listPendingAssertions({ status = "pending", limit = 100 } = {}) {
+    return db.prepare(
+      `SELECT * FROM identity_pending_assertions
+       WHERE (? = '' OR status = ?) ORDER BY updated_at DESC, id LIMIT ?`
+    ).all(String(status ?? ""), String(status ?? ""), Math.max(1, Math.min(500, limit))).map(toPendingAssertion);
+  }
+
   function confirmAlias({ id, actor, evidence }) {
     const row = db.prepare("SELECT * FROM entity_aliases WHERE id = ? AND active = 1").get(String(id ?? ""));
     if (!row) throw new IdentityError("alias-not-found", "active alias not found");
-    if (row.confirmed === 1) return toAlias(row);
+    const recover = () => {
+      const entity = entityById(row.entity_id);
+      return {
+        assertions: recoverPendingAssertionsForEntity(entity, row.normalized_alias, actor, evidence),
+        relations: recoverPendingRelationsForEntity(entity, row.normalized_alias, actor, evidence)
+      };
+    };
+    if (row.confirmed === 1) {
+      // Already confirmed: recovery failure is surfaced, not swallowed. Pending
+      // rows roll back and can be retried/selected later.
+      try {
+        recover();
+      } catch (error) {
+        throw new IdentityError(
+          "pending-recovery-failed",
+          "alias is already confirmed but pending assertion recovery failed; pending rows were retained",
+          { cause: String(error?.message ?? error) }
+        );
+      }
+      return toAlias(row);
+    }
     const conflict = aliasConflict(row.normalized_alias, row.entity_id);
     if (conflict) {
       throw new IdentityError("alias-conflict", "confirmed alias already belongs to another entity", {
@@ -1008,21 +1611,39 @@ export function createIdentityService({ db, store, logger } = {}) {
       });
     }
     const at = nowIso();
+    const ownTransaction = !db.isTransaction;
+    if (ownTransaction) db.exec("BEGIN IMMEDIATE");
     try {
-      db.prepare("UPDATE entity_aliases SET confirmed = 1, updated_at = ? WHERE id = ?").run(at, row.id);
-    } catch (error) {
-      if (isUniqueConstraint(error)) {
-        throw new IdentityError("alias-conflict", "alias was confirmed concurrently by another entity");
+      try {
+        db.prepare("UPDATE entity_aliases SET confirmed = 1, updated_at = ? WHERE id = ?").run(at, row.id);
+      } catch (error) {
+        if (isUniqueConstraint(error)) {
+          throw new IdentityError("alias-conflict", "alias was confirmed concurrently by another entity");
+        }
+        throw error;
       }
-      throw error;
+      appendAudit({
+        event_type: "alias_confirm",
+        entity_id: row.entity_id,
+        actor: normalizeActor(actor),
+        payload: { alias: row.alias, normalized_alias: row.normalized_alias },
+        evidence: evidence ?? []
+      });
+      // Recover in the same transaction: if any pending attr/relation write
+      // fails, the confirmation and all partial recovery writes roll back.
+      recover();
+      if (ownTransaction) db.exec("COMMIT");
+    } catch (error) {
+      if (ownTransaction) {
+        try { db.exec("ROLLBACK"); } catch { /* ignore */ }
+      }
+      if (error?.name === "IdentityError") throw error;
+      throw new IdentityError(
+        "pending-recovery-failed",
+        "alias confirmation rolled back because pending assertion recovery failed",
+        { cause: String(error?.message ?? error) }
+      );
     }
-    appendAudit({
-      event_type: "alias_confirm",
-      entity_id: row.entity_id,
-      actor: normalizeActor(actor),
-      payload: { alias: row.alias, normalized_alias: row.normalized_alias },
-      evidence: evidence ?? []
-    });
     return toAlias(db.prepare("SELECT * FROM entity_aliases WHERE id = ?").get(row.id));
   }
 
@@ -1828,6 +2449,13 @@ export function createIdentityService({ db, store, logger } = {}) {
     undoMerge,
     listLinks,
     history,
+    recordPendingAssertion,
+    listPendingAssertions,
+    resolvePendingAssertion,
+    recoverPendingAssertionsForEntity,
+    recordPendingRelation,
+    listPendingRelations,
+    recoverPendingRelationsForEntity,
     entityIdsForMemory,
     canonicalEntityIdsForMemory,
     relationsForEntity,

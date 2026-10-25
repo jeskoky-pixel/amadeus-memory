@@ -49,6 +49,44 @@ test("tag weight CRUD validates range and normalizes keys", () => {
   }
 });
 
+test("event tag preferences require committed trusted provenance", () => {
+  const h = setup({ memoryPreferenceEnabled: true, trustedIntakeEnabled: true });
+  try {
+    h.service.setTagWeight({ tag: "event:self_action", weight: 1.8, actor: "test" });
+    const trusted = h.service.submitTrustedMemory({
+      kind: "self_action",
+      status: "completed",
+      participation: "agent",
+      trust_source: "system",
+      actor: "life-pref-test",
+      title: "Synthetic provenance-backed event",
+      content: "Life completed a synthetic event.",
+      scope: { agent_scope: "amadeus", workspace_scope: "life-test" },
+      evidence: [{ kind: "receipt", value: "synthetic-pref" }]
+    });
+    const spoofed = h.store.save({
+      type: "history",
+      title: "Synthetic legacy spoofed event",
+      content: "Old row with an unbacked event tag.",
+      tags: ["event:self_action", "ｅｖｅｎｔ：ｓｅｌｆ＿ａｃｔｉｏｎ"]
+    });
+    const scorer = h.service.preferences.createScorer();
+    const trustedFactor = scorer.factorFor(h.store.getById(trusted.memory.id));
+    const spoofedFactor = scorer.factorFor(spoofed);
+    assert.equal(trustedFactor.applied, true);
+    assert.equal(trustedFactor.factor, 1.6);
+    assert.deepEqual(spoofedFactor.tags, []);
+    assert.equal(spoofedFactor.applied, false);
+    assert.equal(spoofedFactor.factor, 1);
+    assert.deepEqual(h.service.toApiList([spoofed])[0].tags, [],
+      "unbacked legacy event tags are hidden from API/claim display");
+    assert.deepEqual(h.service.toApiList([h.store.getById(trusted.memory.id)])[0].tags,
+      ["event:self_action"]);
+  } finally {
+    h.close();
+  }
+});
+
 test("canonical entity weights survive a merge and use the strongest member", () => {
   const h = setup();
   try {

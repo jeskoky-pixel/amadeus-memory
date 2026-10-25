@@ -207,7 +207,8 @@ Amadeus 分支在实体层之上增加三块**默认不影响旧行为**的能�
 - **稳定身份**：实体 UUID 不变；新增带类型的外部标识 `(platform, entity_type, external_id)`、带来源/确认/撤销状态的别名、可逆规范映射与 append-only 审计。旧实体名只作为未确认标签，不自动合并；QQ 群号按 `QQ群<id>` / `群<id>` 解析为 group 标识；旧库中 organization 型 QQ 群名也按确定性数字规则重分类为 group，原类型写入审计/证据；同号重复群保留为人工合并候选，不自动合并。同名人物只给候选，必须人工确认。
 - **非破坏去重**：同名/相似名只生成候选；合并 = 插入规范链接，不改任何记忆、属性历史、关系 source/weight 或实体 UUID。先 `merge-preview` 出影响报告，再 `merge`，可 `merge-undo`。图谱 / `entity:` 搜索 / 记忆侧实体 / 计数统一按规范视图去重。
 - **偏好权重**（`memoryPreferenceEnabled`，默认关）：标签与规范实体权重范围 0.5–2.0，默认 1.0；组合后夹在 0.6–1.6，并只对达到最高相关度 65% 的候选生效。关闭或全为 1.0 时检索结果不变。自动重要性 1–5 不参与、也不被改写。
-- **受信经历写入**（`trustedIntakeEnabled`，默认关）：`POST /api/dsh-mneme/intake` 要求 `apiToken`、显式 scope、来源/参与者/完成状态；planned/unconfirmed 一律拒绝。只有该通道派生 `event:self_action` 等确定性标签，LLM 不会从闲聊里猜「做过」。
+- **受信经历写入**（`trustedIntakeEnabled`，默认关）：`POST /api/dsh-mneme/intake` 要求 `apiToken`、显式 scope、来源/参与者/完成状态；planned/unconfirmed 一律拒绝。只有内部受控写入通道能派生 `event:self_action` 等标签，`source=trusted_intake`、大小写/Unicode 变体或未知 `event:*` 标签都不会被普通保存/更新接受；更新与标题去重会保留已提交 provenance 对应的合法事件。带 `request_id` 的请求按 actor + request id 做持久幂等：同载荷重放返回原记忆/来源，不重复写；不同载荷返回 409。无 request_id 保留旧标题去重兼容。
+- **待定身份恢复**：无法安全归属的 name-only 人物/群断言会连同来源记忆、属性、候选与证据落成 `identity_pending_assertions`；涉及未解析端点的关系另存 `identity_pending_relations`，只有两端都能由已存 UUID、人工确认别名或显式选择唯一解析且类型边界成立时才写回，绝不从裸名字猜 UUID。单候选确认后自动恢复（跨重启），多候选/同名多稳定 ID 保持待定；忘记/删除的来源只标记 stale，不会复活为图关系。
 
 身份、别名、外部标识、重复候选、合并历史与偏好权重接口均要求服务端 `apiToken`（未配置时返回 `503 api-token-required`，面板显示设置提示）；旧实体目录/图谱开放接口只返回原有公开字段，并且只按公开实体 UUID / 精确显示名解析，**不会**用别名或外部 ID 作为查询键（防止探测隐私别名）。实体目录按 `limit`/`offset`（可选 `q` 仅匹配公开显示名）分页并返回真实 `total`/`has_more`，面板用「加载更多」保证大图谱也可完整浏览，不会静默隐藏第 500 条之后的实体。
 

@@ -52,7 +52,7 @@ const ROUTE_ERROR_NOT_FOUND = new Set([
 const ROUTE_ERROR_CONFLICT = new Set([
   "alias-conflict", "external-id-conflict", "type-boundary", "merge-blocked", "stale-report",
   "report-applied", "report-undone", "has-dependents", "cycle", "already-linked",
-  "conflicting-stable-ids", "same-entity", "alias-duplicate"
+  "conflicting-stable-ids", "same-entity", "alias-duplicate", "request-id-conflict"
 ]);
 function sendRouteError(res, error) {
   const code = typeof error?.code === "string" ? error.code : "";
@@ -1530,16 +1530,23 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
           mention_count: group.mention_count ?? 1,
           canonical_memory_id: group.canonical_memory_id ?? null
         }));
-        // `total` is the true canonical count (or filtered count), not the page
-        // length; offset/has_more make the whole graph reachable in bounded pages.
-        sendJson(res, 200, {
-          entities,
-          total: page.total,
-          offset: page.offset,
-          limit: page.limit,
-          has_more: page.has_more,
-          query: page.query ?? ""
-        });
+        const paged = url.searchParams.has("limit") || url.searchParams.has("offset") || url.searchParams.has("q");
+        // Preserve the legacy no-parameter response exactly; pagination metadata
+        // is added only when the caller asks for a page/query.
+        if (!paged) {
+          sendJson(res, 200, { entities, total: page.total });
+        } else {
+          // `total` is the true canonical count (or filtered count), not the page
+          // length; offset/has_more make the whole graph reachable in bounded pages.
+          sendJson(res, 200, {
+            entities,
+            total: page.total,
+            offset: page.offset,
+            limit: page.limit,
+            has_more: page.has_more,
+            query: page.query ?? ""
+          });
+        }
       } catch {
         sendJson(res, 500, { error: "internal" });
       }
@@ -1866,6 +1873,45 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
           },
           attrs: service.getCurrentAttrs?.(group.id) ?? [],
           relations: service.getRelations?.(group.id) ?? []
+        });
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/pending",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        if (req.method === "GET" || req.method === "HEAD") {
+          const url = new URL(req.url, "http://localhost");
+          const status = (url.searchParams.get("status") ?? "pending").trim();
+          const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") ?? 100) || 100));
+          return sendJson(res, 200, {
+            pending: service.listPendingAssertions({ status, limit }),
+            pending_relations: service.listPendingRelations({ status, limit })
+          });
+        }
+        if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+        return readBody(req, res).then((text) => {
+          if (text === null) return undefined;
+          try {
+            const body = parseBody(text);
+            return sendJson(res, 200, {
+              resolved: service.resolvePendingAssertion({
+                id: body.id,
+                entity_id: body.entity_id,
+                actor: body.actor ?? "panel",
+                evidence: body.evidence
+              })
+            });
+          } catch (error) {
+            return sendRouteError(res, error);
+          }
         });
       } catch (error) {
         return sendRouteError(res, error);

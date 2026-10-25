@@ -1,0 +1,2703 @@
+{
+  "generated_at": "2026-10-25T06:34:58.689Z",
+  "fixture": "synthetic: 4 old important, 3 close birthday, 3 close weekend, 6 self actions, 28 group chatter, 6 irrelevant high-weight; 50 memories",
+  "queries": [
+    "birthday dinner Aster",
+    "workshop supplies ordered",
+    "weekend plan"
+  ],
+  "top_k": 5,
+  "runs": 3,
+  "iterations": 20,
+  "arms": [
+    {
+      "id": "A",
+      "label": "original_baseline"
+    },
+    {
+      "id": "B",
+      "label": "pool_only_neutral"
+    },
+    {
+      "id": "C",
+      "label": "tag_weights_only"
+    },
+    {
+      "id": "D",
+      "label": "tag_plus_entity_weights"
+    },
+    {
+      "id": "all1",
+      "label": "all_1_0_control"
+    }
+  ],
+  "background_llm_calls_note": "No provider, extractor, dream or summarize hook is installed; every arm makes 0 background LLM calls.",
+  "samples": [
+    {
+      "run": 1,
+      "arm": "A",
+      "label": "original_baseline",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "46940cf2-a2d6-4db3-a709-fa72216b3dd7",
+              "f4904545-3799-4a11-b3ef-9ee2271ae153",
+              "27ae8f41-bbda-4791-a5df-ba53b5df8b7f",
+              "f3d771a3-2f54-4529-9d70-4e609dfd3237",
+              "103d22ed-d9a1-4be4-b20e-6752ee95a668",
+              "8dc7a727-bd37-46ac-acd1-06422031075a",
+              "03a23bd8-0726-47e7-b050-949b83624041"
+            ],
+            "ranks": [
+              {
+                "id": "46940cf2-a2d6-4db3-a709-fa72216b3dd7",
+                "rank": null
+              },
+              {
+                "id": "f4904545-3799-4a11-b3ef-9ee2271ae153",
+                "rank": null
+              },
+              {
+                "id": "27ae8f41-bbda-4791-a5df-ba53b5df8b7f",
+                "rank": null
+              },
+              {
+                "id": "f3d771a3-2f54-4529-9d70-4e609dfd3237",
+                "rank": null
+              },
+              {
+                "id": "103d22ed-d9a1-4be4-b20e-6752ee95a668",
+                "rank": null
+              },
+              {
+                "id": "8dc7a727-bd37-46ac-acd1-06422031075a",
+                "rank": null
+              },
+              {
+                "id": "03a23bd8-0726-47e7-b050-949b83624041",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "6ae557d1-b549-4bc3-930c-d6cd26fe2c40",
+              "54b97dc1-e27e-4bc8-9b8b-891023d368db",
+              "43c6efd7-891c-41d3-9cc4-1b09961a6482",
+              "a3ab077f-622e-4575-a18d-63e883888732",
+              "2d9c1c73-76f5-4ea9-bf57-97eb61397225",
+              "c4739178-3ff8-47fb-812d-b231101da730"
+            ],
+            "ranks": [
+              {
+                "id": "6ae557d1-b549-4bc3-930c-d6cd26fe2c40",
+                "rank": null
+              },
+              {
+                "id": "54b97dc1-e27e-4bc8-9b8b-891023d368db",
+                "rank": null
+              },
+              {
+                "id": "43c6efd7-891c-41d3-9cc4-1b09961a6482",
+                "rank": null
+              },
+              {
+                "id": "a3ab077f-622e-4575-a18d-63e883888732",
+                "rank": null
+              },
+              {
+                "id": "2d9c1c73-76f5-4ea9-bf57-97eb61397225",
+                "rank": null
+              },
+              {
+                "id": "c4739178-3ff8-47fb-812d-b231101da730",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "be5d0542-8aed-4187-99ef-cfe3e643653e",
+              "814353af-f2d4-43d2-ace9-53ddfc450caf",
+              "e0ed92de-d201-4470-a74f-843926ae4402"
+            ],
+            "ranks": [
+              {
+                "id": "be5d0542-8aed-4187-99ef-cfe3e643653e",
+                "rank": 3
+              },
+              {
+                "id": "814353af-f2d4-43d2-ace9-53ddfc450caf",
+                "rank": 2
+              },
+              {
+                "id": "e0ed92de-d201-4470-a74f-843926ae4402",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.605,
+        "p95": 8.804,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.267,
+        "p95": 0.468
+      },
+      "db_bytes": 344064,
+      "heap_delta_bytes": 2454896,
+      "heap_after_seed_bytes": 1515584,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 1,
+      "arm": "B",
+      "label": "pool_only_neutral",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "e61b5260-7ea5-4700-884b-23a678d7b8ed",
+              "8e1c1fb8-d097-481b-8d47-c1cf70164b6f",
+              "08af6311-e741-4bd5-90b6-c78cdc2d2f54",
+              "c1c0d324-5903-4643-b482-280e4fa5b3b0",
+              "464b34ce-c1e4-4a2a-81d0-a7964c729c8b",
+              "1c3fc84c-e014-4079-a035-77a9fad206fe",
+              "ecb59a54-5622-490e-a3d5-af6f2ea9859d"
+            ],
+            "ranks": [
+              {
+                "id": "e61b5260-7ea5-4700-884b-23a678d7b8ed",
+                "rank": null
+              },
+              {
+                "id": "8e1c1fb8-d097-481b-8d47-c1cf70164b6f",
+                "rank": null
+              },
+              {
+                "id": "08af6311-e741-4bd5-90b6-c78cdc2d2f54",
+                "rank": null
+              },
+              {
+                "id": "c1c0d324-5903-4643-b482-280e4fa5b3b0",
+                "rank": null
+              },
+              {
+                "id": "464b34ce-c1e4-4a2a-81d0-a7964c729c8b",
+                "rank": null
+              },
+              {
+                "id": "1c3fc84c-e014-4079-a035-77a9fad206fe",
+                "rank": null
+              },
+              {
+                "id": "ecb59a54-5622-490e-a3d5-af6f2ea9859d",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "89fbb1df-6412-427d-9d29-d075ec4f4490",
+              "79d89995-a753-4e2a-aaf0-7234bb5e36df",
+              "73ca8ec6-7adb-4074-b1c0-c49027c90759",
+              "3e867aff-4ba2-46c5-8a98-16a1116566e5",
+              "e285b5e6-36de-482b-a2e0-55e259274900",
+              "3c3c43d6-5d43-4a39-9f12-5a5d2d1968d0"
+            ],
+            "ranks": [
+              {
+                "id": "89fbb1df-6412-427d-9d29-d075ec4f4490",
+                "rank": null
+              },
+              {
+                "id": "79d89995-a753-4e2a-aaf0-7234bb5e36df",
+                "rank": null
+              },
+              {
+                "id": "73ca8ec6-7adb-4074-b1c0-c49027c90759",
+                "rank": null
+              },
+              {
+                "id": "3e867aff-4ba2-46c5-8a98-16a1116566e5",
+                "rank": null
+              },
+              {
+                "id": "e285b5e6-36de-482b-a2e0-55e259274900",
+                "rank": null
+              },
+              {
+                "id": "3c3c43d6-5d43-4a39-9f12-5a5d2d1968d0",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "4ebdfdf2-bc91-4d3e-90d4-9bd22300d1d8",
+              "4c1dcd9c-b9a7-4f0b-8c79-d381e83d4436",
+              "d4df0529-fe99-4980-be05-15388c6b760f"
+            ],
+            "ranks": [
+              {
+                "id": "4ebdfdf2-bc91-4d3e-90d4-9bd22300d1d8",
+                "rank": 3
+              },
+              {
+                "id": "4c1dcd9c-b9a7-4f0b-8c79-d381e83d4436",
+                "rank": 2
+              },
+              {
+                "id": "d4df0529-fe99-4980-be05-15388c6b760f",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.474,
+        "p95": 7.066,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.218,
+        "p95": 0.36
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 899128,
+      "heap_after_seed_bytes": 672944,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 1,
+      "arm": "C",
+      "label": "tag_weights_only",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "089a69bd-848c-4a37-8e9a-3ad08061e717",
+              "00dde0d2-46da-40c6-8676-f6927a72d38c",
+              "d707d23a-ca7d-467c-92bb-6b33b26c4d37",
+              "d7ea1d9c-4a2b-47ca-beab-14397058849d",
+              "0edb26b0-e519-43aa-b247-c292bab96403",
+              "a67af5ab-e1d8-473f-9026-bb1c49dc6af8",
+              "96606b2d-5f59-4a63-af21-92f66d0dd41d"
+            ],
+            "ranks": [
+              {
+                "id": "089a69bd-848c-4a37-8e9a-3ad08061e717",
+                "rank": null
+              },
+              {
+                "id": "00dde0d2-46da-40c6-8676-f6927a72d38c",
+                "rank": null
+              },
+              {
+                "id": "d707d23a-ca7d-467c-92bb-6b33b26c4d37",
+                "rank": 5
+              },
+              {
+                "id": "d7ea1d9c-4a2b-47ca-beab-14397058849d",
+                "rank": 4
+              },
+              {
+                "id": "0edb26b0-e519-43aa-b247-c292bab96403",
+                "rank": 3
+              },
+              {
+                "id": "a67af5ab-e1d8-473f-9026-bb1c49dc6af8",
+                "rank": 2
+              },
+              {
+                "id": "96606b2d-5f59-4a63-af21-92f66d0dd41d",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "da867ed7-6a68-49df-96fc-2aeea55d838d",
+              "84950bfb-eff0-4893-ae23-01c84bf98b6a",
+              "ba94c29d-ac5b-4b06-bc82-01c5aee2626a",
+              "3f6c1de9-f8f0-4374-939d-3378b4802c53",
+              "80ce536d-72b7-4170-9903-08c4e69addcb",
+              "7b49c645-fafc-4cad-923a-c92df0cd14ab"
+            ],
+            "ranks": [
+              {
+                "id": "da867ed7-6a68-49df-96fc-2aeea55d838d",
+                "rank": null
+              },
+              {
+                "id": "84950bfb-eff0-4893-ae23-01c84bf98b6a",
+                "rank": 5
+              },
+              {
+                "id": "ba94c29d-ac5b-4b06-bc82-01c5aee2626a",
+                "rank": 4
+              },
+              {
+                "id": "3f6c1de9-f8f0-4374-939d-3378b4802c53",
+                "rank": 3
+              },
+              {
+                "id": "80ce536d-72b7-4170-9903-08c4e69addcb",
+                "rank": 2
+              },
+              {
+                "id": "7b49c645-fafc-4cad-923a-c92df0cd14ab",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "a6b73b30-a6f7-42d9-8ad8-7c5c7bd91b6f",
+              "ac071f74-3f01-461b-94db-4c0a9e41fc84",
+              "00337bdd-0435-4986-95aa-ee0dbd3e063d"
+            ],
+            "ranks": [
+              {
+                "id": "a6b73b30-a6f7-42d9-8ad8-7c5c7bd91b6f",
+                "rank": 3
+              },
+              {
+                "id": "ac071f74-3f01-461b-94db-4c0a9e41fc84",
+                "rank": 2
+              },
+              {
+                "id": "00337bdd-0435-4986-95aa-ee0dbd3e063d",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 6.846,
+        "p95": 10.617,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.237,
+        "p95": 0.394
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 1991224,
+      "heap_after_seed_bytes": 198096,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 1,
+      "arm": "D",
+      "label": "tag_plus_entity_weights",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "600dc803-6e9f-4aa7-b8ea-318e3c4cd37e",
+              "9cec6dde-af38-430e-af06-addf3697b581",
+              "607d8bc2-bed4-4933-95f7-61600e7343d2",
+              "871b09f7-6480-48f0-bac4-09e38ba92f7b",
+              "65ab25e5-54fd-4595-bdaf-33cfaef95df5",
+              "208d05d6-2e87-4217-b0b4-ed75c2f7c85d",
+              "c032a0d0-3379-4341-aa6b-ae39679a1ba9"
+            ],
+            "ranks": [
+              {
+                "id": "600dc803-6e9f-4aa7-b8ea-318e3c4cd37e",
+                "rank": null
+              },
+              {
+                "id": "9cec6dde-af38-430e-af06-addf3697b581",
+                "rank": null
+              },
+              {
+                "id": "607d8bc2-bed4-4933-95f7-61600e7343d2",
+                "rank": 5
+              },
+              {
+                "id": "871b09f7-6480-48f0-bac4-09e38ba92f7b",
+                "rank": 4
+              },
+              {
+                "id": "65ab25e5-54fd-4595-bdaf-33cfaef95df5",
+                "rank": 3
+              },
+              {
+                "id": "208d05d6-2e87-4217-b0b4-ed75c2f7c85d",
+                "rank": 2
+              },
+              {
+                "id": "c032a0d0-3379-4341-aa6b-ae39679a1ba9",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "dbf6d281-901b-429f-a3a5-6bd8615b8fd6",
+              "9129fb80-c7fb-423f-8d74-afba1b3e8115",
+              "d9ca9580-a835-460b-859c-38dec74453a1",
+              "af76d152-f130-477c-81fb-4631cf59dfec",
+              "1bffe84c-1138-4360-9c3e-901eeab8df13",
+              "bf5a6093-4d5d-46ef-a717-d403f94dbf6d"
+            ],
+            "ranks": [
+              {
+                "id": "dbf6d281-901b-429f-a3a5-6bd8615b8fd6",
+                "rank": null
+              },
+              {
+                "id": "9129fb80-c7fb-423f-8d74-afba1b3e8115",
+                "rank": 5
+              },
+              {
+                "id": "d9ca9580-a835-460b-859c-38dec74453a1",
+                "rank": 4
+              },
+              {
+                "id": "af76d152-f130-477c-81fb-4631cf59dfec",
+                "rank": 3
+              },
+              {
+                "id": "1bffe84c-1138-4360-9c3e-901eeab8df13",
+                "rank": 2
+              },
+              {
+                "id": "bf5a6093-4d5d-46ef-a717-d403f94dbf6d",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "e1e8b0cc-0ee3-4a2c-b437-95297ccb2cec",
+              "65fbd5c5-cf6a-43de-8d4b-aebff0695dcf",
+              "4f5785af-7c3d-4f7d-ac55-7783ee35c7f0"
+            ],
+            "ranks": [
+              {
+                "id": "e1e8b0cc-0ee3-4a2c-b437-95297ccb2cec",
+                "rank": 3
+              },
+              {
+                "id": "65fbd5c5-cf6a-43de-8d4b-aebff0695dcf",
+                "rank": 2
+              },
+              {
+                "id": "4f5785af-7c3d-4f7d-ac55-7783ee35c7f0",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 6.571,
+        "p95": 9.719,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.255,
+        "p95": 0.589
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 2129320,
+      "heap_after_seed_bytes": 242584,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 1,
+      "arm": "all1",
+      "label": "all_1_0_control",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "4a54e4d4-70b6-4f78-8793-5c27b7aab0fb",
+              "62592575-076e-49f4-b341-15efcd197d7b",
+              "ceb13480-68fd-45e3-81db-905fb3d9577c",
+              "5c833b3e-e98d-414c-9380-00e02bb81423",
+              "654929fa-f8d2-4a6b-ac3c-cc2bd3a3ceb6",
+              "e32df0ee-8328-4da6-951c-787e8f55f45d",
+              "1c7c0c6f-07f1-4cba-be73-d9ff7219d164"
+            ],
+            "ranks": [
+              {
+                "id": "4a54e4d4-70b6-4f78-8793-5c27b7aab0fb",
+                "rank": null
+              },
+              {
+                "id": "62592575-076e-49f4-b341-15efcd197d7b",
+                "rank": null
+              },
+              {
+                "id": "ceb13480-68fd-45e3-81db-905fb3d9577c",
+                "rank": null
+              },
+              {
+                "id": "5c833b3e-e98d-414c-9380-00e02bb81423",
+                "rank": null
+              },
+              {
+                "id": "654929fa-f8d2-4a6b-ac3c-cc2bd3a3ceb6",
+                "rank": null
+              },
+              {
+                "id": "e32df0ee-8328-4da6-951c-787e8f55f45d",
+                "rank": null
+              },
+              {
+                "id": "1c7c0c6f-07f1-4cba-be73-d9ff7219d164",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "155065a8-1d79-4271-8087-b86e19c4fa3e",
+              "4977e5f2-aa79-45e4-8811-5bb402e78b0e",
+              "126bbd80-cf7c-43d2-a53f-5581488a041c",
+              "91f835e5-701c-4491-9d02-a93712060d7e",
+              "3088bb9d-301c-4b94-bb2e-3cbe9998586e",
+              "09d10cf7-545b-4ba9-bdc1-85a530296bbb"
+            ],
+            "ranks": [
+              {
+                "id": "155065a8-1d79-4271-8087-b86e19c4fa3e",
+                "rank": null
+              },
+              {
+                "id": "4977e5f2-aa79-45e4-8811-5bb402e78b0e",
+                "rank": null
+              },
+              {
+                "id": "126bbd80-cf7c-43d2-a53f-5581488a041c",
+                "rank": null
+              },
+              {
+                "id": "91f835e5-701c-4491-9d02-a93712060d7e",
+                "rank": null
+              },
+              {
+                "id": "3088bb9d-301c-4b94-bb2e-3cbe9998586e",
+                "rank": null
+              },
+              {
+                "id": "09d10cf7-545b-4ba9-bdc1-85a530296bbb",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "80865bab-3d35-4faa-aa12-234175b30216",
+              "2188060f-13b9-4366-9404-2c1688acb355",
+              "3ade72fa-68db-4999-9ad8-0660b3691e11"
+            ],
+            "ranks": [
+              {
+                "id": "80865bab-3d35-4faa-aa12-234175b30216",
+                "rank": 3
+              },
+              {
+                "id": "2188060f-13b9-4366-9404-2c1688acb355",
+                "rank": 2
+              },
+              {
+                "id": "3ade72fa-68db-4999-9ad8-0660b3691e11",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.386,
+        "p95": 7.816,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.416,
+        "p95": 0.773
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 2361464,
+      "heap_after_seed_bytes": -3947984,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "arm": "B",
+      "label": "pool_only_neutral",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "b9c2b28f-c266-4424-bae9-022649bfa2be",
+              "48baa055-af74-4b94-a1f1-19d9b4796fc6",
+              "45a57e12-4d41-4b75-9746-a55f7b997d42",
+              "5c9e9a72-caf3-476d-b649-5dba687b6c50",
+              "889cc402-867f-48b7-b15a-b65dcd1af8a0",
+              "4562f39b-5217-4679-92e6-043ee09fc386",
+              "1f22d060-5c69-4c16-880b-01136c230760"
+            ],
+            "ranks": [
+              {
+                "id": "b9c2b28f-c266-4424-bae9-022649bfa2be",
+                "rank": null
+              },
+              {
+                "id": "48baa055-af74-4b94-a1f1-19d9b4796fc6",
+                "rank": null
+              },
+              {
+                "id": "45a57e12-4d41-4b75-9746-a55f7b997d42",
+                "rank": null
+              },
+              {
+                "id": "5c9e9a72-caf3-476d-b649-5dba687b6c50",
+                "rank": null
+              },
+              {
+                "id": "889cc402-867f-48b7-b15a-b65dcd1af8a0",
+                "rank": null
+              },
+              {
+                "id": "4562f39b-5217-4679-92e6-043ee09fc386",
+                "rank": null
+              },
+              {
+                "id": "1f22d060-5c69-4c16-880b-01136c230760",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "34f50518-c7d5-4f8a-93bc-0ad4dbc3e252",
+              "520bfedc-8268-453a-b682-a58255a80fcc",
+              "a60859c0-bf16-4fe4-9eee-b3963b5c42c6",
+              "60f2728c-3c73-41bd-bc70-8b8b7253c26e",
+              "44758081-9cce-4a6f-8f71-089cdb616219",
+              "5b6cbdad-deb0-4104-b7d0-b4bf9f91bb1a"
+            ],
+            "ranks": [
+              {
+                "id": "34f50518-c7d5-4f8a-93bc-0ad4dbc3e252",
+                "rank": null
+              },
+              {
+                "id": "520bfedc-8268-453a-b682-a58255a80fcc",
+                "rank": null
+              },
+              {
+                "id": "a60859c0-bf16-4fe4-9eee-b3963b5c42c6",
+                "rank": null
+              },
+              {
+                "id": "60f2728c-3c73-41bd-bc70-8b8b7253c26e",
+                "rank": null
+              },
+              {
+                "id": "44758081-9cce-4a6f-8f71-089cdb616219",
+                "rank": null
+              },
+              {
+                "id": "5b6cbdad-deb0-4104-b7d0-b4bf9f91bb1a",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "e06690d2-886a-4aa9-990c-5471db64d93c",
+              "2b8b68ed-40e8-4134-8ab2-07924bd039d4",
+              "2e9a2791-8fe5-4a49-991a-5807c5fb592c"
+            ],
+            "ranks": [
+              {
+                "id": "e06690d2-886a-4aa9-990c-5471db64d93c",
+                "rank": 3
+              },
+              {
+                "id": "2b8b68ed-40e8-4134-8ab2-07924bd039d4",
+                "rank": 2
+              },
+              {
+                "id": "2e9a2791-8fe5-4a49-991a-5807c5fb592c",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.692,
+        "p95": 7.879,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.225,
+        "p95": 0.449
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 1522184,
+      "heap_after_seed_bytes": -3945080,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "arm": "C",
+      "label": "tag_weights_only",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "803abf3d-ea0a-47f5-b78e-9d75c9cfbd10",
+              "16712f9d-74c8-4fd7-932f-4983b1e962eb",
+              "45664931-3e30-4313-9cfb-33a76b87066b",
+              "b3936e28-5c60-4685-b361-5b4e3ea505b1",
+              "165cfd1f-b01b-4af0-9999-2ffca9b40668",
+              "18f48611-68d2-46f0-8b65-cbf1143b9906",
+              "4e3bbd53-6e98-4da5-a721-1be83f5daf39"
+            ],
+            "ranks": [
+              {
+                "id": "803abf3d-ea0a-47f5-b78e-9d75c9cfbd10",
+                "rank": null
+              },
+              {
+                "id": "16712f9d-74c8-4fd7-932f-4983b1e962eb",
+                "rank": null
+              },
+              {
+                "id": "45664931-3e30-4313-9cfb-33a76b87066b",
+                "rank": 5
+              },
+              {
+                "id": "b3936e28-5c60-4685-b361-5b4e3ea505b1",
+                "rank": 4
+              },
+              {
+                "id": "165cfd1f-b01b-4af0-9999-2ffca9b40668",
+                "rank": 3
+              },
+              {
+                "id": "18f48611-68d2-46f0-8b65-cbf1143b9906",
+                "rank": 2
+              },
+              {
+                "id": "4e3bbd53-6e98-4da5-a721-1be83f5daf39",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "8ebdf148-9e96-4590-ad47-f005fb9ab296",
+              "92fe7d72-0615-4f7b-8097-657b6d9f3942",
+              "c2090e0e-f117-48f2-8b2c-0ce82fd9837a",
+              "4f1b7183-2f89-44c0-b8be-d213ee5a2227",
+              "ecef6584-9cf5-425c-9793-4110d6666bc8",
+              "0904e958-6b2d-4a87-9ccb-3a7bfbf2cb6f"
+            ],
+            "ranks": [
+              {
+                "id": "8ebdf148-9e96-4590-ad47-f005fb9ab296",
+                "rank": null
+              },
+              {
+                "id": "92fe7d72-0615-4f7b-8097-657b6d9f3942",
+                "rank": 5
+              },
+              {
+                "id": "c2090e0e-f117-48f2-8b2c-0ce82fd9837a",
+                "rank": 4
+              },
+              {
+                "id": "4f1b7183-2f89-44c0-b8be-d213ee5a2227",
+                "rank": 3
+              },
+              {
+                "id": "ecef6584-9cf5-425c-9793-4110d6666bc8",
+                "rank": 2
+              },
+              {
+                "id": "0904e958-6b2d-4a87-9ccb-3a7bfbf2cb6f",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "172c6a07-0625-449d-9155-40c62d6298ba",
+              "ee6a51b3-9348-4f62-89e0-1ab3302775a3",
+              "3b2a2167-6bfc-427a-8aef-189cffdb835e"
+            ],
+            "ranks": [
+              {
+                "id": "172c6a07-0625-449d-9155-40c62d6298ba",
+                "rank": 3
+              },
+              {
+                "id": "ee6a51b3-9348-4f62-89e0-1ab3302775a3",
+                "rank": 2
+              },
+              {
+                "id": "3b2a2167-6bfc-427a-8aef-189cffdb835e",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 7.394,
+        "p95": 13.092,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.337,
+        "p95": 0.786
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": -616304,
+      "heap_after_seed_bytes": -3959400,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "arm": "D",
+      "label": "tag_plus_entity_weights",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "8d92e3f4-b245-4895-94c2-c4f70c569189",
+              "035d4a37-9e5c-4230-9996-b8517c9c4466",
+              "b16089e1-4ea2-483e-b023-0bea73ce18c3",
+              "cd6f9124-5f3f-4f03-b9e3-cb2b9cfc9deb",
+              "56a02378-9e5f-4cf7-900a-3cbdc19d8488",
+              "ce2ee25d-5264-44fe-8c65-e6ec9b600b5e",
+              "ced5ded2-d1e7-470e-9b77-375fb854c4f5"
+            ],
+            "ranks": [
+              {
+                "id": "8d92e3f4-b245-4895-94c2-c4f70c569189",
+                "rank": null
+              },
+              {
+                "id": "035d4a37-9e5c-4230-9996-b8517c9c4466",
+                "rank": null
+              },
+              {
+                "id": "b16089e1-4ea2-483e-b023-0bea73ce18c3",
+                "rank": 5
+              },
+              {
+                "id": "cd6f9124-5f3f-4f03-b9e3-cb2b9cfc9deb",
+                "rank": 4
+              },
+              {
+                "id": "56a02378-9e5f-4cf7-900a-3cbdc19d8488",
+                "rank": 3
+              },
+              {
+                "id": "ce2ee25d-5264-44fe-8c65-e6ec9b600b5e",
+                "rank": 2
+              },
+              {
+                "id": "ced5ded2-d1e7-470e-9b77-375fb854c4f5",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "d0fe7ace-d783-49b5-9675-7a411e8fb437",
+              "5a9c1e74-d50b-46bd-b639-eb1f9ab98bea",
+              "9e217dd1-0d32-4234-80df-ce3cdc11a6af",
+              "9c7a535a-e168-491b-85f6-c7f7aa2aaf76",
+              "02c4f65a-9488-4266-8a78-ff110287d662",
+              "de07802a-04e1-40c1-bef9-313127a87b5a"
+            ],
+            "ranks": [
+              {
+                "id": "d0fe7ace-d783-49b5-9675-7a411e8fb437",
+                "rank": null
+              },
+              {
+                "id": "5a9c1e74-d50b-46bd-b639-eb1f9ab98bea",
+                "rank": 5
+              },
+              {
+                "id": "9e217dd1-0d32-4234-80df-ce3cdc11a6af",
+                "rank": 4
+              },
+              {
+                "id": "9c7a535a-e168-491b-85f6-c7f7aa2aaf76",
+                "rank": 3
+              },
+              {
+                "id": "02c4f65a-9488-4266-8a78-ff110287d662",
+                "rank": 2
+              },
+              {
+                "id": "de07802a-04e1-40c1-bef9-313127a87b5a",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "2c6a0765-0a7a-49cd-9ba8-cdc9c65af799",
+              "8d6b93d4-0a57-4b0f-9cc2-8b6c534d0397",
+              "dece8f25-f47c-441a-b37a-165db9c50acb"
+            ],
+            "ranks": [
+              {
+                "id": "2c6a0765-0a7a-49cd-9ba8-cdc9c65af799",
+                "rank": 3
+              },
+              {
+                "id": "8d6b93d4-0a57-4b0f-9cc2-8b6c534d0397",
+                "rank": 2
+              },
+              {
+                "id": "dece8f25-f47c-441a-b37a-165db9c50acb",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 7.393,
+        "p95": 11.071,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.272,
+        "p95": 0.591
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": -68392,
+      "heap_after_seed_bytes": -3943096,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "arm": "all1",
+      "label": "all_1_0_control",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "9a3b077c-5d7e-4db5-9d98-b2da438b0285",
+              "6180e382-c730-49b3-89b6-0196a0a1d5ef",
+              "5a45ab84-4120-4a7c-91f4-209da7462103",
+              "ae678f81-5ad5-47e0-b938-abb901539bef",
+              "5356182e-e0f4-4875-ba51-c88bcf447754",
+              "e1bd3dd8-3e48-4bae-a1a6-19f902bbda03",
+              "5312c540-c186-4d05-843d-5f5e8fd0e872"
+            ],
+            "ranks": [
+              {
+                "id": "9a3b077c-5d7e-4db5-9d98-b2da438b0285",
+                "rank": null
+              },
+              {
+                "id": "6180e382-c730-49b3-89b6-0196a0a1d5ef",
+                "rank": null
+              },
+              {
+                "id": "5a45ab84-4120-4a7c-91f4-209da7462103",
+                "rank": null
+              },
+              {
+                "id": "ae678f81-5ad5-47e0-b938-abb901539bef",
+                "rank": null
+              },
+              {
+                "id": "5356182e-e0f4-4875-ba51-c88bcf447754",
+                "rank": null
+              },
+              {
+                "id": "e1bd3dd8-3e48-4bae-a1a6-19f902bbda03",
+                "rank": null
+              },
+              {
+                "id": "5312c540-c186-4d05-843d-5f5e8fd0e872",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "e796a7cc-4e4a-4778-8890-c482c7274a05",
+              "cfed3227-7b6a-4f16-8a8a-dab35c173f2f",
+              "82dc2ed1-4ee9-4e59-bd64-41032c99e861",
+              "34ed2501-4367-4d32-8186-662b43f5914c",
+              "9d21dad5-f04c-4d4d-8d4c-f6bee1297e46",
+              "6167822b-b0c4-4e8e-b65f-ab8850a2e2bb"
+            ],
+            "ranks": [
+              {
+                "id": "e796a7cc-4e4a-4778-8890-c482c7274a05",
+                "rank": null
+              },
+              {
+                "id": "cfed3227-7b6a-4f16-8a8a-dab35c173f2f",
+                "rank": null
+              },
+              {
+                "id": "82dc2ed1-4ee9-4e59-bd64-41032c99e861",
+                "rank": null
+              },
+              {
+                "id": "34ed2501-4367-4d32-8186-662b43f5914c",
+                "rank": null
+              },
+              {
+                "id": "9d21dad5-f04c-4d4d-8d4c-f6bee1297e46",
+                "rank": null
+              },
+              {
+                "id": "6167822b-b0c4-4e8e-b65f-ab8850a2e2bb",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "dc154856-0ad0-4147-95be-712e842ea79e",
+              "d56c2b5b-cdae-4e8a-a9a3-fa5f31c114c2",
+              "090d89a9-5e32-49dc-852e-6900aa74e067"
+            ],
+            "ranks": [
+              {
+                "id": "dc154856-0ad0-4147-95be-712e842ea79e",
+                "rank": 3
+              },
+              {
+                "id": "d56c2b5b-cdae-4e8a-a9a3-fa5f31c114c2",
+                "rank": 2
+              },
+              {
+                "id": "090d89a9-5e32-49dc-852e-6900aa74e067",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.022,
+        "p95": 6.451,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.314,
+        "p95": 0.553
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 2610632,
+      "heap_after_seed_bytes": -3913384,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "arm": "A",
+      "label": "original_baseline",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "02e58e96-d46c-4951-94c5-ad79428be679",
+              "c585978c-6556-4d03-b078-666a38e6ee8d",
+              "56ec29d1-ade9-4594-99ec-c1fe03570b0c",
+              "06992aaf-9d1e-4f22-ad1c-cd1a27fda5bd",
+              "a016966a-c568-4142-a934-35ae40e6632f",
+              "c43c0208-c438-407c-a347-64ff95ac1473",
+              "c9e35f66-ff4b-466f-b691-fc99bfffdf80"
+            ],
+            "ranks": [
+              {
+                "id": "02e58e96-d46c-4951-94c5-ad79428be679",
+                "rank": null
+              },
+              {
+                "id": "c585978c-6556-4d03-b078-666a38e6ee8d",
+                "rank": null
+              },
+              {
+                "id": "56ec29d1-ade9-4594-99ec-c1fe03570b0c",
+                "rank": null
+              },
+              {
+                "id": "06992aaf-9d1e-4f22-ad1c-cd1a27fda5bd",
+                "rank": null
+              },
+              {
+                "id": "a016966a-c568-4142-a934-35ae40e6632f",
+                "rank": null
+              },
+              {
+                "id": "c43c0208-c438-407c-a347-64ff95ac1473",
+                "rank": null
+              },
+              {
+                "id": "c9e35f66-ff4b-466f-b691-fc99bfffdf80",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "a5c8baa6-8111-4f07-aa32-f5e3a43bcc76",
+              "b48259b5-10fa-44f3-82d0-1516e926bf0f",
+              "24534103-3e33-4939-b231-fec124a4750b",
+              "2e165c8d-7f83-4273-9bcc-852fd679e74c",
+              "baf4fe60-881f-40b9-968d-5c310cba6ad8",
+              "b67d7997-5713-49c8-93b4-0de769672992"
+            ],
+            "ranks": [
+              {
+                "id": "a5c8baa6-8111-4f07-aa32-f5e3a43bcc76",
+                "rank": null
+              },
+              {
+                "id": "b48259b5-10fa-44f3-82d0-1516e926bf0f",
+                "rank": null
+              },
+              {
+                "id": "24534103-3e33-4939-b231-fec124a4750b",
+                "rank": null
+              },
+              {
+                "id": "2e165c8d-7f83-4273-9bcc-852fd679e74c",
+                "rank": null
+              },
+              {
+                "id": "baf4fe60-881f-40b9-968d-5c310cba6ad8",
+                "rank": null
+              },
+              {
+                "id": "b67d7997-5713-49c8-93b4-0de769672992",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "1dc2caa4-0342-4432-9dda-2a3b360a72a0",
+              "b544138f-8d95-47a3-9346-95cf6f25bd2f",
+              "88f7886a-2e09-4026-b5b4-8015232f3a3e"
+            ],
+            "ranks": [
+              {
+                "id": "1dc2caa4-0342-4432-9dda-2a3b360a72a0",
+                "rank": 3
+              },
+              {
+                "id": "b544138f-8d95-47a3-9346-95cf6f25bd2f",
+                "rank": 2
+              },
+              {
+                "id": "88f7886a-2e09-4026-b5b4-8015232f3a3e",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.375,
+        "p95": 7.753,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.387,
+        "p95": 1.67
+      },
+      "db_bytes": 344064,
+      "heap_delta_bytes": -6011480,
+      "heap_after_seed_bytes": -4394824,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "arm": "C",
+      "label": "tag_weights_only",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "aefd1dba-7a91-4c2c-96ec-85c54d73c7a5",
+              "45a6452d-7d8b-4f90-9820-05684c44c52a",
+              "cb5f6450-db08-42b7-8319-f5fe1c3efc12",
+              "62d7de05-fd96-4413-bd80-4298952ff058",
+              "f34a2aee-3572-4420-816c-599abafb2246",
+              "bd192dab-a181-4a9d-88a6-fde1a6acf350",
+              "75197d07-8c1e-4539-a64b-d7f69359075b"
+            ],
+            "ranks": [
+              {
+                "id": "aefd1dba-7a91-4c2c-96ec-85c54d73c7a5",
+                "rank": null
+              },
+              {
+                "id": "45a6452d-7d8b-4f90-9820-05684c44c52a",
+                "rank": null
+              },
+              {
+                "id": "cb5f6450-db08-42b7-8319-f5fe1c3efc12",
+                "rank": 5
+              },
+              {
+                "id": "62d7de05-fd96-4413-bd80-4298952ff058",
+                "rank": 4
+              },
+              {
+                "id": "f34a2aee-3572-4420-816c-599abafb2246",
+                "rank": 3
+              },
+              {
+                "id": "bd192dab-a181-4a9d-88a6-fde1a6acf350",
+                "rank": 2
+              },
+              {
+                "id": "75197d07-8c1e-4539-a64b-d7f69359075b",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "84144e80-ee11-4a35-87a0-963a2c653baa",
+              "9067b7b9-e3ae-4fa5-bc69-8510f9c4069d",
+              "cf86acc7-bc45-47d4-8788-5b6abc2941bf",
+              "2da38de0-c559-40c6-ae10-47c4e85394f9",
+              "b099147e-2888-4d70-bb69-e4a5b6e76c75",
+              "4d3ae67e-f9e9-474b-a57f-f287bd534462"
+            ],
+            "ranks": [
+              {
+                "id": "84144e80-ee11-4a35-87a0-963a2c653baa",
+                "rank": null
+              },
+              {
+                "id": "9067b7b9-e3ae-4fa5-bc69-8510f9c4069d",
+                "rank": 5
+              },
+              {
+                "id": "cf86acc7-bc45-47d4-8788-5b6abc2941bf",
+                "rank": 4
+              },
+              {
+                "id": "2da38de0-c559-40c6-ae10-47c4e85394f9",
+                "rank": 3
+              },
+              {
+                "id": "b099147e-2888-4d70-bb69-e4a5b6e76c75",
+                "rank": 2
+              },
+              {
+                "id": "4d3ae67e-f9e9-474b-a57f-f287bd534462",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "5e3ac1ba-a0e3-4cf0-811f-df0680cbed16",
+              "bbf1d82d-36de-4a6d-8ea5-2180d176ac2c",
+              "b604179d-d49e-47db-b2c2-e9a350e811c6"
+            ],
+            "ranks": [
+              {
+                "id": "5e3ac1ba-a0e3-4cf0-811f-df0680cbed16",
+                "rank": 3
+              },
+              {
+                "id": "bbf1d82d-36de-4a6d-8ea5-2180d176ac2c",
+                "rank": 2
+              },
+              {
+                "id": "b604179d-d49e-47db-b2c2-e9a350e811c6",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 7.224,
+        "p95": 10.513,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.409,
+        "p95": 0.757
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 7642584,
+      "heap_after_seed_bytes": 4218624,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "arm": "D",
+      "label": "tag_plus_entity_weights",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "aca53016-2074-4696-880e-8d1f49ea94aa",
+              "52dc8606-a7b4-4935-b56c-2e10b4179ba6",
+              "a9801b47-c306-4e26-9d5c-d8ee9eb336ba",
+              "b0d3b717-d3d1-4e6b-a12d-2e1700e770df",
+              "632ead38-6c02-44c4-9274-9c5769bff64d",
+              "816e3571-f3d8-47ad-b778-31e60d68df73",
+              "538c614a-c2f0-4a5f-b553-e71be3236c87"
+            ],
+            "ranks": [
+              {
+                "id": "aca53016-2074-4696-880e-8d1f49ea94aa",
+                "rank": null
+              },
+              {
+                "id": "52dc8606-a7b4-4935-b56c-2e10b4179ba6",
+                "rank": null
+              },
+              {
+                "id": "a9801b47-c306-4e26-9d5c-d8ee9eb336ba",
+                "rank": 5
+              },
+              {
+                "id": "b0d3b717-d3d1-4e6b-a12d-2e1700e770df",
+                "rank": 4
+              },
+              {
+                "id": "632ead38-6c02-44c4-9274-9c5769bff64d",
+                "rank": 3
+              },
+              {
+                "id": "816e3571-f3d8-47ad-b778-31e60d68df73",
+                "rank": 2
+              },
+              {
+                "id": "538c614a-c2f0-4a5f-b553-e71be3236c87",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "540d83fe-d019-45a9-8ae2-4cfa1563e364",
+              "b639bceb-8b7b-425a-a0e5-b31a73501f23",
+              "41746889-1f92-4fbf-b1c6-c5300a182150",
+              "73e115f8-b5e6-42f4-a85f-b0698cd599c2",
+              "88f34635-08d4-4327-9a4e-d7bc8d0a1c94",
+              "a742234f-ce1a-465b-b721-f092d3f358d2"
+            ],
+            "ranks": [
+              {
+                "id": "540d83fe-d019-45a9-8ae2-4cfa1563e364",
+                "rank": null
+              },
+              {
+                "id": "b639bceb-8b7b-425a-a0e5-b31a73501f23",
+                "rank": 5
+              },
+              {
+                "id": "41746889-1f92-4fbf-b1c6-c5300a182150",
+                "rank": 4
+              },
+              {
+                "id": "73e115f8-b5e6-42f4-a85f-b0698cd599c2",
+                "rank": 3
+              },
+              {
+                "id": "88f34635-08d4-4327-9a4e-d7bc8d0a1c94",
+                "rank": 2
+              },
+              {
+                "id": "a742234f-ce1a-465b-b721-f092d3f358d2",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "81e006fb-291b-434f-8f7d-27d87ee35ab0",
+              "0c2c923c-d094-4a37-a636-677d7b588011",
+              "e764a806-467c-4caa-8bdb-1d68aa90814a"
+            ],
+            "ranks": [
+              {
+                "id": "81e006fb-291b-434f-8f7d-27d87ee35ab0",
+                "rank": 3
+              },
+              {
+                "id": "0c2c923c-d094-4a37-a636-677d7b588011",
+                "rank": 2
+              },
+              {
+                "id": "e764a806-467c-4caa-8bdb-1d68aa90814a",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 6.811,
+        "p95": 11.068,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.3,
+        "p95": 0.712
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": -8190952,
+      "heap_after_seed_bytes": -3956528,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "arm": "all1",
+      "label": "all_1_0_control",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "981a522a-a8ee-481d-89dc-3d801add1468",
+              "863ac299-01ae-4355-938f-bbae822b8b3d",
+              "f2109bb6-4e6e-4e62-9809-b965ca3b14c2",
+              "9f451c9f-0b7c-444a-8a4b-2c05cd250063",
+              "abdb6aa8-9807-4afc-9666-1dc908bdc127",
+              "fbf471ab-4a5e-41dc-8ab4-51f42cdc1ddd",
+              "e65e0f88-36c0-46f3-989d-62bd9166b495"
+            ],
+            "ranks": [
+              {
+                "id": "981a522a-a8ee-481d-89dc-3d801add1468",
+                "rank": null
+              },
+              {
+                "id": "863ac299-01ae-4355-938f-bbae822b8b3d",
+                "rank": null
+              },
+              {
+                "id": "f2109bb6-4e6e-4e62-9809-b965ca3b14c2",
+                "rank": null
+              },
+              {
+                "id": "9f451c9f-0b7c-444a-8a4b-2c05cd250063",
+                "rank": null
+              },
+              {
+                "id": "abdb6aa8-9807-4afc-9666-1dc908bdc127",
+                "rank": null
+              },
+              {
+                "id": "fbf471ab-4a5e-41dc-8ab4-51f42cdc1ddd",
+                "rank": null
+              },
+              {
+                "id": "e65e0f88-36c0-46f3-989d-62bd9166b495",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "3db3b648-06a4-48d6-9b38-8a79878e5dc1",
+              "012c8d13-7343-4ee0-a3dc-0fe6603aeb24",
+              "e3bff98c-bcba-4be7-9ad9-4b50f5c576ff",
+              "77afb1c7-2b7b-43ea-95b4-5c55a80c0918",
+              "2d96b67c-7631-46c6-9fb2-187795a6ec53",
+              "83e22b4d-4347-499e-b03b-83898e2884af"
+            ],
+            "ranks": [
+              {
+                "id": "3db3b648-06a4-48d6-9b38-8a79878e5dc1",
+                "rank": null
+              },
+              {
+                "id": "012c8d13-7343-4ee0-a3dc-0fe6603aeb24",
+                "rank": null
+              },
+              {
+                "id": "e3bff98c-bcba-4be7-9ad9-4b50f5c576ff",
+                "rank": null
+              },
+              {
+                "id": "77afb1c7-2b7b-43ea-95b4-5c55a80c0918",
+                "rank": null
+              },
+              {
+                "id": "2d96b67c-7631-46c6-9fb2-187795a6ec53",
+                "rank": null
+              },
+              {
+                "id": "83e22b4d-4347-499e-b03b-83898e2884af",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "026a90dd-29f2-4ee0-8730-60349ed11723",
+              "c57a4a9a-f7d7-4532-9418-2c7dd2bceff7",
+              "fb8d89d7-15b4-46d3-8416-0ce038c67fcd"
+            ],
+            "ranks": [
+              {
+                "id": "026a90dd-29f2-4ee0-8730-60349ed11723",
+                "rank": 3
+              },
+              {
+                "id": "c57a4a9a-f7d7-4532-9418-2c7dd2bceff7",
+                "rank": 2
+              },
+              {
+                "id": "fb8d89d7-15b4-46d3-8416-0ce038c67fcd",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.274,
+        "p95": 7.362,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.296,
+        "p95": 0.681
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 2607280,
+      "heap_after_seed_bytes": -3866336,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "arm": "A",
+      "label": "original_baseline",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "462800bc-df67-4417-8439-c53a24cee71b",
+              "d06f0cd8-7440-496c-afe6-92cb18de15ca",
+              "88c2f21a-8261-4811-8599-844a70957436",
+              "5036f6ce-02f1-42bb-bfed-031204a6f596",
+              "7e8e8579-8b49-4cf9-b85b-48077ecaf43e",
+              "6298fef9-6916-4893-b2a1-ed81b6cc3365",
+              "bfc737f7-a0ca-47ec-9068-f992c5f7d22b"
+            ],
+            "ranks": [
+              {
+                "id": "462800bc-df67-4417-8439-c53a24cee71b",
+                "rank": null
+              },
+              {
+                "id": "d06f0cd8-7440-496c-afe6-92cb18de15ca",
+                "rank": null
+              },
+              {
+                "id": "88c2f21a-8261-4811-8599-844a70957436",
+                "rank": null
+              },
+              {
+                "id": "5036f6ce-02f1-42bb-bfed-031204a6f596",
+                "rank": null
+              },
+              {
+                "id": "7e8e8579-8b49-4cf9-b85b-48077ecaf43e",
+                "rank": null
+              },
+              {
+                "id": "6298fef9-6916-4893-b2a1-ed81b6cc3365",
+                "rank": null
+              },
+              {
+                "id": "bfc737f7-a0ca-47ec-9068-f992c5f7d22b",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "3291df0f-4b17-404f-bb5f-dd1c342097f8",
+              "ffa4b32f-c197-4342-9d39-91f21f84aef0",
+              "ed5ad080-65eb-47bb-9434-45ca2f19191c",
+              "1174284c-3029-43e0-9aeb-11e601b1f6d9",
+              "a8721566-4491-4f7d-8aeb-c744a2c6457e",
+              "d7c22e57-6505-4d9b-894c-fbebd9a14e62"
+            ],
+            "ranks": [
+              {
+                "id": "3291df0f-4b17-404f-bb5f-dd1c342097f8",
+                "rank": null
+              },
+              {
+                "id": "ffa4b32f-c197-4342-9d39-91f21f84aef0",
+                "rank": null
+              },
+              {
+                "id": "ed5ad080-65eb-47bb-9434-45ca2f19191c",
+                "rank": null
+              },
+              {
+                "id": "1174284c-3029-43e0-9aeb-11e601b1f6d9",
+                "rank": null
+              },
+              {
+                "id": "a8721566-4491-4f7d-8aeb-c744a2c6457e",
+                "rank": null
+              },
+              {
+                "id": "d7c22e57-6505-4d9b-894c-fbebd9a14e62",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "cf2ffd95-0347-47ca-8144-e91285db8fa8",
+              "f1996ca0-d41f-4b93-99c1-5703a8ca5c0d",
+              "4c65cd3c-f485-4a49-9900-e4b82a45c38f"
+            ],
+            "ranks": [
+              {
+                "id": "cf2ffd95-0347-47ca-8144-e91285db8fa8",
+                "rank": 3
+              },
+              {
+                "id": "f1996ca0-d41f-4b93-99c1-5703a8ca5c0d",
+                "rank": 2
+              },
+              {
+                "id": "4c65cd3c-f485-4a49-9900-e4b82a45c38f",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.805,
+        "p95": 7.483,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.326,
+        "p95": 0.779
+      },
+      "db_bytes": 344064,
+      "heap_delta_bytes": -5429216,
+      "heap_after_seed_bytes": -4384120,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "arm": "B",
+      "label": "pool_only_neutral",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "expected_ids": [
+              "6055262d-8e72-4b42-a8c2-3f6b341a7ac7",
+              "a0ee6987-8a03-494f-8c00-82e00f5c52e5",
+              "a1f5f72c-1d18-4521-ab51-b0c1cbb02be8",
+              "3e18a610-7ffc-42e6-9e84-cb5be6fc0a4c",
+              "dbfbb349-d13c-4e28-9b1c-dd3beb8c6d88",
+              "0a9ce8c6-3be5-4e91-8e55-8eb5ab83a74d",
+              "5792963d-4937-464b-bf16-69a463d1be20"
+            ],
+            "ranks": [
+              {
+                "id": "6055262d-8e72-4b42-a8c2-3f6b341a7ac7",
+                "rank": null
+              },
+              {
+                "id": "a0ee6987-8a03-494f-8c00-82e00f5c52e5",
+                "rank": null
+              },
+              {
+                "id": "a1f5f72c-1d18-4521-ab51-b0c1cbb02be8",
+                "rank": null
+              },
+              {
+                "id": "3e18a610-7ffc-42e6-9e84-cb5be6fc0a4c",
+                "rank": null
+              },
+              {
+                "id": "dbfbb349-d13c-4e28-9b1c-dd3beb8c6d88",
+                "rank": null
+              },
+              {
+                "id": "0a9ce8c6-3be5-4e91-8e55-8eb5ab83a74d",
+                "rank": null
+              },
+              {
+                "id": "5792963d-4937-464b-bf16-69a463d1be20",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "expected_ids": [
+              "716d9817-f29e-4d0e-91a5-21dc9fdeb271",
+              "74fc148f-b6f9-474c-888e-6e32ac8ad946",
+              "733dc6eb-1a5f-4764-aee6-bbf38e8b2225",
+              "7533d2b5-89c2-4aef-afb9-6ca8cb4b33ee",
+              "e78a99d0-23b5-4196-a8fc-03e38445f556",
+              "19777767-f7f5-4f42-97d3-0a73f07eb2c8"
+            ],
+            "ranks": [
+              {
+                "id": "716d9817-f29e-4d0e-91a5-21dc9fdeb271",
+                "rank": null
+              },
+              {
+                "id": "74fc148f-b6f9-474c-888e-6e32ac8ad946",
+                "rank": null
+              },
+              {
+                "id": "733dc6eb-1a5f-4764-aee6-bbf38e8b2225",
+                "rank": null
+              },
+              {
+                "id": "7533d2b5-89c2-4aef-afb9-6ca8cb4b33ee",
+                "rank": null
+              },
+              {
+                "id": "e78a99d0-23b5-4196-a8fc-03e38445f556",
+                "rank": null
+              },
+              {
+                "id": "19777767-f7f5-4f42-97d3-0a73f07eb2c8",
+                "rank": null
+              }
+            ],
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "expected_ids": [
+              "e70217fa-dca3-438f-bcd7-aaf405d88ec8",
+              "377d2c62-1283-44c0-ac9d-92e352bb49f8",
+              "5c10bff3-82a3-44a4-97cc-1a86dde29847"
+            ],
+            "ranks": [
+              {
+                "id": "e70217fa-dca3-438f-bcd7-aaf405d88ec8",
+                "rank": 3
+              },
+              {
+                "id": "377d2c62-1283-44c0-ac9d-92e352bb49f8",
+                "rank": 2
+              },
+              {
+                "id": "5c10bff3-82a3-44a4-97cc-1a86dde29847",
+                "rank": 1
+              }
+            ],
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.893,
+        "p95": 9.01,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.485,
+        "p95": 0.851
+      },
+      "db_bytes": 507904,
+      "heap_delta_bytes": 1426648,
+      "heap_after_seed_bytes": 4149776,
+      "background_llm_calls": 0
+    }
+  ],
+  "summary": {
+    "A": {
+      "label": "original_baseline",
+      "recall_at_5": 0.3333,
+      "mrr": 0.3333,
+      "p50_ms": 5.595,
+      "p95_ms": 8.013,
+      "db_bytes": 344064,
+      "heap_delta_bytes": -2995267,
+      "background_llm_calls": 0,
+      "per_query_ranks_run_1": [
+        {
+          "query": "birthday dinner Aster",
+          "ranks": [
+            {
+              "id": "46940cf2-a2d6-4db3-a709-fa72216b3dd7",
+              "rank": null
+            },
+            {
+              "id": "f4904545-3799-4a11-b3ef-9ee2271ae153",
+              "rank": null
+            },
+            {
+              "id": "27ae8f41-bbda-4791-a5df-ba53b5df8b7f",
+              "rank": null
+            },
+            {
+              "id": "f3d771a3-2f54-4529-9d70-4e609dfd3237",
+              "rank": null
+            },
+            {
+              "id": "103d22ed-d9a1-4be4-b20e-6752ee95a668",
+              "rank": null
+            },
+            {
+              "id": "8dc7a727-bd37-46ac-acd1-06422031075a",
+              "rank": null
+            },
+            {
+              "id": "03a23bd8-0726-47e7-b050-949b83624041",
+              "rank": null
+            }
+          ]
+        },
+        {
+          "query": "workshop supplies ordered",
+          "ranks": [
+            {
+              "id": "6ae557d1-b549-4bc3-930c-d6cd26fe2c40",
+              "rank": null
+            },
+            {
+              "id": "54b97dc1-e27e-4bc8-9b8b-891023d368db",
+              "rank": null
+            },
+            {
+              "id": "43c6efd7-891c-41d3-9cc4-1b09961a6482",
+              "rank": null
+            },
+            {
+              "id": "a3ab077f-622e-4575-a18d-63e883888732",
+              "rank": null
+            },
+            {
+              "id": "2d9c1c73-76f5-4ea9-bf57-97eb61397225",
+              "rank": null
+            },
+            {
+              "id": "c4739178-3ff8-47fb-812d-b231101da730",
+              "rank": null
+            }
+          ]
+        },
+        {
+          "query": "weekend plan",
+          "ranks": [
+            {
+              "id": "be5d0542-8aed-4187-99ef-cfe3e643653e",
+              "rank": 3
+            },
+            {
+              "id": "814353af-f2d4-43d2-ace9-53ddfc450caf",
+              "rank": 2
+            },
+            {
+              "id": "e0ed92de-d201-4470-a74f-843926ae4402",
+              "rank": 1
+            }
+          ]
+        }
+      ]
+    },
+    "B": {
+      "label": "pool_only_neutral",
+      "recall_at_5": 0.3333,
+      "mrr": 0.3333,
+      "p50_ms": 5.686,
+      "p95_ms": 7.985,
+      "db_bytes": 507904,
+      "heap_delta_bytes": 1282653,
+      "background_llm_calls": 0,
+      "per_query_ranks_run_1": [
+        {
+          "query": "birthday dinner Aster",
+          "ranks": [
+            {
+              "id": "e61b5260-7ea5-4700-884b-23a678d7b8ed",
+              "rank": null
+            },
+            {
+              "id": "8e1c1fb8-d097-481b-8d47-c1cf70164b6f",
+              "rank": null
+            },
+            {
+              "id": "08af6311-e741-4bd5-90b6-c78cdc2d2f54",
+              "rank": null
+            },
+            {
+              "id": "c1c0d324-5903-4643-b482-280e4fa5b3b0",
+              "rank": null
+            },
+            {
+              "id": "464b34ce-c1e4-4a2a-81d0-a7964c729c8b",
+              "rank": null
+            },
+            {
+              "id": "1c3fc84c-e014-4079-a035-77a9fad206fe",
+              "rank": null
+            },
+            {
+              "id": "ecb59a54-5622-490e-a3d5-af6f2ea9859d",
+              "rank": null
+            }
+          ]
+        },
+        {
+          "query": "workshop supplies ordered",
+          "ranks": [
+            {
+              "id": "89fbb1df-6412-427d-9d29-d075ec4f4490",
+              "rank": null
+            },
+            {
+              "id": "79d89995-a753-4e2a-aaf0-7234bb5e36df",
+              "rank": null
+            },
+            {
+              "id": "73ca8ec6-7adb-4074-b1c0-c49027c90759",
+              "rank": null
+            },
+            {
+              "id": "3e867aff-4ba2-46c5-8a98-16a1116566e5",
+              "rank": null
+            },
+            {
+              "id": "e285b5e6-36de-482b-a2e0-55e259274900",
+              "rank": null
+            },
+            {
+              "id": "3c3c43d6-5d43-4a39-9f12-5a5d2d1968d0",
+              "rank": null
+            }
+          ]
+        },
+        {
+          "query": "weekend plan",
+          "ranks": [
+            {
+              "id": "4ebdfdf2-bc91-4d3e-90d4-9bd22300d1d8",
+              "rank": 3
+            },
+            {
+              "id": "4c1dcd9c-b9a7-4f0b-8c79-d381e83d4436",
+              "rank": 2
+            },
+            {
+              "id": "d4df0529-fe99-4980-be05-15388c6b760f",
+              "rank": 1
+            }
+          ]
+        }
+      ]
+    },
+    "C": {
+      "label": "tag_weights_only",
+      "recall_at_5": 0.8492,
+      "mrr": 1,
+      "p50_ms": 7.155,
+      "p95_ms": 11.407,
+      "db_bytes": 507904,
+      "heap_delta_bytes": 3005835,
+      "background_llm_calls": 0,
+      "per_query_ranks_run_1": [
+        {
+          "query": "birthday dinner Aster",
+          "ranks": [
+            {
+              "id": "089a69bd-848c-4a37-8e9a-3ad08061e717",
+              "rank": null
+            },
+            {
+              "id": "00dde0d2-46da-40c6-8676-f6927a72d38c",
+              "rank": null
+            },
+            {
+              "id": "d707d23a-ca7d-467c-92bb-6b33b26c4d37",
+              "rank": 5
+            },
+            {
+              "id": "d7ea1d9c-4a2b-47ca-beab-14397058849d",
+              "rank": 4
+            },
+            {
+              "id": "0edb26b0-e519-43aa-b247-c292bab96403",
+              "rank": 3
+            },
+            {
+              "id": "a67af5ab-e1d8-473f-9026-bb1c49dc6af8",
+              "rank": 2
+            },
+            {
+              "id": "96606b2d-5f59-4a63-af21-92f66d0dd41d",
+              "rank": 1
+            }
+          ]
+        },
+        {
+          "query": "workshop supplies ordered",
+          "ranks": [
+            {
+              "id": "da867ed7-6a68-49df-96fc-2aeea55d838d",
+              "rank": null
+            },
+            {
+              "id": "84950bfb-eff0-4893-ae23-01c84bf98b6a",
+              "rank": 5
+            },
+            {
+              "id": "ba94c29d-ac5b-4b06-bc82-01c5aee2626a",
+              "rank": 4
+            },
+            {
+              "id": "3f6c1de9-f8f0-4374-939d-3378b4802c53",
+              "rank": 3
+            },
+            {
+              "id": "80ce536d-72b7-4170-9903-08c4e69addcb",
+              "rank": 2
+            },
+            {
+              "id": "7b49c645-fafc-4cad-923a-c92df0cd14ab",
+              "rank": 1
+            }
+          ]
+        },
+        {
+          "query": "weekend plan",
+          "ranks": [
+            {
+              "id": "a6b73b30-a6f7-42d9-8ad8-7c5c7bd91b6f",
+              "rank": 3
+            },
+            {
+              "id": "ac071f74-3f01-461b-94db-4c0a9e41fc84",
+              "rank": 2
+            },
+            {
+              "id": "00337bdd-0435-4986-95aa-ee0dbd3e063d",
+              "rank": 1
+            }
+          ]
+        }
+      ]
+    },
+    "D": {
+      "label": "tag_plus_entity_weights",
+      "recall_at_5": 0.8492,
+      "mrr": 1,
+      "p50_ms": 6.925,
+      "p95_ms": 10.619,
+      "db_bytes": 507904,
+      "heap_delta_bytes": -2043341,
+      "background_llm_calls": 0,
+      "per_query_ranks_run_1": [
+        {
+          "query": "birthday dinner Aster",
+          "ranks": [
+            {
+              "id": "600dc803-6e9f-4aa7-b8ea-318e3c4cd37e",
+              "rank": null
+            },
+            {
+              "id": "9cec6dde-af38-430e-af06-addf3697b581",
+              "rank": null
+            },
+            {
+              "id": "607d8bc2-bed4-4933-95f7-61600e7343d2",
+              "rank": 5
+            },
+            {
+              "id": "871b09f7-6480-48f0-bac4-09e38ba92f7b",
+              "rank": 4
+            },
+            {
+              "id": "65ab25e5-54fd-4595-bdaf-33cfaef95df5",
+              "rank": 3
+            },
+            {
+              "id": "208d05d6-2e87-4217-b0b4-ed75c2f7c85d",
+              "rank": 2
+            },
+            {
+              "id": "c032a0d0-3379-4341-aa6b-ae39679a1ba9",
+              "rank": 1
+            }
+          ]
+        },
+        {
+          "query": "workshop supplies ordered",
+          "ranks": [
+            {
+              "id": "dbf6d281-901b-429f-a3a5-6bd8615b8fd6",
+              "rank": null
+            },
+            {
+              "id": "9129fb80-c7fb-423f-8d74-afba1b3e8115",
+              "rank": 5
+            },
+            {
+              "id": "d9ca9580-a835-460b-859c-38dec74453a1",
+              "rank": 4
+            },
+            {
+              "id": "af76d152-f130-477c-81fb-4631cf59dfec",
+              "rank": 3
+            },
+            {
+              "id": "1bffe84c-1138-4360-9c3e-901eeab8df13",
+              "rank": 2
+            },
+            {
+              "id": "bf5a6093-4d5d-46ef-a717-d403f94dbf6d",
+              "rank": 1
+            }
+          ]
+        },
+        {
+          "query": "weekend plan",
+          "ranks": [
+            {
+              "id": "e1e8b0cc-0ee3-4a2c-b437-95297ccb2cec",
+              "rank": 3
+            },
+            {
+              "id": "65fbd5c5-cf6a-43de-8d4b-aebff0695dcf",
+              "rank": 2
+            },
+            {
+              "id": "4f5785af-7c3d-4f7d-ac55-7783ee35c7f0",
+              "rank": 1
+            }
+          ]
+        }
+      ]
+    },
+    "all1": {
+      "label": "all_1_0_control",
+      "recall_at_5": 0.3333,
+      "mrr": 0.3333,
+      "p50_ms": 5.227,
+      "p95_ms": 7.21,
+      "db_bytes": 507904,
+      "heap_delta_bytes": 2526459,
+      "background_llm_calls": 0,
+      "per_query_ranks_run_1": [
+        {
+          "query": "birthday dinner Aster",
+          "ranks": [
+            {
+              "id": "4a54e4d4-70b6-4f78-8793-5c27b7aab0fb",
+              "rank": null
+            },
+            {
+              "id": "62592575-076e-49f4-b341-15efcd197d7b",
+              "rank": null
+            },
+            {
+              "id": "ceb13480-68fd-45e3-81db-905fb3d9577c",
+              "rank": null
+            },
+            {
+              "id": "5c833b3e-e98d-414c-9380-00e02bb81423",
+              "rank": null
+            },
+            {
+              "id": "654929fa-f8d2-4a6b-ac3c-cc2bd3a3ceb6",
+              "rank": null
+            },
+            {
+              "id": "e32df0ee-8328-4da6-951c-787e8f55f45d",
+              "rank": null
+            },
+            {
+              "id": "1c7c0c6f-07f1-4cba-be73-d9ff7219d164",
+              "rank": null
+            }
+          ]
+        },
+        {
+          "query": "workshop supplies ordered",
+          "ranks": [
+            {
+              "id": "155065a8-1d79-4271-8087-b86e19c4fa3e",
+              "rank": null
+            },
+            {
+              "id": "4977e5f2-aa79-45e4-8811-5bb402e78b0e",
+              "rank": null
+            },
+            {
+              "id": "126bbd80-cf7c-43d2-a53f-5581488a041c",
+              "rank": null
+            },
+            {
+              "id": "91f835e5-701c-4491-9d02-a93712060d7e",
+              "rank": null
+            },
+            {
+              "id": "3088bb9d-301c-4b94-bb2e-3cbe9998586e",
+              "rank": null
+            },
+            {
+              "id": "09d10cf7-545b-4ba9-bdc1-85a530296bbb",
+              "rank": null
+            }
+          ]
+        },
+        {
+          "query": "weekend plan",
+          "ranks": [
+            {
+              "id": "80865bab-3d35-4faa-aa12-234175b30216",
+              "rank": 3
+            },
+            {
+              "id": "2188060f-13b9-4366-9404-2c1688acb355",
+              "rank": 2
+            },
+            {
+              "id": "3ade72fa-68db-4999-9ad8-0660b3691e11",
+              "rank": 1
+            }
+          ]
+        }
+      ]
+    },
+    "baseline_recall_at_5": 0.3333,
+    "implementation_recall_at_5": 0.8492,
+    "baseline_mrr": 0.3333,
+    "implementation_mrr": 1
+  }
+}

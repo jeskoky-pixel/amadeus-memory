@@ -86,6 +86,56 @@ Fixed concrete review findings:
    still work, internal retrieval keeps full alias graph recall, and
    authenticated entity-detail still works.
 
+## Quality repair (Codex acceptance round 2, 2026-10-25)
+
+1. **Trusted event authenticity (P0).** `src/trusted-events.js` centralizes
+   NFKC/case-insensitive `event:*` namespace checks. Ordinary save/update strips
+   every event spelling, including unknown future tags and `source=trusted_intake`
+   spoofing. Only a closure-private `writeTrustedIntake` channel can add the tag
+   derived from a validated kind. Ordinary updates and title-dedupe merges union
+   the event tags backed by committed `memory_trusted_provenance`; extra
+   event tags on intake are rejected before any write. Standalone save/update and
+   tool/MCP paths inherit the same service guard. Read-time preference scoring
+   and API/tool claim display also ignore legacy unbacked event tags (including
+   Unicode variants) unless provenance backs the exact kind; no DB rewrite is
+   performed.
+2. **Durable request-id idempotency (P1).** Additive
+   `memory_trusted_requests` table keyed by normalized actor + request id, with a
+   SHA-256 fingerprint of material payload. Same key/payload replays the original
+   memory/provenance; same key/different payload returns `409
+   request-id-conflict`; distinct IDs with the same title force-new and remain
+   distinct. Check+write runs under `BEGIN IMMEDIATE`; memory, provenance and
+   request row roll back together. Old DBs with duplicate historical request IDs
+   are safe because no unique index is added to legacy provenance rows. The
+   regression uses two barrier-synchronized worker-thread connections for a
+   genuinely overlapping submission, not a sequential retry.
+3. **Pending identity continuity (P1).** Unresolved name-only assertions persist
+   with source memory, attrs, candidate IDs and evidence in
+   `identity_pending_assertions`. Relations with at least one unresolved endpoint
+   persist separately in `identity_pending_relations` with endpoint names/types,
+   any already-resolved UUIDs and source memory. Each confirmation retries them;
+   a relation is written only when both endpoints are unambiguous and type
+   boundaries hold. Endpoint UUIDs come from a stored resolution, the confirmed
+   alias, or explicit per-source selection — never a bare name. Two stable-ID
+   people sharing a name stay pending until explicit selection. Applied relations
+   are reused on re-extraction (no duplicate edge). Alias confirmation and
+   recovery share one transaction: a failed recovery rolls back the confirmation,
+   retains pending rows and surfaces `pending-recovery-failed` (regression injects
+   a SQLite trigger abort). Source memory must exist and not be forgotten; stale
+   sources are marked `stale`/audited rather than resurrected, and explicit
+   selection returns `pending-source-unavailable`. Pending assertion payloads are
+   bounded (40 attrs, 40 relations, 16 KiB, plus a 100-relation extractor cap)
+   and marked `truncated`. The focused regression now covers a two-pending-person
+   relation (including restart), duplicate-free re-extraction, same-name
+   stable-ID ambiguity plus explicit selection, and forgotten-source relation
+   staleness.
+4. **Preference ablation (P1).** Benchmark now runs A original, B enlarged pool
+   with neutral weights, C tag-only, D tag+entity, plus all-1.0 control. B uses a
+   test-only `__preferenceAblationPoolOnly` gate (not a product config key).
+   Measured: B equals A (0.3333 Recall@5 / 0.3333 MRR), C and D both 0.8492 /
+   1.0; pool expansion alone does not improve this fixture, tag weights drive the
+   measured gain, and entity weights add no measurable gain here.
+
 ## Files changed
 
 Modified:
@@ -118,18 +168,24 @@ Added:
 - `dsh-mneme/src/identity.js`
 - `dsh-mneme/src/preferences.js`
 - `dsh-mneme/src/intake.js`
+- `dsh-mneme/src/trusted-events.js`
 - `dsh-mneme/lib/identity.js` (generated)
 - `dsh-mneme/lib/preferences.js` (generated)
 - `dsh-mneme/lib/intake.js` (generated)
+- `dsh-mneme/lib/trusted-events.js` (generated)
 - `dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md`
 - `dsh-mneme/scripts/memory-enhancer-fixture.mjs`
 - `dsh-mneme/scripts/benchmark-memory-enhancer.mjs`
-- `dsh-mneme/reports/memory-enhancer-benchmark.json` (measured output, synthetic)
+- `dsh-mneme/reports/memory-enhancer-ablation.json` (measured four-arm output)
+- `dsh-mneme/reports/memory-enhancer-benchmark.json` (earlier measured output)
 - `dsh-mneme/test/identity.test.js`
 - `dsh-mneme/test/preferences.test.js`
 - `dsh-mneme/test/trusted-intake.test.js`
 - `dsh-mneme/test/memory-enhancer-api.test.js`
 - `dsh-mneme/test/memory-enhancer-retrieval.test.js`
+- `dsh-mneme/test/memory-enhancer-quality-regressions.test.js` (Codex red tests, unmodified)
+- `dsh-mneme/test/memory-enhancer-quality-extra.test.js`
+- `dsh-mneme/test/memory-enhancer-identity-continuity.test.js` (Codex red test, unmodified)
 - `docs/verification/MEMORY_ENHANCER_WORKER.md` (this file)
 
 No Life code, production profile/database, credentials, real chat/memory, or
@@ -143,7 +199,7 @@ Commands run from `dsh-mneme/`.
   install (postinstall scripts blocked by the file sandbox; no production
   install).
 - `node scripts/check-sync.js` — PASS: `src/` and `lib/` byte-identical
-  (79 files; `lib/client.js` is lib-only by design).
+  (80 files; `lib/client.js` is lib-only by design).
 - `node test/<file>.js` for the new tests — PASS (see counts below).
 - Full suite with a per-file timeout runner (`Start-Job`, 150 s/file). Results
   and environmental failures are recorded below.
@@ -156,63 +212,69 @@ Commands run from `dsh-mneme/`.
 | File | Tests | Result |
 |---|---|---|
 | `test/identity.test.js` | 15 | PASS |
-| `test/preferences.test.js` | 7 | PASS |
+| `test/preferences.test.js` | 8 | PASS |
 | `test/trusted-intake.test.js` | 6 | PASS |
-| `test/memory-enhancer-api.test.js` | 10 | PASS |
+| `test/memory-enhancer-api.test.js` | 11 | PASS |
 | `test/memory-enhancer-retrieval.test.js` | 5 | PASS |
+| `test/memory-enhancer-quality-regressions.test.js` (Codex) | 10 | PASS |
+| `test/memory-enhancer-quality-extra.test.js` | 12 | PASS |
+| `test/memory-enhancer-identity-continuity.test.js` (Codex) | 3 | PASS |
+| `test/standalone-api.test.js` (spoof addition) | 30 | PASS |
 
 ### Full suite
 
-Bounded per-file sweep after the Codex review fixes (179 test files,
-`Start-Job`, 180 s/file timeout; raw result
-`.benchmark/full-test-results-review.json`):
+The bounded full sweep below was run before the final focused pending-relation
+fix; per Codex instruction it was not rerun for that narrow change. The focused
+identity/API/regression files were rerun and are listed below.
 
-- 2314 tests observed, 2278 passed, 35 failed, 1 file timed out.
-- After the sweep, two bounded tests were added (`test/identity.test.js` now
-  15/15, `test/memory-enhancer-api.test.js` now 10/10); no failing file changed,
-  so the aggregate would be 2316 tests with the same 35 environmental/baseline
-  failures and the one sandbox timeout.
+Final bounded per-file sweep after the quality repair (182 test files,
+`Start-Job`, 180 s/file timeout; raw result
+`.benchmark/full-test-results-quality.json`):
+
+- **2339 tests observed, 2303 passed, 35 failed, 1 file timed out.**
 - The only timeout is `test/mcp-stdio.test.js` (spawns a stdio MCP child with
   pipes; the DSH file sandbox blocks that).
-- Every failing file was re-run from the import-baseline checkout and produced
-  the same failures (counts below are baseline → implementation):
-  - `capabilities.test.js` 20/21 → 20/21 (Windows symlink privilege)
-  - `client.test.js` 79/80 → 79/80 (parse test shells out with `spawnSync` → EPERM;
+- Every failing file is a known environmental/baseline limitation:
+  - `capabilities.test.js` 20/21 (Windows symlink privilege)
+  - `client.test.js` 79/80 (parse test shells out with `spawnSync` → EPERM;
     direct `node --check lib/client.js` passes)
-  - `maintenance.test.js` 12/14 → 12/14 (CLI `execFile` → EPERM)
-  - `peer-blockers.test.js` 5/6 → 5/6 (multi-process spawn → EPERM)
-  - `pipeline-runner.test.js` 21/22 → 21/22 (pre-existing fixture failure)
-  - `pipeline.test.js` 19/32 → 19/32 (repo lacks `pipelines/` and `.mneme/`)
-  - `publish-gate.test.js` 14/15 → 14/15 (child-process EPERM)
-  - `readme-claims.test.js` (root README lacks the upstream privacy sections)
-  - `release-notes.test.js` 14/17 → 14/17 (child-process EPERM)
-  - `serve-bin.test.js` 0/2 → 0/2 (spawn EPERM)
-  - `session-usage.test.js` 11/12 → 11/12 (Windows symlink privilege)
-  - `test-count-sync.test.js` 3/4 → 3/4 (root README has no test badge)
-  - `workflow-guards.test.js` 0/7 → 0/7 (`.github/workflows/` not imported)
-  - `security-doc.test.js` cannot load: repository root has no `SECURITY.md`
-    in this baseline.
-- `test/lib-smoke.test.js` failed once because `src/` and `lib/` drifted during
-  the final edit; after `npm run sync` it passes 6/6. No other regression was
-  introduced by the enhancer.
+  - `maintenance.test.js` 12/14 (CLI `execFile` → EPERM)
+  - `peer-blockers.test.js` 5/6 (multi-process spawn → EPERM)
+  - `pipeline-runner.test.js` 21/22 (pre-existing fixture failure)
+  - `pipeline.test.js` 19/32 (repo lacks `pipelines/` and `.mneme/`)
+  - `publish-gate.test.js` 14/15 (child-process EPERM)
+  - `readme-claims.test.js` 2/3 (root README lacks upstream privacy sections)
+  - `release-notes.test.js` 14/17 (child-process EPERM)
+  - `serve-bin.test.js` 0/2 (spawn EPERM)
+  - `session-usage.test.js` 11/12 (Windows symlink privilege)
+  - `test-count-sync.test.js` 3/4 (root README has no test badge)
+  - `workflow-guards.test.js` 0/7 (`.github/workflows/` not imported)
+- Two mid-repair regressions were found by earlier sweeps and fixed rather than
+  left in the baseline column:
+  - `api-routes-gaps.test.js` failed because `/entities` always added pagination
+    metadata. Fixed by returning the exact legacy `{entities,total}` shape when
+    no `limit`/`offset`/`q` is supplied; now 30/30.
+  - `memory-enhancer-quality-extra.test.js` once timed out under the nested sweep
+    runner because the worker-thread barrier had no readiness/result timeout.
+    Added error propagation, 20 s phase timeouts, three fresh-DB attempts and
+    cleanup; five consecutive Start-Job stress runs passed, and the final sweep
+    passed 8/8.
+- No enhancer test failed in the final sweep. The 35 failures and one timeout
+  match the previously documented baseline/environmental set.
 
-Supervisor checkpoint: an independent parse of the same bounded run counted 179
-files with 178 completed and only `mcp-stdio.test.js` timing out. The
-test-level failures above are the known baseline/environmental ones, not
-enhancer regressions.
-
-Post-review affected-file rerun (all green):
+Post-repair affected-file rerun (all green):
 
 ```
-identity 15/15 · preferences 7/7 · trusted-intake 6/6 · enhancer-api 10/10
-enhancer-retrieval 5/5 · api 76/76 · route-policy 6/6 · lib-smoke 6/6
-tools-dto-schema-matrix 7/7 · entities 39/39
+quality-regressions 10/10 · quality-extra 12/12 · identity-continuity 3/3
+preferences 8/8 · trusted-intake 6/6 · enhancer-api 11/11
+standalone-api 30/30 · api 76/76 · api-routes-gaps 30/30
+route-policy 6/6 · service-search 8/8 · inject 28/28 · lib-smoke 6/6
 ```
 
 `node --check lib/client.js` — PASS. `node scripts/check-sync.js` — PASS.
 `git diff --check` — PASS (only LF→CRLF warnings).
 
-## Benchmark (measured, synthetic)
+## Preference ablation (measured, synthetic)
 
 Command:
 
@@ -220,28 +282,31 @@ Command:
 mkdir -p .benchmark/baseline
 git -C .. archive --format=tar 13e6520:dsh-mneme | tar -xf - -C .benchmark/baseline
 node scripts/benchmark-memory-enhancer.mjs --baseline .benchmark/baseline \
-  --runs 3 --iterations 20 --json .benchmark/benchmark-result.json
+  --runs 3 --iterations 20 --json .benchmark/benchmark-ablation.json
 ```
 
-Measured summary (3 runs, 20 iterations):
+Arms: A original baseline; B enlarged pool + neutral weights; C tag weights
+only; D tag + canonical-entity weights; all1 = flag on, every weight 1.0. B uses
+the test-only `__preferenceAblationPoolOnly` gate (not a product config key).
+Current arms seed event-tagged fixture rows via trusted intake so the labels are
+provenance-backed; A keeps the baseline's historical unbacked labels.
 
-| Metric | Import baseline | Implementation |
-|---|---|---|
-| Recall@5 | 0.3333 | 0.8492 |
-| MRR | 0.3333 | 1.0000 |
-| p50 search latency | 3.782 ms | 4.854 ms |
-| p95 search latency | 5.217 ms | 7.092 ms |
-| DB file size | 344,064 B | 475,136 B |
-| Heap delta | 992,859 B | 2,813,715 B |
-| Background LLM calls | 0 | 0 |
+| Arm | Recall@5 | MRR | p50 | p95 | DB bytes |
+|---|---|---|---|---|---|
+| A original | 0.3333 | 0.3333 | 5.595 ms | 8.013 ms | 344,064 |
+| B pool only | 0.3333 | 0.3333 | 5.686 ms | 7.985 ms | 507,904 |
+| C tag weights | **0.8492** | **1.0000** | 7.155 ms | 11.407 ms | 507,904 |
+| D tag+entity | **0.8492** | **1.0000** | 6.925 ms | 10.619 ms | 507,904 |
+| all1 control | 0.3333 | 0.3333 | 5.227 ms | 7.210 ms | 507,904 |
 
-The fixture is synthetic (50 memories, fake QQ group number): heavy casual
-group chatter, sparse close-person events, own actions, old important memories,
-and irrelevant high-weight memories. The benchmark measures keyword/BM25/graph
-retrieval with no embedder/reranker; it does not model production volume,
-concurrency, embeddings or real query distributions. Background LLM calls are 0
-because no provider/extractor/dream/summarize hook is installed in either mode.
-See `docs/AMADEUS_MEMORY_ENHANCER.md` for dataset and limitations.
+Per-query expected-ID ranks for run 1 are in
+`reports/memory-enhancer-ablation.json`. Honest result: pool expansion alone did
+not improve this fixture (B = A); bounded tag weights produced the measured gain;
+entity weights added no measurable Recall@5/MRR gain here. All arms made 0
+background LLM calls. The fixture is synthetic (50 memories, fake QQ group
+number): chatter, sparse close-person events, own actions, old important
+memories, irrelevant high-weight rows. It does not model production volume,
+concurrency, embeddings or real query distributions.
 
 ## Known limitations / review notes
 
@@ -250,9 +315,14 @@ See `docs/AMADEUS_MEMORY_ENHANCER.md` for dataset and limitations.
 - Confirmed alias uniqueness is global per normalized alias; a real duplicate
   nickname needs distinct labels or stays unconfirmed.
 - A name-only person/group write is deliberately unresolved when a candidate
-  exists; the extractor records it as `unresolved` and writes no attrs/relations.
-  Existing legacy name aliases are unconfirmed, so operators must confirm a
-  binding (or supply a trusted external ID) to reuse them.
+  exists; the extractor persists a pending assertion and writes no attrs/relations.
+  A single safe candidate is recovered after human alias confirmation; ambiguous
+  candidates require explicit `POST /identity/pending` selection. Relations whose
+  other endpoint remains unresolved are not guessed during recovery.
+- `source=trusted_intake` is descriptive, not authority. Event tags are minted
+  only by the closure-private intake writer, which is backed by committed
+  provenance. Ordinary save/update strips every NFKC/case `event:*` spelling,
+  including unknown future tags.
 - Cross-platform same-type association is manual only (dry-run + confirm);
   same-platform different IDs never merge; person/group never merge.
 - All new identity/preference/provenance routes require an actually configured
@@ -262,6 +332,10 @@ See `docs/AMADEUS_MEMORY_ENHANCER.md` for dataset and limitations.
   above); it is off by default.
 - `trustedIntakeEnabled` requires `apiToken`; intake returns 503 without it
   rather than using Mneme's legacy fail-open write behavior.
+- `request_id` idempotency is scoped by normalized `actor` (the shared API token
+  does not identify Life instances). Same key must be retried with the same
+  material payload; different material returns 409. Historical duplicate
+  provenance request IDs are preserved without a unique index.
 - `node test/*.test.js` direct execution is used because the sandboxed
   `node --test` runner spawns child processes (`EPERM`).
 - The full suite includes the environmental failures listed above; none of the
@@ -271,8 +345,9 @@ See `docs/AMADEUS_MEMORY_ENHANCER.md` for dataset and limitations.
 
 - The runtime does not expose exact prompt/completion token counters to the
   worker, so a precise token figure cannot be reported. The session used
-  roughly 300 model-visible steps, a large share spent reading the 1.5 MB+
-  package sources, debugging sandbox limitations, and the Codex review fixes.
+  roughly 360 model-visible steps, a large share spent reading the 1.5 MB+
+  package sources, implementing the Codex red-test contract, running bounded
+  per-file sweeps, and hardening concurrency/recovery tests.
 - No child agents or extra sessions were spawned.
 - Duplicated/wasted work:
   - one full dependency install attempt failed on the default npm cache outside

@@ -92,18 +92,49 @@ export function fixtureMemories() {
  * Seed a fixture through the public service save path. Returns
  * { byKey, entity } where byKey maps fixture keys to memory ids and entity is
  * the synthetic close-person entity id.
+ *
+ * `trustedEvents` uses the trusted intake channel for fixture rows carrying
+ * event:* tags so the implementation arms have genuine provenance instead of
+ * unbacked tags (the baseline arm cannot, and keeps its historical behavior).
  */
-export function seedFixture(service, store) {
+export function seedFixture(service, store, { trustedEvents = false } = {}) {
   const byKey = new Map();
+  const kindForTag = {
+    "event:self_action": {
+      kind: "self_action", participation: "agent", trust_source: "system"
+    },
+    "event:direct_interaction": {
+      kind: "direct_interaction", participation: "both", trust_source: "verified_user"
+    }
+  };
   for (const row of fixtureMemories()) {
-    const saved = service.saveWithDedupe({
-      type: row.type,
-      title: row.title,
-      content: row.content,
-      importance: row.importance,
-      tags: row.tags,
-      source: "synthetic_fixture"
-    });
+    const eventTag = row.tags.find((tag) => kindForTag[tag]);
+    let saved;
+    if (trustedEvents && eventTag && typeof service.submitTrustedMemory === "function") {
+      saved = service.submitTrustedMemory({
+        kind: kindForTag[eventTag].kind,
+        status: "completed",
+        participation: kindForTag[eventTag].participation,
+        trust_source: kindForTag[eventTag].trust_source,
+        actor: "synthetic-fixture",
+        title: row.title,
+        content: row.content,
+        type: row.type,
+        importance: row.importance,
+        scope: { agent_scope: "amadeus", workspace_scope: "life-test" },
+        tags: row.tags.filter((tag) => tag !== eventTag),
+        evidence: [{ kind: "synthetic", value: row.key }]
+      });
+    } else {
+      saved = service.saveWithDedupe({
+        type: row.type,
+        title: row.title,
+        content: row.content,
+        importance: row.importance,
+        tags: row.tags,
+        source: "synthetic_fixture"
+      });
+    }
     byKey.set(row.key, saved.memory.id);
   }
   const person = store.createEntity({ name: FIXTURE_PERSON, type: "person" });
@@ -165,6 +196,11 @@ export async function evaluateFixture(service, byKey, { topK = 5, mode = "auto" 
     perQuery.push({
       query: entry.query,
       expected: entry.expectedIds.length,
+      expected_ids: entry.expectedIds,
+      ranks: entry.expectedIds.map((id) => {
+        const index = actualIds.indexOf(id);
+        return { id, rank: index >= 0 ? index + 1 : null };
+      }),
       actual: actualIds,
       metrics: metricsFor(actualIds, entry.expectedIds),
       preferences: rows.filter((row) => row.preference).map((row) => ({ id: row.id, factor: row.preference.factor }))

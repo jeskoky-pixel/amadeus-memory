@@ -31,10 +31,13 @@ EXISTS` in the same schema open as Mneme. Existing `entities`, `entity_attrs`,
 | `entity_aliases` | Labels with provenance, confidence, confirmation and active state; historical rows retained |
 | `entity_canonical_links` | Reversible `entity_id → canonical_id` view links; unique active source |
 | `entity_merge_reports` | Persisted dry-run reports; confirmation must reference one |
+| `identity_pending_assertions` | Durable name-only assertions awaiting safe identity recovery/selection |
+| `identity_pending_relations` | Durable relations waiting for both endpoint UUIDs/type checks; recovered once |
 | `identity_audit_events` | Append-only audit: alias/external/link/report events with payload + evidence |
 | `tag_weights` | Tag preference weights in `[0.5, 2.0]` |
 | `entity_preference_weights` | Canonical-entity preference weights in `[0.5, 2.0]` |
 | `memory_trusted_provenance` | Trusted intake provenance keyed to a memory UUID |
+| `memory_trusted_requests` | Durable actor+request-id idempotency key, fingerprint and target IDs |
 
 Unique partial indexes enforce the important invariants:
 
@@ -175,6 +178,50 @@ The human flow is:
 3. `POST /identity/merge-undo` with `link_id` or `report_id` → reversible undo.
    Repeated confirmations are rejected (`report-applied` / `report-undone`).
 
+### 2.6 Pending name-only assertions and relations
+
+When extraction sees a name-only person/group with an existing candidate, it does
+not guess an entity and does not discard the assertion. It persists a bounded
+`identity_pending_assertions` row keyed to the source memory containing the
+entity name/type, candidate entity IDs and evidence. A relation with at least one
+unresolved endpoint is persisted separately in `identity_pending_relations` with
+the source memory, endpoint names/types, any already-resolved endpoint UUIDs,
+relation type and evidence. Accepted attrs/relations are **not** written until
+identity is safe.
+
+- Human confirmation of an alias recovers pending assertion rows whose single
+  canonical candidate becomes that entity, writing attrs with their original
+  `memory_id` and marking the assertion `applied` (audited, committed,
+  restart-safe).
+- A pending relation is retried after each confirmation. It is written only when
+  **both** endpoints are unambiguously resolved and person/group type boundaries
+  still hold. An endpoint may be resolved by:
+  - a UUID stored when extraction already resolved it;
+  - the just-confirmed alias/entity; or
+  - an explicit per-source pending-assertion selection.
+- A bare name is never used to infer a UUID. If two stable-ID people/groups share
+  a name, that endpoint stays unresolved after a nickname confirmation until an
+  explicit selection supplies the UUID.
+- Unresolved or ambiguous relations remain durable `pending` rows and are
+  retried later. A successfully recovered relation is marked `applied` and is
+  reused rather than duplicated on re-extraction.
+- Alias confirmation + recovery is one transaction: if a pending attr/relation
+  write fails, the alias stays unconfirmed, partial recovery writes roll back,
+  the pending rows remain, and the caller gets `pending-recovery-failed` rather
+  than a silent success.
+- Recovery verifies the source memory still exists and is not forgotten. Missing/
+  forgotten sources are never resurrected into graph state: automatic recovery
+  marks the pending assertion/relation `stale` with an audit event and continues;
+  explicit selection returns `pending-source-unavailable` and leaves the
+  assertion pending.
+- Bounds: the extractor caps LLM relations at 100. A pending assertion payload
+  keeps at most 40 attrs, 40 relations and 16 KiB serialized; it is marked
+  `truncated` when any bound applies. The per-memory pending-relation set is
+  therefore bounded by the 100-relation extractor cap. Re-extraction updates the
+  same pending row instead of duplicating entities, assertions or relations.
+- `GET /identity/pending` (authenticated) lists pending assertions and pending
+  relations; all pending endpoints are `token` + configured-server-token routes.
+
 ## 3. Preference weights
 
 Automatic importance (`memories.importance`, 1–5) is untouched.
@@ -250,21 +297,56 @@ Rules enforced before any write:
 - `title`/`content`/`actor` are required and length-bounded; `importance` is an
   integer 1–5.
 - `evidence` is an array of up to 20 strings/objects.
+- Supplying any `tags` entry in the `event:*` namespace (NFKC/case-insensitive,
+  including unknown future tags) is rejected before any write. Event tags are
+  derived, never supplied.
 
-Writes go through the normal `saveWithDedupe` path (dedupe, quality, importance,
-archive/forget, mirror, embeddings, entity extraction), inside one transaction
-with the provenance row. This code alone derives deterministic tags:
+Writes go through a closure-private trusted writer inside the normal
+`saveWithDedupe` path (dedupe, quality, importance, archive/forget, mirror,
+embeddings, entity extraction), inside one transaction with the provenance row.
+This code alone derives deterministic tags:
 
 - `event:self_action`
 - `event:direct_interaction`
 - `event:reported_by_other`
 - `event:observation`
 
-The LLM extractor never derives these tags from casual chat. In addition, the
-normal `saveWithDedupe` path strips any `event:*` tag unless
-`source=trusted_intake`, so a model calling `memory_save` cannot mint a
-completion claim by adding a tag. Provenance is readable at
-`GET /api/dsh-mneme/intake/provenance?memoryId=<uuid>`.
+`source` is descriptive metadata, never authority. Ordinary save/update paths
+strip every `event:*` spelling after NFKC normalization and lower-casing, so
+`source=trusted_intake`, `Event:Self_Action`, full-width characters and unknown
+future `event:*` tags do not create a claim. Ordinary updates and title-dedupe
+merges preserve the event tags backed by committed
+`memory_trusted_provenance`; they never add a new one. Legacy unbacked event tags
+already present in an old DB are not rewritten, but preference scoring and API/
+tool claim display ignore them unless the exact kind is provenance-backed for
+that memory. Custom tags and source descriptions continue to work. Provenance is
+readable at `GET /api/dsh-mneme/intake/provenance?memoryId=<uuid>`.
+
+### Durable `request_id` idempotency
+
+When `request_id` is present:
+
+- Scope key = normalized `actor` identity (NFKC, trim, lower-case) + request id.
+  The shared API token does not distinguish Life instances, so `actor` is the
+  documented caller identity for this key.
+- Fingerprint = SHA-256 over kind/status/participation/trust_source/actor/title/
+  content/type/importance/occurred_at/scope/evidence/normalized extra tags.
+- Same key + same fingerprint returns the original memory and provenance with
+  `replayed: true` and no repeat write.
+- Same key + different fingerprint returns `409 request-id-conflict` before any
+  write.
+- Different request IDs with the same title are separate experiences (force-new
+  write, no title dedupe).
+- A no-`request_id` write retains the prior title-dedupe compatibility path.
+
+The durable `memory_trusted_requests` table is additive. Old databases that may
+already contain duplicate historical provenance request IDs are safe: no unique
+index is added to `memory_trusted_provenance`; only the new request-key table is
+unique. Check+write runs under `BEGIN IMMEDIATE`, so concurrent connections and
+restart replay converge without a second memory/provenance row. A failure rolls
+back memory, provenance and request row together. The regression suite drives
+two genuinely overlapping submissions from separate worker-thread connections
+through a barrier, not just sequential retries.
 
 Failure semantics:
 
@@ -272,8 +354,9 @@ Failure semantics:
 |---|---|
 | disabled | `409 disabled` |
 | no server `apiToken` | `503 api-token-required` |
-| invalid body/status/scope/participant/evidence | `400` with a concrete error code |
-| save/provenance failure | `500`; the transaction rolls back |
+| invalid body/status/scope/participant/evidence/event tag | `400` with a concrete error code |
+| reused request_id with different material | `409 request-id-conflict` |
+| save/provenance/request failure | `500`; the transaction rolls back |
 
 ## 5. API routes and auth policies
 
@@ -298,6 +381,7 @@ in Settings → Connections & safety → API Token.
 | `/api/dsh-mneme/identity/links` | GET | token | Active / historical canonical links |
 | `/api/dsh-mneme/identity/history` | GET | token | Aliases, external IDs, links and audit events |
 | `/api/dsh-mneme/identity/entity-detail` | GET | token | Full canonical group + attrs + relation provenance for the panel |
+| `/api/dsh-mneme/identity/pending` | GET/POST | token | List pending name-only assertions / explicitly resolve one to an entity |
 | `/api/dsh-mneme/identity/merge-preview` | POST | token | Persisted dry-run impact report (fingerprinted) |
 | `/api/dsh-mneme/identity/merge` | POST | token | Confirm a specific report (stale fingerprint rejected) |
 | `/api/dsh-mneme/identity/merge-undo` | POST | token | Reversible undo |
@@ -387,17 +471,31 @@ migrated by this branch.
    old view must be identical. No memory/attr/relation rows are reconstructed
    because none are deleted.
 
-## 8. Synthetic benchmark
+## 8. Synthetic preference ablation
 
-`scripts/benchmark-memory-enhancer.mjs` seeds the same fixture into independent
-SQLite files for the import baseline and the implementation, then measures
-Recall@5, MRR, p50/p95 search latency, a representative DB LIKE-scan latency,
-DB file size and heap delta. No provider/extractor/dream/summarize hook is
-installed, so both modes make **0** background LLM calls.
+`scripts/benchmark-memory-enhancer.mjs` runs four arms plus an off-equivalent
+control over the same synthetic fixture, queries, topK=5 and filtering:
 
-Fixture shape (synthetic, no real data): 4 old important memories, 3 close
-birthday events, 3 close weekend events, 6 own actions, 28 casual group-chatter
-rows with a clearly fake QQ group number, and 6 irrelevant high-weight rows.
+| Arm | Meaning |
+|---|---|
+| A | Original Mneme import baseline |
+| B | Same enlarged candidate pool, neutral (no) weights |
+| C | Same pool + tag weights only |
+| D | Same pool + tag + canonical-entity weights |
+| all1 | Flag on, every weight exactly 1.0 (off-equivalent control) |
+
+B uses a test-only config gate `__preferenceAblationPoolOnly` that is **not** in
+the config schema or feature flags and defaults false; product behavior is
+unchanged. Current arms seed fixture rows carrying `event:*` through the trusted
+intake channel so those labels have genuine provenance; the baseline arm keeps
+its historical unbacked labels. No provider/extractor/dream/summarize hook is
+installed, so every arm makes **0** background LLM calls.
+
+Fixture (synthetic, no real data): 4 old important memories, 3 close birthday
+events, 3 close weekend events, 6 own actions, 28 casual group-chatter rows with a
+clearly fake QQ group number, and 6 irrelevant high-weight rows. Queries cover
+group chatter, low-frequency person events, own actions, old important memories
+and irrelevant high weights.
 
 Reproduce (from the package directory; the baseline checkout is generated from
 the import commit and is not committed):
@@ -406,26 +504,33 @@ the import commit and is not committed):
 mkdir -p .benchmark/baseline
 git -C .. archive --format=tar 13e6520:dsh-mneme | tar -xf - -C .benchmark/baseline
 node scripts/benchmark-memory-enhancer.mjs --baseline .benchmark/baseline \
-  --runs 3 --iterations 20 --json .benchmark/benchmark-result.json
+  --runs 3 --iterations 20 --json .benchmark/benchmark-ablation.json
 ```
 
-Measured summary (2026-10-25, Node 22, synthetic fixture):
+Measured summary (2026-10-25, Node 22, means over 3 runs):
 
-| Metric | Import baseline | Implementation |
-|---|---|---|
-| Recall@5 | 0.3333 | 0.8492 |
-| MRR | 0.3333 | 1.0000 |
-| p50 search latency | 3.782 ms | 4.854 ms |
-| p95 search latency | 5.217 ms | 7.092 ms |
-| DB file size | 344,064 B | 475,136 B |
-| Heap delta | 992,859 B | 2,813,715 B |
-| Background LLM calls | 0 | 0 |
+| Arm | Recall@5 | MRR | p50 | p95 | DB bytes |
+|---|---|---|---|---|---|
+| A original | 0.3333 | 0.3333 | 5.595 ms | 8.013 ms | 344,064 |
+| B pool only | 0.3333 | 0.3333 | 5.686 ms | 7.985 ms | 507,904 |
+| C tag weights | **0.8492** | **1.0000** | 7.155 ms | 11.407 ms | 507,904 |
+| D tag+entity | **0.8492** | **1.0000** | 6.925 ms | 10.619 ms | 507,904 |
+| all1 control | 0.3333 | 0.3333 | 5.227 ms | 7.210 ms | 507,904 |
 
-The latency/size cost comes from the larger preference pool and the additive
-identity/preference/intake tables. This is a synthetic benchmark: it does not
-model production memory volume, embeddings, reranker models, concurrent writers,
-or real query distributions. Recall is only measured on three hand-built
-queries.
+Per-query ranks for run 1 are in
+`reports/memory-enhancer-ablation.json` (expected-ID → rank or null).
+
+Honest conclusion: **pool expansion alone does not improve retrieval on this
+fixture** (B equals A). The gain comes from bounded preference weights moving
+near-relevant candidates above chatter. Tag-only C already captures essentially
+all measured gain; adding canonical-entity weights (D) does not improve
+Recall@5/MRR here and changes latency only within noise. That does not prove
+entity weights are useless — the fixture's close-person memories carry both tag
+and entity signal — only that they add no measurable benefit on these queries.
+The cost is a larger candidate pool and the additive tables (B–D ≈ 508 KB vs A ≈
+344 KB). This remains a synthetic single-process benchmark: it does not model
+production memory volume, embeddings, reranker models, concurrent writers or
+real query distributions.
 
 ## 9. Known limitations
 
@@ -454,6 +559,15 @@ queries.
 - Legacy organization-typed QQ groups are reclassified to `group` by the
   deterministic numeric rule; the previous type is preserved in audit/evidence
   and duplicate numbers are manual candidates rather than automatic merges.
+- Pending name-only assertions are bounded to the source memory and recovered
+  only by a single safe candidate confirmation or explicit human selection;
+  ambiguous candidates stay pending. Relations whose other endpoint is still
+  unresolved are not guessed during recovery.
+- `request_id` idempotency is scoped by normalized `actor` because the shared
+  API token does not identify individual Life instances. Callers must use a
+  stable actor value for retries.
+- The preference ablation's B arm exists only as a test-only instrumentation
+  gate; it is not a product feature or config key.
 - The benchmark is synthetic and single-process; it is evidence of direction,
   not a production capacity claim.
 
@@ -479,3 +593,13 @@ New/updated tests:
 - `test/trusted-intake.test.js` — false-completion rejection, missing scope,
   provenance, deterministic tags, normal-save tag stripping, dedupe, route
   auth/disabled/failure semantics.
+- `test/memory-enhancer-quality-regressions.test.js` — Codex red tests:
+  source/Unicode spoofing, update/merge preservation, extra event rejection,
+  request-id replay/conflict/restart/distinct experiences, rollback, legacy
+  no-ID compatibility.
+- `test/memory-enhancer-quality-extra.test.js` — future event namespace,
+  two-connection replay, duplicate-historical-request-id migration, pending
+  explicit selection and restart commit.
+- `test/memory-enhancer-identity-continuity.test.js` — pending name-only attr/
+  relation recovery after confirmation+restart, and ambiguous stable-ID people
+  staying unattributed until explicit selection.

@@ -13,6 +13,7 @@
 // When the flag is off, or every stored weight is exactly 1.0, no ranking code
 // path changes at all.
 import { randomUUID } from "node:crypto";
+import { eventTagForKind, normalizeEventTag } from "./trusted-events.js";
 
 export const PREFERENCE_WEIGHT_MIN = 0.5;
 export const PREFERENCE_WEIGHT_MAX = 2.0;
@@ -263,12 +264,30 @@ export function createPreferenceService({ db, store, identity, config } = {}) {
       }
       return memoryEntityCache.get(memoryId);
     };
+    const provenEventTagsCache = new Map();
+    const provenEventTags = (memoryId) => {
+      if (!memoryId) return new Set();
+      if (!provenEventTagsCache.has(memoryId)) {
+        const rows = db.prepare(
+          "SELECT DISTINCT kind FROM memory_trusted_provenance WHERE memory_id = ?"
+        ).all(memoryId);
+        provenEventTagsCache.set(memoryId, new Set(
+          rows.map((row) => eventTagForKind(row.kind)).filter(Boolean)
+        ));
+      }
+      return provenEventTagsCache.get(memoryId);
+    };
 
     function factorFor(row) {
       const tagHits = [];
       let raw = 1;
       const rowTags = Array.isArray(row?.tags) ? row.tags : [];
       for (const tag of rowTags) {
+        // Event claims are authority-bearing: old spoofed/Unicode tags in an
+        // existing DB must not earn a trusted-event preference unless committed
+        // provenance backs that exact kind for this memory.
+        const eventTag = normalizeEventTag(tag);
+        if (eventTag && !provenEventTags(row?.id).has(eventTag)) continue;
         const key = normalizePreferenceTag(tag);
         const weight = tags.get(key);
         if (weight === undefined) continue;
