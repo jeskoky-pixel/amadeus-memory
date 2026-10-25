@@ -70,7 +70,7 @@ test("strict hot memory isolates sessions and blocks only a session reused acros
       mintTrustedScene({ platform: "qq", kind: "group", id: "b", verified: true }),
       mintTrustedScene({ platform: "qq", kind: "private", id: "owner", verified: true, admin: true })
     ];
-    const makeSession = (id, word) => ({ id, snapshotEvents: () => [
+    const makeSession = (id, word, createdAt = 'first') => ({ id, createdAt, snapshotEvents: () => [
       { type: "user/message", data: { source: { kind: "user" }, content: [{ type: "text", text: word }] } },
       { type: "assistant/message", data: { message: { content: [{ type: "text", text: `reply-${word}` }] } } }
     ] });
@@ -82,7 +82,10 @@ test("strict hot memory isolates sessions and blocks only a session reused acros
     assert.match(render(scenes[1], sessions[1]), /reply-group-b/);
     assert.match(render(scenes[2], sessions[2]), /reply-owner-private/);
     assert.doesNotMatch(render(scenes[0], sessions[0]), /reply-group-a/, "mixed session remains blocked");
-    assert.match(render(scenes[0], makeSession("a", "new-session")), /reply-new-session/, "reused ID with a new session object resets the latch");
+    assert.doesNotMatch(render(scenes[0], makeSession("a", "same-id-wrapper")), /reply-same-id-wrapper/,
+      "a new wrapper with the same Session ID cannot clear a blocked binding");
+    assert.match(render(scenes[0], makeSession("a", "new-session", "second")), /reply-new-session/,
+      "a verified new lifecycle may reuse the ID");
   } finally {
     resetSceneStateForTests();
   }

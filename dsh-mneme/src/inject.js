@@ -226,13 +226,12 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     maxRounds: config.hotMemoryRounds ?? 5,
     maxTokens: config.hotMemoryMaxTokens ?? 2000
   });
-  // Bind hot rounds to the real session, never to the injector instance. The
-  // object check resets an ID reused for a new session; LRU and idle cleanup
-  // bound state retained by a long-lived injector.
+  // Bind hot rounds to the real Session ID, not a transient JS wrapper. A
+  // verified lifecycle change may reuse an ID; otherwise keep its old binding
+  // and fail closed on a Scene switch. At the cap, suppress hot context for
+  // unknown IDs instead of evicting a binding that might still be live.
   const hotScenes = new Map();
-  const hotScenesByObject = new WeakMap();
   const HOT_SCENE_MAX = 500;
-  const HOT_SCENE_IDLE_MS = 6 * 60 * 60 * 1000;
 
   function renderHotContext(ctx) {
     if (config.hotMemoryEnabled === false) return "";
@@ -241,21 +240,17 @@ export function createInjector(ctx, service, settings, config, gate = null) {
       const session = ctx?.agent?.session;
       const id = session?.id;
       if (!scene || id === undefined || id === null) return "";
-      const now = Date.now();
-      for (const [key, value] of hotScenes) {
-        if (now - value.seenAt > HOT_SCENE_IDLE_MS) hotScenes.delete(key);
-      }
-      let binding = hotScenesByObject.get(session);
-      if (!binding) {
-        binding = { session, sceneId: scene.sceneId, blocked: false, seenAt: now };
-        hotScenesByObject.set(session, binding);
+      const rawLifecycle = session.createdAt ?? session.created_at ?? null;
+      const lifecycle = typeof rawLifecycle === "string" || typeof rawLifecycle === "number"
+        ? String(rawLifecycle) : rawLifecycle instanceof Date ? rawLifecycle.toISOString() : null;
+      let binding = hotScenes.get(id);
+      if (!binding && hotScenes.size >= HOT_SCENE_MAX) return "";
+      if (!binding || (binding.lifecycle != null && lifecycle != null && binding.lifecycle !== lifecycle)) {
+        binding = { lifecycle, sceneId: scene.sceneId, blocked: false };
+        hotScenes.set(id, binding);
       } else if (binding.sceneId !== scene.sceneId) {
         binding.blocked = true;
       }
-      binding.seenAt = now;
-      hotScenes.delete(id);
-      hotScenes.set(id, binding);
-      if (hotScenes.size > HOT_SCENE_MAX) hotScenes.delete(hotScenes.keys().next().value);
       if (binding.blocked) return "";
     }
     const rounds = extractRounds(ctx, config.hotMemoryRounds ?? 5);
@@ -486,6 +481,7 @@ export function createInjector(ctx, service, settings, config, gate = null) {
   return () => {
     queryVectorCache.clear();
     rotationHistory.clear();
+    hotScenes.clear();
     injectionSnapshot = null; // 注入器卸载即失效：快照不得跨生命周期存留
     for (const dispose of disposers) {
       if (typeof dispose === "function") dispose();
