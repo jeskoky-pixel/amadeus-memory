@@ -1,0 +1,348 @@
+{
+  "generated_at": "2026-10-25T05:14:16.509Z",
+  "fixture": "synthetic: 4 old important, 3 close birthday, 3 close weekend, 6 self actions, 28 group chatter, 6 irrelevant high-weight; 50 memories",
+  "runs": 3,
+  "iterations": 20,
+  "background_llm_calls_note": "No provider, extractor, dream or summarize hook is installed in the benchmark; both modes make 0 background LLM calls.",
+  "modes": [
+    {
+      "run": 1,
+      "mode": "baseline",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 4.12,
+        "p95": 6.207,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.157,
+        "p95": 0.355
+      },
+      "db_bytes": 344064,
+      "heap_delta_bytes": 1996952,
+      "heap_after_seed_bytes": 1469672,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 1,
+      "mode": "implementation",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 5.141,
+        "p95": 8.093,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.152,
+        "p95": 0.617
+      },
+      "db_bytes": 475136,
+      "heap_delta_bytes": 166072,
+      "heap_after_seed_bytes": 216792,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "mode": "implementation",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 4.601,
+        "p95": 6.508,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.138,
+        "p95": 0.407
+      },
+      "db_bytes": 475136,
+      "heap_delta_bytes": 1087952,
+      "heap_after_seed_bytes": -129680,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 2,
+      "mode": "baseline",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 3.6,
+        "p95": 4.494,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.156,
+        "p95": 0.275
+      },
+      "db_bytes": 344064,
+      "heap_delta_bytes": 2643096,
+      "heap_after_seed_bytes": -237664,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "mode": "baseline",
+      "retrieval": {
+        "recall_at_5": 0.3333,
+        "precision_at_5": 0.2,
+        "mrr": 0.3333,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "workshop supplies ordered",
+            "metrics": {
+              "recall": 0,
+              "precision": 0,
+              "mrr": 0,
+              "hit_count": 0
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 0
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 3.626,
+        "p95": 4.949,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.192,
+        "p95": 0.549
+      },
+      "db_bytes": 344064,
+      "heap_delta_bytes": -1661472,
+      "heap_after_seed_bytes": -265400,
+      "background_llm_calls": 0
+    },
+    {
+      "run": 3,
+      "mode": "implementation",
+      "retrieval": {
+        "recall_at_5": 0.8492,
+        "precision_at_5": 0.8667,
+        "mrr": 1,
+        "per_query": [
+          {
+            "query": "birthday dinner Aster",
+            "metrics": {
+              "recall": 0.7142857142857143,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 5
+          },
+          {
+            "query": "workshop supplies ordered",
+            "metrics": {
+              "recall": 0.8333333333333334,
+              "precision": 1,
+              "mrr": 1,
+              "hit_count": 5
+            },
+            "preference_rows": 0
+          },
+          {
+            "query": "weekend plan",
+            "metrics": {
+              "recall": 1,
+              "precision": 0.6,
+              "mrr": 1,
+              "hit_count": 3
+            },
+            "preference_rows": 5
+          }
+        ]
+      },
+      "latency_ms": {
+        "p50": 4.82,
+        "p95": 6.675,
+        "samples": 60
+      },
+      "db_search_ms": {
+        "p50": 0.24,
+        "p95": 0.46
+      },
+      "db_bytes": 475136,
+      "heap_delta_bytes": 7187120,
+      "heap_after_seed_bytes": 3775432,
+      "background_llm_calls": 0
+    }
+  ],
+  "summary": {
+    "baseline_recall_at_5": 0.3333,
+    "implementation_recall_at_5": 0.8492,
+    "baseline_mrr": 0.3333,
+    "implementation_mrr": 1,
+    "baseline_p50_ms": 3.782,
+    "implementation_p50_ms": 4.854,
+    "baseline_p95_ms": 5.217,
+    "implementation_p95_ms": 7.092,
+    "baseline_db_bytes": 344064,
+    "implementation_db_bytes": 475136,
+    "baseline_heap_delta_bytes": 992859,
+    "implementation_heap_delta_bytes": 2813715,
+    "background_llm_calls": 0
+  }
+}

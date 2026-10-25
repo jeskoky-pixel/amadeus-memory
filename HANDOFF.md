@@ -1,52 +1,27 @@
-# amadeus-memory 交接
+# Amadeus Memory handoff
 
-记录日期：2026-10-24（Asia/Shanghai）。
+## Latest state (2026-10-26)
 
-## 仓库
+The original persistent DSH Creator session implemented the productization fixes; Codex reviewed and committed the main implementation on `codex/memory-enhancer` as `fa87de7`. A follow-up release workflow fix allows repacking after README changes despite stale previous metadata. The default Amadeus product gate is `npm test`: Codex independently observed **490/490 pass** after this fix, plus 3/3 focused runs of the concurrent initialization regression. The full inherited upstream sweep is separately non-green because this fork lacks upstream release workflows and this Windows host lacks some symlink/process capabilities; see `docs/QA_FAILURE_INVENTORY.md` and `docs/WINDOWS_COMPATIBILITY.md`. Do not describe the full sweep as passing.
 
-- 远端：https://github.com/jeskoky-pixel/amadeus-memory
-- 默认分支：main
-- 可见性：公开（2026-10-25 用户明确要求）
-- 开发顺序：P1
-- 本地位置：主项目目录下 plugins/amadeus-memory/，属于独立 Git 仓库。
+README 更新及发行流程修复后重建的 archive `dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz` SHA-256 为 `e861c5cfab215968fd401abc8c4c358fbaf4a8517f9b0b4aaba25b53fa7ad4c1`；`dist/PACKAGE_INFO.json` 是本地元数据。两个全新隔离官方 DSH Desktop 在启用前均验证独立 `memoryDir`。Codex 实测 GUI 创建/编辑/归档/取消归档、Tag 权重添加/恢复默认、配置保存/刷新/重启、备份/校验/确认恢复、停启/卸载重装及数据保留。最终文档和发行脚本变更未改变 Memory 运行时代码，最终 tarball 本身未重做 Desktop 安装。归档状态 DTO 和并发 SQLite 首次打开缺陷已修复。生产 Memory 未修改；历史 QA 目录事件记录在主项目本机私有审计。
 
-## 已完成
+User direction on 2026-10-26: stop combined three-plugin runtime testing for now. The brief joint startup probe is not a final integration acceptance. Keep PR #1 OPEN, avoid production deployment and public release, and update README/HANDOFF for outside readers. Older hashes and test counts below are historical checkpoints; use this section and the current commit for recovery.
 
-仓库创建、独立本地克隆、README 与本交接文档初始化。文档随本仓库提交并同步到远端。提交版本通过 git log 或主项目交付消息核对。
+2026-10-25. The implementation is on `codex/memory-enhancer` in this repository and under review in [PR #1](https://github.com/jeskoky-pixel/amadeus-memory/pull/1). The older `main` checkout at `plugins/amadeus-memory/` still contains the initial placeholder documents; use the PR branch for code review and development.
 
-## 计划职责
+## Delivered
 
-管理有来源和权限范围的共同经历、关系信息、授权召回及可替换记忆后端。
+- `dsh-mneme/` is a separately installable DSH bundle extending Mneme's existing SQLite store, search, graph and panel. It provides stable typed identities, aliases, reversible canonical links, Tag/entity ranking weights and controlled, idempotent Life experience intake.
+- Model tools include the existing Mneme memory operations plus two bounded read-only enhancer tools, `memory_preference_get` and `memory_identity_lookup`. They are hidden under `strictScope` because entity aliases and global preferences have no per-session scope labels.
+- The productized enhanced edition is `@modusensus/dsh-mneme@0.9.5-amadeus.1` (same package/plugin ID as upstream 0.9.4, so its data/config/Embedding settings are inherited). It adds the native DSH settings page **Amadeus 记忆 / Amadeus Memory**, an owner-authenticated settings API and install/upgrade/rollback/user docs.
+- `dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz` is the current install archive (SHA-256 `cf584d7c410047e656a0f3385b3e9f3c9a4068be52102e1d4d19ab0fc3e0e0fc`); metadata is in `dist/PACKAGE_INFO.json`. The earlier `0.9.4` archive and isolated Desktop acceptance remain historical evidence for the upstream core, not for the new settings page.
+- REWORK_2 fixed a false conflict after a normal single-page Config Forms save, added a state-transition regression, and filled the applicable Security/README/release-docs gaps. The final package is built from the current tree; see `.productization-task/REWORK_2_REPORT.md` for exact tests and remaining environment/upstream-release gates.
 
-检索前按可信场景授权，派生摘要和关系继承来源限制。基础身份、Life 账本和发送回执不依赖记忆服务；关闭后当前对话可继续。
+## Current validation and remaining boundary
 
-## 下一步
+- Automated targeted validation covers the client registration, local-save conflict transition, owner API, feature/preference/vector behavior, package identity/docs, tools and core service/security tests. The full local sweep is 2378 tests / 2345 pass / 32 fail / 1 skip / 1 timeout; remaining failures are sandbox child-process/symlink limits and upstream release pipeline/workflow guards that this private fork intentionally does not copy. Exact evidence is in `.productization-task/REWORK_2_REPORT.md`; those items are not claimed as PASS.
+- The earlier official Plugin Manager install/hard-restart/real Qwen vector run was on `0.9.4` and is recorded in [the latest acceptance report](docs/verification/REAL_DSH_ACCEPTANCE_2026-10-25.md). The new native settings page still requires Codex's isolated Desktop GUI/Plugin Manager/hard-restart acceptance.
+- Production traffic, realistic semantic recall quality and production latency are still unverified. One loose paraphrase fell back to keyword, and remote Embedding latency had a long tail in a small synthetic run.
 
-等待基础身份、scope 与事件契约确定，先定义 record/retrieve/correct/forget/health 与跨场景正反例。
-
-需求与验收关注：R-07、R-11、R-13、R-15；重点验收 A-08—A-10、A-17。
-
-先阅读 README、主仓库 HANDOFF、多仓库约定和相关规格章节。正式开发由 Codex 编写有明确路径、契约、验收和预算的任务包；DSH 使用隔离开发 home 和工作区，不继承生产账号、记忆或发布凭据。
-
-## 未运行与限制
-
-- 未实施插件代码、构建、安装、升级、卸载或发布流程。
-- 未验证实际 DSH、QQ、NapCat、设备或其他平台兼容性。
-- 未运行本插件功能、契约、降级、权限或集成验收。
-- 当前无契约兼容版本、release 或可安装依赖组合。
-- 本仓库许可证未确定；任何第三方复用均须单独核查。
-
-文档初始化不能计为产品验收通过。保留可选依赖边界，授权失败时不放行受影响动作；不把计划、超时或取消请求记作完成。
-
-## 本地同步
-
-在本仓库目录内查看 git status、git log 和 git remote -v；主项目不会代为跟踪本仓库文件。拉取与推送针对本仓库的 origin；主仓库的 plugins/ 被忽略，不使用 Git Submodule。
-
-## 账号切换核查（2026-10-25）
-
-- 当前分支 `main`；无未合并 PR（2026-10-25 实查）。状态：只有仓库和职责文档，尚无插件实现或功能验收。本轮只补交接文档，没有新功能。
-- 当前文档提交请运行 `git log -1 --format=%H`；主项目 REPOSITORY_MAP 保存插件精确交付 SHA。
-- 契约：尚未声明运行时兼容版本；主项目 QQ/Life 0.1-draft 仅供设计参考。独立许可证待拥有者选择，不继承主仓库 MIT。
-- 当前项目只推进 Life；本插件继续按上文职责保留，未经用户新指令不切换开发。QQ 遗留独立 NapCat 和真实链路验收仍待核实。
-- 必读主项目 [接手入口](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/codex/life-development/docs/handoff/NEXT_CODEX_START.md)、[项目状态](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/codex/life-development/docs/handoff/CURRENT_STATE.md)、[架构](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/codex/life-development/docs/ARCHITECTURE.md)。
-- 禁止改动生产 SnowLuma、QQ Bridge、生产 DSH 或登录/记忆数据；禁止 Computer Use、真实发送、擅自发布/merge；保留独立安装和可选依赖边界。文档保存不等于插件验收。
+Do not change the live Mneme database, DSH Profile, QQ Bridge or Life data as part of this PR. Before deployment, back up the live SQLite consistently, rehearse on an isolated copy, review feature switches and keep the previous package and database backup for rollback. Do not merge or deploy PR #1 automatically.

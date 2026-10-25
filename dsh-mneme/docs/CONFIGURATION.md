@@ -1,0 +1,342 @@
+# 配置说明（全键参考）
+
+> 正本是 `src/config.js` 的 schema——本文与其同步维护，键名、默认值、取值范围以代码为准；
+> 行为动机与踩坑出处在 schema 注释里（含 issue 编号），本文只保留「怎么配、配了会怎样」。
+> 改 schema 时顺手更新对应行（新改动自查清单第 2 条）。
+
+**怎么读这张表**
+
+- 「默认」列即 `config.js` schema 的解析默认值；默认值本身 = 未配置时的行为。
+- 标 **light** 的键会被 lightMode 预设强制关闭（文末附完整清单）；lightMode 是预设不是
+  强制——用户显式写在 feature_flags 里的值优先于预设。
+- 行为开关（布尔键）默认关的即 opt-in：不开 = 行为与该键存在之前逐字节一致。
+- 绝大多数行为开关与部分阈值/路由键在 `settings.js` 的白名单里，可在面板「功能开关」
+  逐项启停（线上回滚开关）；未入白名单的键（路径、词典、枚举外的杂项）只能改 bundle 配置。
+
+## 设置入口与配置权威
+
+DSH 设置左侧的 **Amadeus 记忆 / Amadeus Memory** 页面与 Plugin Manager 共用权威：
+
+- 结构参数（语言、整理阈值、注入/向量阈值等）走 DSH Config Forms；Plugin Manager 与独立页读写同一份 Config。
+- 运行时开关（自动记忆、autoDream、Sleep、偏好、受信 intake、实体抽取、rerank）走既有 feature flags；独立页与原 Memory 面板写同一份存储，重载后生效。
+- Embedding Provider/模型沿用既有 Config/feature flags；OpenAI 兼容 Base URL/模型/密钥沿用既有 `vector` 设置，密钥只显示掩码。
+- 独立页不建立第二套配置或偏好数据库；修改后需要重载的项会明确提示。
+
+## 全局与存储
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `language` | `zh` | 记忆语言：生成条目、注入标题、后台提示词所用语言（`zh`/`en`） | 切换后重启生效 |
+| `memoryDir` | `~/.dsh/memory` | SQLite 记忆库目录 | WAL + busy_timeout 已为多进程就绪；两个宿主共用库时 `externalApiEnabled` 与 `autoDream` 只能一边开 |
+| `lightMode` | `false` | 轻量档总闸：一键关掉全部重型路径，保留核心循环（见文末清单） | 面板 `panel_mode=light` 等效为 `true` 且优先于 bundle 配置 |
+
+## scope 隔离（issue #17）
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `scopeEnabled` | `false` | 存储层总开关：**两条写入路径**（工具调用 `memory_save`/`memory_update`，以及机器提炼·会话蒸馏）都自动标注 agent_scope / workspace_scope（标注只贴**新建行**：并入既有行时不重贴，既有行的归属属于它原来被提炼出来的语境），去重键扩展；检索与注入排序按当前会话作用域加权（命中 ×1.25、他 scope ×0.5 保留可见，issue #339 补齐注入通道） | opt-in；关 = 写入不标注、行为与 A1 前逐字节一致 |
+| `strictScope` | `false` | 硬过滤模式（A3）：他 scope 完全不可见、未标注恒可见（fail-closed）；硬过滤先于软加权执行 | 依赖 `scopeEnabled` 打开才有意义；关 = A2 软隔离（他 scope 降权保留可见，检索与注入同权重） |
+
+## 作用域级可逆闸门（issue #471）
+
+上面两个键是**事实轴**——答「这条记忆属于谁」，改的是归属数据、跟着记忆行走。下面两个键是**政策轴**——答「这个作用域现在通不通」，由人按作用域整体按下、跨会话存续、松开即原样回来，**一条记忆行都不动、一个配置键都不改、不用重启**。两条轴落在同一个判定出口（`gateByScope`，全仓唯一的过滤实现），可叠加。
+
+按下与松开走工具 `set_scope_state`（`dimension`: `agent`/`workspace`，`scope_value`: 标签本身或 `*` 表示该维度全局，`state`: `paused`/`active`）。状态存 `scope_state` 表，键 = 维度 + 作用域值，`UNIQUE(dimension, scope_value)` 保证幂等：**重复按下同一状态不刷新 `decided_at`**（同 `memory_archive` 的取舍——否则「最后一次真正变更」的时刻会被噪声盖掉）。
+
+两级语义与 `writeAdmission` / `preInjectGate` 同构：先观察、再拦。
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `scopeState.enabled` | `false` | 跑政策轴判定：被按下的作用域其候选**照常注入**，但每次落一条 `llm_audit_logs`（`trigger_source=scopeState`，`metadata.paused` 记被按下的是哪些作用域、`metadata.gated` 记本应拦下几条、`metadata.enforced=false`） | 关 = 判定不跑、行为与今天逐字段一致。先看「如果按下会少掉多少」的真实分布，再决定真按——`gated` 恒为 0 就说明这一路本来就没在供料 |
+| `scopeState.enforce` | `false` | 真的不注入：被按下的作用域其候选出池（检索侧同款，`gateByScope` 一处生效；巩固与睡眠两侧的读入口与写入路径同款） | 关 = 仅观察（`metadata.enforced=false`）。**enforce 无 enabled 时无效果**（同 `preInjectGate`）。按下的是政策不是事实：记忆行、向量、归档位、作用域标注全部不动，松开即恢复 |
+
+覆盖范围：`gateByScope` 的三条检索路（融合池、`entity:`、`attr:` 前缀路）与注入候选池（`injectCandidates` 内、图召回合并之后、pin 池之前）。
+
+**不覆盖检视面**：`memory_list`、`memory_get`、面板列表**刻意不过这道闸**（它们走 `strictVisibility` 与 `store.list` 的 `visibility` 参数，是另一条平行的链）。按下之后人还要能查「我按下了什么、里面有什么」——检视面关掉，人就没有入口确认该不该松开。这也正是「按下的是政策不是事实」的具体含义：行还在，只是不再喂给模型。
+
+**巩固（dream）侧另接四处**：`activeStoreSize`、叙述条 `inputs`、`runDream` 的读入口、总览 `summaryAll`——否则被按下的行会照常参与阈值判定与合并。**总览那一处只能从源头挡**：总览落库时是**无作用域**的 summary 行，而 `gateInjection` 只拦匹配暂停作用域的行，没有标注的行永远不会被它拦下；被按下的内容一旦进了总览就变成「洗干净的全局行」，此后一直注入。
+
+**睡眠（sleep）侧另接四个相位**：冲突消解、归档降级、模式发现、关系补全的候选池。这一侧比日间更要紧，因为**它不只读**——`phaseDemotion` 会 `setArchived` 与 `demoteToSummary`（真改归档面），`phasePatterns` 会铸出 `type=pattern` 的新行；不接的话闸门开着而每 6 小时一次的睡眠照样在被按下的作用域上动手，「按下」就只等于让它在白天看不见。两处位置纪律写在注释里：降级的过滤放在循环之外（不是循环体里 `continue`，免得将来有人加副作用时漏掉），模式发现的过滤排在 `.slice(0, limit)` 之前（否则被按下的行照样占名额，它们既不会被扫、也不该挤掉别人）。
+
+`llmAudit.enabled=false` 时观察档一行都不写（同 `writeAdmission` 的口径）。不进 lightMode 强制关闭清单——它只是查一张小表的判定，不引入重型后台路径、不加常驻文本（同 `actionPipelineEnabled` 的定性）。
+
+## 审计
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `llmAudit.enabled` | `true` | 后台 LLM 调用全量落 `llm_audit_logs`（tokens / 时长 / 状态 / 触发源） | 覆盖 autoDream / autoSummarize / sleep / entityExtract 与写入准入测量点；关 = 一行不写 |
+| `llmAudit.retentionDays` | `90` | 审计表滚动清理保留天数（≤3650） | 启动时清理旧行 |
+
+## 写入准入（#254）
+
+写入前判定「这条该不该进库」，与 `memoryQualityFilter` 的分工是**时点**不是判据：那个是写入后打分归档（扣分可以错，只影响排序与归档），这个是写入前判定（硬拒不能错）。两个键都默认关，分层是为了把「先观察」和「开始拦」分成两次上线。
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `writeAdmission.enabled` | `false` | 跑第 1 级确定性判据：空白 / 纯噪声 + 密钥 / PII（判据来源是 #164 A2，经 `sensitiveScan` 注入） | 关 = 不判定、不拒绝，`evaluate` 返回与只计量阶段逐字段一致。命中 → 审计行带 `metadata.deny` |
+| `writeAdmission.enforce` | `false` | 命中时真的拒绝（`store.save` 之前返回） | 关 = 仅告警：判据照跑、审计照留、写入不拦（读审计时「`deny` 非空且 `decision=allow`」即这一档的指纹）。被拒写入不落库、不通知、不排嵌入，`memory_save` 返回 `action:"denied"` + `reason` |
+| `sensitiveScanEnabled` | `false` | A2 密钥 / PII 判据的来源（`sensitive-scan.js`）。开 = 判定结果可被写入准入消费；只覆盖带 sessionKey 的写入路径 | 关 = 扫描器不参与，`writeAdmission` 第 1 级只剩空白/噪声判据。**经 MCP / 8790 / `/import` 的写入不带 sessionKey，不进这道闸**（`write-admission.js` 的文件头注释点名了这条边界） |
+
+第 1 级的判据面刻意收窄：**去重键命中不进第 1 级**（归 write-update 放行——同步近重复门跑在异步矛盾检测之前会把本该被裁决的矛盾直接拒掉），G1/G2 阈值也只是计量。两个键都走 feature_flags 白名单（面板可启停）。
+
+## 注入前判定（#380）
+
+每帧注入候选出池后、进入 system prompt 前，一次**池级** LLM 调用判出「会向本次请求注入意见/立场」的记忆（判定协议与 E12 实验同源；实验依据：D1 判定+过滤把谄媚率 26.9%→2.5%，判定+标记比过滤差 +17.6pp——判定结果**只给闸门用，绝不进模型上下文**）。两级语义与 writeAdmission 同构，落点在注入面而非写入面。
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `preInjectGate.enabled` | `false` | 跑池级判定。判定 async prefetch + cache、渲染帧同步消费（宿主 systemPrompt 渲染是同步回调） | 关 = 注入行为与现状逐字节一致。**冷缓存首帧降级**：新查询的第一帧原样注入，下一轮同 key 渲染生效；判定完成落 `llm_audit_logs`（`trigger_source=preInjectGate`，真实 token 用量，`related_memory_ids`=被标记记忆）——先观察真实负载的意见占比分布 |
+| `preInjectGate.enforce` | `false` | 缓存命中帧真的滤除被标记候选 | 关 = 仅观察：候选集不动。**enforce 无 enabled 时无效果**。pin 池（constraint/preference，#249 逐字保真）与 graphHint 线索行豁免——判定与过滤只作用于一般记忆槽 |
+
+降级路径：判定失败/超时/不可解析 → 本帧原样注入 + 审计行 `degraded:true` 且不缓存（下一帧重试）——防线故障永不阻塞注入；连续失败 3 次熔断一个冷却期（判定器系统性坏掉时不再逐帧花钱，到期自动恢复）。**整池被标记**时放弃本帧 enforce（fail-open）：记忆正文是判定模型的可影响输入，一条指令型记忆不该让整个记忆块静默失明——该形态在审计行里就是 `n_flagged == n_pool`（判定与审计按原样保留，只有滤除让位）。判定 LLM 走 `agentDefaultModel` 当前选择（entity adapter 同款装配，无独立 provider/model 键；审计行带实际模型与用量，无默认模型路由时 `model_id` 落 `unknown` 占位——判定生效就必有账；成本痛了再加覆盖键）。缓存键 = 查询 + 候选 `id:内容` 集，候选集变化（轮换/新记忆）或候选内容被就地修正（`updateMemory`）即重新判定，不吃旧判定；命中刷新序（LRU，容量 8）。`llmAudit.enabled=false` 时本闸不运行（无账目的判定不可见也不该花钱）。lightMode 强制关（LLM-per-turn 附加路径与低资源档互斥）。
+
+## 蒸馏（会话 → 记忆）
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `autoSummarize` | `true` | 会话/回合结束自动蒸馏记忆。E10 EdgeMem 考卷（#339）实测：对「未来才问的具体值」类细节，零 LLM 原样写入保真 100% 而蒸馏丢 17/120——蒸馏的归纳收益在别的口径，二者是并存关系而非替代（原样写入并存的产品化见讨论 #361） | 关 = 只剩工具与命令写入口 |
+| `summarizeProvider` / `summarizeModel` | 空 | 蒸馏专用模型路由 | 两者都非空才生效；空 = 用会话当前模型 |
+| `distillMaxChars` | `24000` | 喂给蒸馏 LLM 的完整转录上限（字符，1000–200000） | 调大更完整、更贵 |
+| `summarizeMinIntervalMinutes` | `0` | 同会话两次蒸馏的最小间隔（分钟，≤10080） | 0 = 不限（#127 节流三键之一） |
+| `summarizeMaxEntriesPerRun` | `0` | 单次蒸馏最多落库条数（≤50） | 0 = 不限 |
+| `summarizeMinWindowChars` | `0` | 窗口可蒸馏文本下限（字符），不足直接跳过 LLM（#239） | 被挡窗口照常消费游标并留 skip 审计 |
+| `summarizeMaxRunsPerSession` | `0` | 每会话蒸馏次数预算，只计真实发起的调用（≤1000） | 0 = 不限；进程内计数，重启清零 |
+| `summarizeParseFailureMaxRetries` | `0` | 连续解析失败几次后放弃当前窗口（0–10，0 = 关，#493） | 达到阈值强制消费游标跳过该窗口；失败行 metadata 恒带 `raw_head`/`raw_has_bracket`/`streak` |
+| `summarizePeakHours` | `""` | 高峰时段串（`"09:00-18:00"` / `"mon-fri 08:00-12:00,14:00-18:00"`，支持跨零点） | 命中高峰不调 LLM、顺延补跑；任一写法非法整串按未配置处理 |
+| `summarizePeakMaxDeferMinutes` | `120` | 高峰顺延上限（分钟，≤1440） | 0 = 不设上限；到点仍处高峰照跑（bypassPeak） |
+| `summarizeDedupeMode` | `off` | 落库前去重档位：`off` / `title`（拦完全同名）/ `vector`（同会话语义近邻） | `vector` 复用已有 embedding 列，无 LLM 调用 |
+| `summarizeDedupeMinSim` | `0.92` | `vector` 档并入阈值（0.5–0.99） | 仅 `vector` 档生效 |
+| `summarizeDedupeWindowHours` | `24` | `vector` 档回看窗口（小时，≤168） | 仅 `vector` 档生效 |
+| `distillRateLimitIntervalMs` | `1000` | 蒸馏请求全局串行排队的相邻间隔（毫秒） | 0 = 关闭排队（默认开的 429 保护随之失效） |
+| `distillRateLimitRetries` | `3` | 命中 429 的指数退避重试次数（≤10） | 重试全程对用户透明 |
+| `distillRateLimitBaseDelayMs` | `1000` | 429 退避基数（毫秒，100–60000） | 1s→2s→4s… |
+| `summarizeReasoningEffort` | `none` | 蒸馏 LLM 推理档位：`off`/`low`/`medium`/`high`/`none`（#315） | `none` = 不发字段用服务商默认；思考模型建议 `off`/`low` 防推理烧光输出预算 |
+| `codingRetrospect` | `false` | 编码记忆蒸馏：rejected_solution / pitfall / constraint 三类 | opt-in；开启后蒸馏上下文为整轮完整对话 |
+| `codingKeywords` | 内置词表 | 编码任务识别词表（读取侧门控） | 命中才注入编码记忆 |
+| `codingBoostFactor` | `2` | 编码任务时编码记忆的 importance 加权系数（1–5） | — |
+| `memoryQualityFilter.enabled` | `true` | 写入质量打分：≥60 正常 / 30–60 降权 / <30 归档打 low_quality 标 | 归档行仍可显式搜到 |
+| `memoryQualityFilter.archiveThreshold` | `30` | 自动归档线 | 与 `exemptImportance` 联动 |
+| `memoryQualityFilter.degradeThreshold` | `60` | 降权线（注入排序乘 quality_score） | — |
+| `memoryQualityFilter.minContentLength` | `10` | 最短内容长度（字符） | — |
+| `memoryQualityFilter.exemptImportance` | `4` | importance ≥ 此值豁免静默自动归档（#135） | 设 1 = 等效关自动归档 |
+
+## 蒸馏原文留存与溯源（#399）
+
+把蒸馏从「替换」降级为「叠加索引」：蒸过的窗口原文旁路落 `distill_records`，每条新记忆落 `memory_provenance` 回指来源窗口。**渲染与落盘共用同一隐私谓词**（`publicTranscriptParts`）——私有推理链与插件注入的机器内容两条路都不进；工具入参与结果只进渲染、不落盘。留存文本不受 `distillMaxChars` 与工具裁剪约束。详见 [蒸馏原文留存与记忆级溯源](DISTILL.md)。
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `distillRecords.enabled` **light** | `false` | 蒸馏时顺带留存窗口原文 + 写记忆级溯源链接 | opt-in；关 = 一行不写、连收集都不做，行为与 #399 之前逐字节一致 |
+| `distillRecords.retentionDays` | `90` | 原文保留天数（1–3650） | **只管启动期裁剪**（`src/index.js`，`enabled` 时动手）。`dsh-mneme reclaim` 不读这个键：它对三个表用同一条 `--older-than` 截止（默认 7 天），想对齐就显式传成与 `retentionDays` 相同的值（见 STORAGE.md）。两处都**只删 `distill_records`**，溯源链接保留指向空区间（显示「来源已过期」），绝不级联删记忆 |
+
+两个键都走 feature_flags 白名单（面板可启停）；`enabled` 进 lightMode 预设关闭清单，`retentionDays` 不进（它是时长不是行为面，用户显式设过就照旧）。`dsh-mneme reclaim` 的报告从两项变三项（`planned` / `column_bytes` / `cleared` 各多一个 `distill_records`），入口语义（默认 dry-run、`--apply` 才动手）不变。已知边界：无历史回填、从未蒸馏过的窗口不留记录、不覆盖工具结果与 code 输出。
+
+## 注入
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `autoInject` | `true` | 每轮自动注入记忆块的父总闸 | 关 = 两个子开关一并失效（持久值保留，不重置） |
+| `maxInjectedItems` | `5` | 注入条数上限（1–20） | — |
+| `importanceThreshold` | `3` | 注入候选的 importance 下限（1–5） | 低于该值的记忆不进注入面 |
+| `injectRotationTurns` | `0` | 跨轮轮换：最近 N 轮注入过的不再优先（#205） | opt-in；会话边界自动重置 |
+| `injectContentMaxChars` | `300` | 单条正文截断上限（60–4000，#164①） | 截断带「上限/原长/全文指引」提示，不静默 |
+| `injectUncertaintyAdaptive` | `false` | 确定性强的话题收缩注入条数（减半、下限 1，#239 第 5 项） | 只做单向收缩，绝不越过 `maxInjectedItems` |
+| `injectGuidanceEnabled` **light** | `true` | 工具描述 + order 150 系统段讲「何时查/何时写」（#249） | `autoInject` 子开关；lightMode 强制关 |
+| `continuityRescueEnabled` **light** | `false` | 压缩边缘双落点：连续性提案落库 + 追加注入（#249 N3） | opt-in（新注入表面）；`autoInject` 子开关；订阅宿主压缩事件，无该时机则降级为持久规则 |
+| `pinnedInjectBudget` | `0` | 约束/偏好 pin 池独立预算（0–5，#249 B1） | 0 = 关；pin 不占 `maxInjectedItems` 名额 |
+| `hotMemoryEnabled` | `true` | 会话近期对话渲染在长期记忆块之前 | — |
+| `hotMemoryRounds` | `5` | 热记忆覆盖最近几轮对话（≤50） | — |
+| `hotMemoryMaxTokens` | `2000` | 热记忆块 token 上限（200–32000） | — |
+| `escapePromptVariables` | `true` | 注入内容连续花括号转义（#162） | 关 = 原样透传（DSH interpolate 可能 throw） |
+| `injectTimePrefix` | `false` | 对话开始注入一次当前时间（#34，v0.7.11 误删后随 #333 恢复） | opt-in；格式与键名与 v0.7.2 一致，存量 feature_flags 恢复即生效 |
+| `personaEnabled` | `false` | 人格段：用户自写的一小段常驻注入文本 | opt-in；只是轻量常驻文本、不引入重型后台路径，故不进 `LIGHT_MODE_OFF` |
+| `personaStrictAddressing` | `false` | 人格寻址口径。关（历史行为）：会话身份没建卡、或该卡被显式关掉时，落 `default` 卡 | 开：这两种情况都不注入人格，`default` 只兜「解析不到会话身份」的无名会话。用途是宿主里跑着自带身份的外部 bot 时，别让某个人格无条件进它每一帧。默认关 = 升级零变化 |
+| `profileExtractEnabled` **light** | `false` | 画像提取草稿：`POST /api/dsh-mneme/profile/extract` 从活跃记忆反向写一段「助手眼中的用户」草稿（面板「用户画像」卡上的按钮） | opt-in；一次调用一轮 LLM + 读上百行记忆，故 `LIGHT_MODE_OFF` 里有它。**只出草稿**：它不写 `user_settings`，采用草稿是面板里另一次显式保存——画像正文必须是用户手写的原文。空库直接报 `no-input`、模型没按格式回报 `unparseable`，两者都不回空草稿 |
+
+## 巩固（autoDream）
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `autoDream` **light** | `true` | 阈值触发的后台巩固（LLM 合并/归档/降重） | lightMode 强制关；与 sleepMode 串行、不重叠 |
+| `dreamThresholdCount` / `dreamThresholdChars` | `10` / `5000` | 触发阈值（新增条数 / 字符，双过才跑） | — |
+| `dreamDelayMs` | `2000` | 触发后的延迟（毫秒） | — |
+| `dreamMinIntervalMinutes` | `0` | 两次开跑最小间隔（分钟，≤10080，#89） | 失败/degraded run 也占用；0 = 不限 |
+| `autoDreamFailureBackoff` | `false` | 连续失败指数退避：有效间隔 = 基数 × 2^连败，封顶 30 分钟（#292） | opt-in；基数取 `dreamMinIntervalMinutes`（0 = 无闸可翻倍）；成功一次清零；重启归零 |
+| `dreamPeakHours` | `""` | 巩固错峰，与 `summarizePeakHours` 同一份时段语法（#239） | 命中高峰不做梦、阈值继续累积、留 skip 审计；非法写法按未配置 |
+| `dreamPeakMaxDeferMinutes` | `120` | 巩固顺延上限（分钟） | 0 = 不设上限；到点仍处高峰照跑 |
+| `dreamProvider` / `dreamModel` | 空 | 巩固专用路由（settings「巩固模型」） | 建议非思考模型——思考模型易烧光预算返回空体（#135） |
+| `dreamMaxTokens` | `131072` | 巩固输出预算（256–131072） | 流式计费按实际用量，调大不增加成本；**调小则相反**——撞顶 → 无完整 JSON → 整轮失败 → baseline 不刷新 → 同输入重跑（#135 实测 cap=16384 净成本 +54%） |
+| `dreamReasoningEffort` | 未配置 | 巩固推理档位（同 `summarizeReasoningEffort` 的枚举） | 未配置 = 自动取模型支持的最低档（#135）；显式 `none` = 不发字段 |
+| `dreamSummaryProvider` / `dreamSummaryModel` | 空 | 记忆总览（dream_summarize）专用路由（#258） | 空 = 回落巩固路由；总览输入为全库，建议大 ctx 非思考模型 |
+| `dreamSummaryMaxInputs` | `0` | 总览输入条数硬上限（按 updated_at 倒序取最新 N 条） | 0 = 不设上限（库增长可能撑爆小 ctx 模型） |
+| `dreamMaxSnapshotSize` | `200` | 滑动窗口：每次只巩固最近 N 条（≤1000） | 窗口外旧记忆不进快照 |
+| `dreamCandidateMode` | `window` | 候选集构造：`window` / `hybrid`（并入向量高相似组，#125） | `hybrid` 让该合并的对能碰面；输入成本不随库增长 |
+| `dreamCandidateMax` | `0` | `hybrid` 候选总量上限（≤5000） | 0 = 复用 `dreamMaxSnapshotSize` |
+| `dreamCandidateMinSim` | `0.85` | `hybrid` 判「高相似」的阈值 | 与 sleep normal 档同一个定义 |
+| `dreamMaxArchivePerRun` | `8` | 单轮 archive 决策上限（≤200，#104） | 超限整单拒绝，`dreamSkipInvalid` 不豁免 |
+| `dreamMaxMergePerRun` | `40` | 单轮 merge 决策上限（≤200，#135） | 超限整单拒绝；merge 是唯一回吐正文的动作，40 = 实测每轮 merge 数分布上沿（历史 0 命中） |
+| `dreamImplicitKeep` | `true` | LLM 未提及的快照记忆自动补 keep | `false` = 恢复严格校验（未覆盖即拒绝整单） |
+| `dreamMinExplicitCoverage` | `0.5` | 显式决策覆盖率下限（0–1） | 防截断输出被隐式 keep 洗白 |
+| `dreamSkipInvalid` | `true` | 跳过单条非法决策、应用合法子集、run 记 degraded（#89） | `false` = 恢复整单拒绝 |
+| `allowCrossTypeMerge` | `false` | 放宽跨类型合并检查 | opt-in；`dreamSkipInvalid` 关时跨类型 merge 直接整单拒绝 |
+| `dreamMergeGuard` | `true` | guarded 类型 merge 护栏（#339/E8）：合并对象命中长保留类型（与 archive 护栏同表：preference/pattern/rejected_solution/constraint/pitfall）的 merge 决策整条跳过——E8 实测巩固损耗里 10/26 条被丢约束已归位 guarded 类型仍被 merge 吃掉 | 默认开（同类压缩管线实测：安全规则被同速压缩后一轮只剩 53%、五轮只剩 10%，全程无报错）；关闭 = guarded 类型的 merge 不再被跳过，「更精炼的摘要」重新成为约束失真的主通道。`dreamSkipInvalid`（默认开）时被跳条目进 `dream_runs.skipped`、run 记 degraded，关闭时整单拒绝 |
+| `dreamNarrativeEnabled` **light** | `false` | dream 期间按共享 tag 聚类合成叙述条（#164 对齐） | opt-in；按需检索、不常驻注入 |
+| `dreamNarrativeMinCluster` | `3` | 成簇门槛（共享同一 tag 的记忆数，2–20） | — |
+| `documentMemoryEnabled` **light** | `false` | document 型记忆：长文档指针行，全文归 agent（#230） | opt-in；注册校验 + C2 去重 + supersede 记账 |
+| `documentInjectBudget` | `2` | document 摘要行的注入预算（1–5） | 只约束注入，不约束检索 |
+| `documentDir` | `""` | managed 落盘目录（#296） | 空 = `<memoryDir>/documents/`；目录之外只登记指针、正文零读零写 |
+| `policyEpoch` | `0` | 裁决规则版本号 | bump 后旧 dream_runs 降为历史证据（receipt 不再驱动现行决策） |
+
+## 睡眠模式（sleep，空闲深维护）
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `sleepModeEnabled` **light** | `false` | 库静默后全库深维护：冲突消解/归档降级/模式发现/关系补全 | opt-in；可被用户活动中止，与 autoDream 串行 |
+| `sleepIdleMinutes` | `5` | 静默多久触发（1–60 分钟） | — |
+| `sleepMinIntervalHours` | `8` | 两次 run 最小间隔（小时，≤168） | — |
+| `sleepConflictStrictness` | `normal` | 冲突裁决档：`gentle`(0.92) / `normal`(0.85) / `aggressive`(0.75) | — |
+| `sleepActionSet` | `conflict` | 动作集：`conflict` / `full`（六分支，#126） | `full` 让互补型/演进型重复有正确出口 |
+| `sleepArchiveDays` / `sleepCompressDays` | `30` / `90` | 归档降级分层（天）：先缩为摘要、再彻底归档 | 实体关系保留 |
+| `sleepPatternMinMemories` | `100` | 模式发现的扫描窗口（条） | — |
+| `sleepPatternLookbackDays` | `30` | 属性变更回看（天） | — |
+| `sleepMaxPatternPerRun` | `3` | 单轮模式条上限（0–10） | 0 = 关闭模式发现 |
+| `sleepProvider` / `sleepModel` | 空 | sleep 专用路由 | 空 = 用巩固路由 / 当前模型 |
+| `sleepReasoningEffort` | 未配置 | 同 `dreamReasoningEffort` | — |
+| `sleepMaxTokens` | `8192` | 冲突/模式阶段输出预算（#257） | 原硬编码 2048 对 `full` 档必然截断 |
+| `sleepHeatThreshold` | `0.05` | 降级联合判定的热度下限（heat < 值且 importance<5 才降） | `heatEnabled` 关时退回纯时间分层 |
+
+## 反思与冲突（dream 配套）
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `reflectionUpdateEnabled` | `true` | 检索后的反思更新既有记忆 | — |
+| `reflectionFailureTracking` | `true` | 失败经验追踪 | — |
+| `reflectionUpdateMaxPerRun` | `2` | 单轮 update 上限（0–5） | — |
+| `reflectionUpdateMinAgeHours` | `24` | 可更新记忆的最短年龄（小时，≤168） | — |
+| `reflectionFailureRetentionDays` | `90` | `failure_memories`（失败/纠正记录）的启动期清理保留天数（1–3650） | 只读 bundle 配置：未进 feature_flags 白名单，面板改不了。`dsh-mneme reclaim` 不读这个键（它对三个表用同一条 `--older-than`，本表不在其中）。此前这个 90 天是写死的（#275 伞下的欠账） |
+| `conflictFreezeEnabled` | `false` | 冲突不自动合并、冻结待人工复核 | opt-in |
+| `conflictFreezeMaxPending` | `100` | 冻结队列上限（≤1000） | — |
+
+## 实体
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `entityExtractionEnabled` **light** | `false` | 写入时 LLM 抽取实体/属性/关系 | opt-in；存储三表与 CRUD 恒可用，本键只闸抽取 |
+| `entityExtractionProvider` / `entityExtractionModel` | 空 | 抽取专用路由 | 单边为空时回落调用方默认 |
+| `entityExtractionReasoning` | `none` | 抽取推理档位（#109） | `none` = 不发字段；拒收自动去掉字段重试一次 |
+| `entityExtractionMaxEntities` / `entityExtractionMaxAttrs` | `10` / `20` | 单次抽取的实体数 / 每实体属性数上限 | — |
+| `entitySearchEnabled` | `true` | 实体名前缀/语义搜索（供召回） | — |
+| `entityRecallEnabled` **light** | `false` | 图召回轴：查询命中实体名时并入融合池（#219） | opt-in；依赖实体抽取产出（lightMode 下抽取已关） |
+| `memoryPreferenceEnabled` | `false` | 标签/规范实体偏好权重参与召回（Amadeus） | opt-in；权重范围 0.5–2.0，组合后夹在 0.6–1.6；关闭或全为 1.0 时检索不变 |
+| `trustedIntakeEnabled` | `false` | Life 受信经历写入接口 `POST /api/dsh-mneme/intake`（Amadeus） | opt-in；还要求配置 `apiToken` 且请求带显式 scope，缺 token 直接 503 |
+
+## 检索
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `embedProvider` | `openai` | 嵌入提供方：`openai`（外部 API）/ `local`（ONNX）/ `ollama` | — |
+| `vectorSearchTopK` | `20` | 向量召回条数（≤100） | — |
+| `vectorSearchThreshold` | `0.65` | 固定向量阈值 | `adaptiveThresholdEnabled` 开启时被动态阈值取代 |
+| `adaptiveThresholdEnabled` | `true` | 查询感知动态阈值（实体前缀放宽、短查询收紧等） | 关 = 回到固定 0.65 |
+| `bm25SearchEnabled` **light** | `true` | BM25 第三召回路径（标识符/代码碎片/混排） | — |
+| `hybridSearchVectorWeight` / `hybridSearchKeywordWeight` | `0.6` / `0.4` | 混合检索加权 | — |
+| `recallFusion` | `blend` | 融合配方：`blend`（现状）/ `rrf` / `minmax` | `rrf`/`minmax` 修「raw 余弦 + 关键词分直接相加」的量纲失配 |
+| `signalTransparency` | `false` | 每条结果附带 `{keyword, vector, bm25, final}` 信号 | 只装饰返回行，不改排序 |
+| `hybridInject` **light** | `true` | 注入前语义优先召回、规则序回填 | — |
+| `selectiveInjectEnabled` **light** | `true` | 有查询向量时按相似度重排注入候选 | — |
+| `searchSemanticDedup` **light** | `false` | 检索期语义去重（贪心剔除近重复） | opt-in 激进档：小嵌入模型易把不同条目坍缩 |
+| `searchSemanticDedupThreshold` | `0.95` | 去重阈值 | — |
+| `evalPersistTestResults` | `false` | 检索评测快照落 `recall_evals` | 生产检索恒只进 `recall_runs`，与此键无关 |
+| `recallRecordDefault` | `true` | `recall_runs` 记录默认开 | 显式传 `false` 的调用方不受影响 |
+| `recallRetentionDays` | `90` | `recall_runs` 滚动清理保留天数 | — |
+| `trustEpistemicWeighting` | `false` | 来源可信度（observation/subjective/inferred）参与排序与标注 | opt-in；关时 epistemic_status 只是惰性数据 |
+
+### 重排层
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `rerankEnabled` **light** | `false` | 本地交叉编码器重排 | opt-in：显式 `true` + `local` 才拉起 onnxruntime |
+| `rerankProvider` | `none` | `local` / `none` | — |
+| `rerankModel` | `Xenova/bge-reranker-base` | 重排模型 | — |
+| `rerankBatchSize` | `8` | 批大小（≤64） | — |
+| `rerankMaxCandidates` | `30` | 参与重排的候选上限（5–100） | — |
+| `rerankScoreThreshold` | `0.1` | 重排分数阈值 | — |
+| `rerankDtype` | `q8` | 量化档（#188） | 非法值由 transformers 抛出 → 重排降级告警 |
+
+## 图谱（graph，opt-in，#24）
+
+图谱四条链路都依赖实体抽取产出（`entityExtractionEnabled`），默认全关；lightMode 把前四个布尔键一并强制关。级联与预算键只是阈值，跟着开关走。
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `graphAnchoringEnabled` | `false` | 块1 图谱锚定：以查询命中的实体为种子沿关系表级联扩散（默认深度 2） | opt-in；关 = 与 #219 单跳轴逐字节一致；需 `entityRecallEnabled` 之上再开 |
+| `graphSeedCap` | `12` | 锚定种子集上限（1–30） | 只影响一次扩散的宽度 |
+| `graphCascadeDepth` | `2` | 级联深度（1–3） | 深度与召回面线性相关，3 容易把远邻拉进来 |
+| `graphWeightEnabled` | `false` | 块2 边权重演化：被寻回路径的边权重抬升（只加不减、封顶 1.0） | opt-in；关 = 边初值纯由建边来源决定 |
+| `graphWeightDelta` | `0.1` | 单次有效触达的抬升幅度（0–1） | 与其他 graph 开关无关的纯阈值 |
+| `graphPassiveConfirm` | `false` | 块4 被动确认：heat 触达（召回/注入）即给挂联关系边抬一格 | opt-in；关 = 零行为变化 |
+| `graphInjectHint` | `false` | 块3 关联提示标注：图召回候选在注入文本里以「[检索线索] …」标出 | 关 = 只参与排序、不改变注入块构成（保守档） |
+| `graphInjectBudget` | `1` | 图召回候选在注入块里的独立预算（0–5 条） | 不占 `maxInjectedItems` 名额；0 = 关闭 |
+
+## 热度
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `heatEnabled` **light** | `false` | 热度曲线（遗忘）：热度字段 / sleep 降级联判（#218） | opt-in；关 = sleep 退回纯时间分层 |
+| `injectHeatEnabled` | `false` | 注入排序乘 heat（#218 / E5 考卷：heat 乘进注入排序在真实年龄混合下饿死老约束，拆独立开关默认关） | 依赖 `heatEnabled`；关 = 注入乘数恒 1（与 heat 关闭逐字节一致）；开 = 恢复层内乘 heat 旧序 |
+| `heatGlobalBeta` | `1.0` | 广义指数形状参数 β（0.5–2） | 专家调优项，不进面板白名单 |
+| `heatTypeDecay` | 内置默认 | per-type 衰减 λ（键为 type 字符串） | λ=0 的类型免疫（热度恒 1、sleep 永不降级） |
+
+## API 与工具面
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `apiToken` | 空 | 宿主内 API 敏感端点的共享 token | 空 = 只读端点保持开放（DSH 绑 127.0.0.1 且无内建鉴权） |
+| `externalApiEnabled` | `false` | 独立 `node:http` 数据面（生态集成用） | opt-in；双宿主共用库时只能一边开（端口冲突） |
+| `externalApiPort` | `8790` | 端口 | — |
+| `externalApiHost` | `127.0.0.1` | 绑定地址 | 改成非回环 = 把整个记忆库暴露给网络，自负其责 |
+| `disableMemorySearch` | `false` | 对模型隐藏 `memory_search` 工具（v0.8.5） | 慢/轻量模型的工具往返节流；隐藏即不可调 |
+| `disableMemoryArchive` | `false` | 对模型隐藏 `memory_archive` 工具 | 同上 |
+| `organizeEnabled` | `false` | 对模型开放 `memory_organize` 工具（#231：先 dryRun 出比对报告，agent 判断后 apply 落库） | 与上面两个**反向**：那两个藏默认在场的工具，本键开默认不在场的能力。关 = 工具根本不注册（模型看不到就不会调）。dryRun→apply 是两步协议，弱模型容易漏 `run_id` 或跳过报告，所以 `LIGHT_MODE_OFF` 里有它；apply 只能引用一次真实报告、且一份报告只许落地一次 |
+| `actionPipelineEnabled` | `false` | M.O. 只读视图的门控：做法图谱 + 对话行结算卡 | opt-in beta；只是纯 UI 入口、不引入重型后台路径，故不进 `LIGHT_MODE_OFF`。写账另有独立的执行记账键（`/mo-run`），看图 ≠ 写账 |
+| `actionRunEnabled` | `false` | M.O. 执行记账：`/mo-run` 开一次执行窗口，窗口内命令执行才可能被记成一条 run | opt-in beta；挂在热路径（每个会话事件都过一次监听），故 `LIGHT_MODE_OFF` 里有它 |
+| `actionNudgeEnabled` | `false` | M.O. 自动沉淀：每轮结束（`turn/end`）后挖一次「这个项目重复走的动作」，结果落成 `memoryDir/proposals/<项目键>/` 里的提议，等人确认 | opt-in beta；三个 M.O. 键里最重的一条——挂 `session/event` 且要**同步解压 zstd 会话日志**（本机 118 份实测 16.2s，单次预算 `budgetMs`=4s 兜底），故 `LIGHT_MODE_OFF` 里有它。**永不自动落草稿**：`materialize` 恒 false，进仓库必须是人的显式动作 |
+
+## 运行时与本地模型
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `localEmbedModel` | `Xenova/bge-small-zh-v1.5` | 本地嵌入模型（`embedProvider=local` 时） | — |
+| `localEmbedDimension` | `512` | 向量维度 | — |
+| `localEmbedDevice` | `cpu` | `cpu` / `gpu` | — |
+| `localEmbedBatchSize` | `8` | 批大小（≤64） | — |
+| `localEmbedPooling` | `auto` | 池化：`auto`（BGE→cls，其余→mean）/ `cls` / `mean` | 池化决定向量空间——改动会变 modelHash、触发既有索引重建 |
+| `ollamaBaseUrl` | `http://localhost:11434` | Ollama 地址 | 只接受 http/https（SSRF 防线） |
+| `ollamaModel` | `nomic-embed-text` | Ollama 嵌入模型 | — |
+| `embedModelCacheDir` | `""` | 模型缓存目录 | 空 = `~/.dsh/mneme/models` |
+| `embedModelMirror` | `https://hf-mirror.com` | 模型下载镜像 | — |
+| `resilientModelDownload` | `true` | 模型下载断点续传 + 空闲看门狗（#194） | 关 = 恢复原生 fetch（线上回滚开关） |
+| `runtimeDir` | `""` | 自管运行时目录（transformers + onnxruntime 闭包，#131） | 空 = `~/.dsh/mneme/runtime`；把重依赖挪出宿主 profile 的依赖图 |
+| `runtimeTarballDir` | `""` | 本地 `.tgz` 离线取件目录 | 有货优先于联网（弱网下装 onnxruntime-node 用） |
+| `runtimeMirror` | `""` | registry 镜像前缀（如 `https://npmmirror.com/mirrors/npm/`） | 空 = manifest 里的官方地址 |
+| `reindexMaxPerBoot` | `500` | 启动期向量回填的单次上限（原先硬编码 500） | `0` = 不限、本次跑完整个积压（4k 行积压靠重启九次才清空的旧行为就是被这个上限卡住的） |
+| `reindexBatchSize` | `10` | 回填批大小（1–64） | 越大单批 token/耗时越高 |
+| `reindexRateLimitMs` | `200` | 回填批间隔毫秒（限速） | 0 = 不限速 |
+
+## lightMode 强制关闭清单（`LIGHT_MODE_OFF`）
+
+`lightMode: true`（或面板 `panel_mode=light`）时，以下键被预设强制为 `false`——都是
+重型路径；核心循环（autoInject、autoSummarize、hotMemory*、质量过滤、关键词检索）不动：
+
+`entityExtractionEnabled` · `autoDream` · `sleepModeEnabled` · `rerankEnabled` ·
+`autoReindexOnBoot` · `hybridInject` · `injectGuidanceEnabled` · `searchSemanticDedup` ·
+`selectiveInjectEnabled` · `bm25SearchEnabled` · `entityRecallEnabled` ·
+`graphAnchoringEnabled` · `graphWeightEnabled` · `graphInjectHint` · `graphPassiveConfirm` ·
+`actionRunEnabled` · `actionNudgeEnabled` ·
+`dreamNarrativeEnabled` · `documentMemoryEnabled` · `heatEnabled` · `continuityRescueEnabled` ·
+`organizeEnabled`（#231） ·
+`profileExtractEnabled`（#497） ·
+`preInjectGate.enabled`（#380） · `distillRecords.enabled`（#399）
+
+预设只是默认值而非强制：用户显式写进 feature_flags 的值在装配顺序上后展开、仍然生效
+（「用户开关 > 轻量预设 > bundle 配置」）。

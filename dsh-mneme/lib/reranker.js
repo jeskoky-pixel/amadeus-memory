@@ -1,0 +1,269 @@
+import { defaultModelCacheDir, defaultRuntimeDir } from "./runtime/layout.js";
+import { installResilientFetch } from "./runtime/model-fetch.js";
+import { loadTransformers } from "./runtime/loader.js";
+
+// Cross-encoder re-ranker for dsh-mneme recall candidates. Uses
+// bge-reranker-base through transformers.js: tries the native `rerank` task
+// first, then the sequence-classification head (sigmoid on the logit delta),
+// and finally feature-extraction over concatenated query+passage (cosine).
+// Every strategy funnels into scorePair(query, passage) so tests can inject a
+// fake scorer and never download a model. Failures throw — the caller degrades
+// back to the original candidate order.
+function hashString(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(16);
+}
+
+/** Same provider#hash fingerprint convention as the embedders. */
+function modelHash(model) {
+  return `${model}#${hashString(model)}`;
+}
+
+/**
+ * Lazy default pipeline factory: dynamic import keeps module load cheap.
+ *
+ * 与 local-embedder 一样经 runtime/loader.js 的三层解析取运行时（自管 payload 优先，
+ * 其次宿主裸 specifier），这样 PR-B 把依赖从 profile 摘掉后 rerank 也还能用。
+ * runtimeDir 取走后不混进 transformers 的选项。
+ */
+async function defaultPipelineLoader(task, model, options) {
+  const { runtimeDir, remoteHost, resilientModelDownload, logger, ...pipelineOptions } = options ?? {};
+  const { module } = await loadTransformers({
+    runtimeDir: runtimeDir || defaultRuntimeDir()
+  });
+  const { env, pipeline } = module;
+  // issue #13 同款处理：transformers.js 在预检 tokenizer_config.json 元数据时会丢掉调用方
+  // 的 cache_dir，回退到 env.cacheDir —— 即使模型已完全缓存在本地也会去请求网络。
+  // embedder 侧早就镜像了，reranker 侧一直漏着，于是「已缓存 + 离线」时重排初始化会失败。
+  if (pipelineOptions.cache_dir) env.cacheDir = pipelineOptions.cache_dir;
+  // issue #188 补充：embedModelMirror 此前是死配置——transformers.js 不认
+  // HF_ENDPOINT（那是 Python huggingface_hub 的变量），下载源由 env.remoteHost
+  // 决定。把镜像接到真正的开关上，huggingface.co 不可达的网络才能自动下载。
+  if (remoteHost) env.remoteHost = remoteHost;
+  // issue #194：与 embedder 同款断点续传。开关关 = env.fetch 一字不动。
+  installResilientFetch(env, {
+    enabled: resilientModelDownload === true,
+    cacheDir: pipelineOptions.cache_dir,
+    logger
+  });
+  return pipeline(task, model, pipelineOptions);
+}
+
+/** Flatten a transformers.js Tensor [batch, seq, dim] into number[][] rows. */
+function tensorToRows(tensor) {
+  const { data, dims } = tensor;
+  const dim = dims[dims.length - 1] || 0;
+  const rows = [];
+  for (let i = 0; i < data.length; i += dim) rows.push(Array.from(data.subarray(i, i + dim)));
+  if (rows.length === 0 && dim > 0) rows.push(Array.from(data));
+  return rows;
+}
+
+function cosine(a, b) {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / Math.sqrt(na * nb);
+}
+
+function clamp01(x) {
+  return Math.max(0, Math.min(1, x));
+}
+
+// Pipeline strategies, best to worst. `rerank` is unsupported by the bundled
+// transformers.js (v4.2.0) and rejects cheaply before any model download, so
+// the cascade normally lands on the classification head.
+const STRATEGIES = [
+  ["rerank", "rerank"],
+  ["text-classification", "tc"],
+  ["feature-extraction", "fe"]
+];
+
+export class LocalReranker {
+  constructor(opts = {}) {
+    this.model = opts.model || "Xenova/bge-reranker-base";
+    this.batchSize = opts.batchSize || 8;
+    this.maxCandidates = opts.maxCandidates || 30;
+    this.scoreThreshold = opts.scoreThreshold ?? 0.1;
+    this.device = opts.device || "cpu";
+    this.cacheDir = String(opts.cacheDir ?? "").trim() || defaultModelCacheDir();
+    // 自管运行时根目录（issue #131）：空表示用默认位置，解析交给 loader。
+    this.runtimeDir = String(opts.runtimeDir ?? "").trim();
+    // 与嵌入层同约定：默认 q8（4 倍小的 model_quantized.onnx），"fp32" 可关。
+    // 此前不传 dtype，即使缓存里有量化文件也会去要 1GB 级的 model.onnx（#188）。
+    this.useDtype = String(opts.useDtype ?? "q8").trim() || "q8";
+    // 模型镜像下载源（embedModelMirror，#188 补充）：空 = transformers 默认。
+    this.remoteHost = String(opts.remoteHost ?? "").trim();
+    // issue #194：模型文件下载断点续传。只在显式传 true 时启用，与 embedder 同规。
+    this.resilientModelDownload = opts.resilientModelDownload === true;
+    this.logger = opts.logger ?? null;
+    this.engineFactory = opts.engineFactory || defaultPipelineLoader;
+    // Injectable seam: async (query, passage) => number. When set, init()
+    // skips model loading entirely so tests never hit the network.
+    this.scorePair = opts.scorePair ?? null;
+    this.pipeline = null;
+    this._batchScorer = null;
+    this._queryVec = null;
+    this._queryKey = null;
+    this._constantScoreWarned = false;
+  }
+
+  /** Load the model; throws when no strategy can be bound. */
+  async init() {
+    if (this.scorePair) return this;
+    let lastErr = null;
+    for (const [task, strategy] of STRATEGIES) {
+      try {
+        this.pipeline = await this.engineFactory(task, this.model, this._engineOptions());
+        this._bindBatchScorer(strategy);
+        this.logger?.info?.(
+          `[dsh-mneme] local reranker ready: ${this.model} (strategy=${strategy}, device=${this.device})`
+        );
+        return this;
+      } catch (err) {
+        lastErr = err;
+        this.logger?.warn?.(
+          `[dsh-mneme] reranker task "${task}" unavailable for ${this.model}: ${String(err?.message ?? err)}`
+        );
+      }
+    }
+    throw new Error(`LocalReranker failed to load ${this.model}: ${String(lastErr?.message ?? lastErr)}`);
+  }
+
+  _engineOptions() {
+    const options = { device: this.device, dtype: this.useDtype, resilientModelDownload: this.resilientModelDownload, logger: this.logger };
+    if (this.cacheDir) options.cache_dir = this.cacheDir;
+    if (this.runtimeDir) options.runtimeDir = this.runtimeDir;
+    if (this.remoteHost) options.remoteHost = this.remoteHost;
+    return options;
+  }
+
+  /** Bind a batch scorer for the chosen strategy. */
+  _bindBatchScorer(strategy) {
+    if (strategy === "rerank") {
+      // Native cross-encoder task (transformers.js >= 4.6): { query, documents }
+      // returns one score per document.
+      this._batchScorer = async (query, passages) => {
+        const out = await this.pipeline({ query, documents: passages });
+        if (!Array.isArray(out)) throw new Error("rerank pipeline returned unexpected output");
+        return out.map((r) => clamp01(typeof r?.score === "number" ? r.score : 0));
+      };
+    } else if (strategy === "tc") {
+      // Classification head: score so relevance lands in [0, 1]. Branch on the
+      // output width (issue #188): a dual-logit head (num_labels=2 exports,
+      // e.g. bge-reranker-v2-m3) gives the positive class as the softmax
+      // probability sigmoid(l1 - l0); a SINGLE-logit head (e.g.
+      // Xenova/bge-reranker-base) emits one raw relevance logit per pair, and
+      // the positive class is simply sigmoid(logit) — reading l1 as l0 there
+      // collapses every score to sigmoid(0) = 0.5 and silently disables
+      // reranking (no error, status still "ready").
+      this._batchScorer = async (query, passages) => {
+        const { tokenizer, model } = this.pipeline;
+        const inputs = tokenizer(passages.map(() => query), {
+          text_pair: passages,
+          padding: true,
+          truncation: true
+        });
+        const logits = await model(inputs).then((o) => o.logits);
+        const dims = logits.dims;
+        const cols = dims[dims.length - 1] || 2;
+        const rows = [];
+        for (let i = 0; i < dims[0]; i++) {
+          const base = i * cols;
+          const score = cols > 1
+            ? 1 / (1 + Math.exp(logits.data[base] - logits.data[base + 1]))
+            : 1 / (1 + Math.exp(-logits.data[base]));
+          rows.push(clamp01(score));
+        }
+        return rows;
+      };
+    } else {
+      // Feature extraction: mean-pool the concatenated pair and compare with
+      // the query embedding via cosine. Degraded but model-agnostic.
+      // The query vector is cached per query string, so a new query always
+      // recomputes it instead of reusing a stale vector from the previous call.
+      this._queryVec = null;
+      this._queryKey = null;
+      this._batchScorer = async (query, passages) => {
+        if (this._queryKey !== query) {
+          const t = await this.pipeline([query], { pooling: "mean", normalize: true });
+          this._queryVec = tensorToRows(t)[0];
+          this._queryKey = query;
+        }
+        const t = await this.pipeline(passages.map((p) => `${query}\n${p}`), {
+          pooling: "mean",
+          normalize: true
+        });
+        return tensorToRows(t).map((v) => clamp01(cosine(this._queryVec, v)));
+      };
+    }
+  }
+
+  /** Score one batch of passages; injected scorePair scores pair by pair. */
+  async _scores(query, passages) {
+    if (this._batchScorer) return this._batchScorer(query, passages);
+    return Promise.all(passages.map((p) => (p ? this.scorePair(query, p) : 0)));
+  }
+
+  /**
+   * Re-rank recall candidates. Returns [{ id, score }] filtered by
+   * scoreThreshold and sorted by descending score. Throws on engine failure —
+   * the caller degrades to the original candidate order.
+   */
+  async rerank(query, candidates) {
+    if (!Array.isArray(candidates)) throw new TypeError("rerank expects an array of candidates");
+    const list = candidates.slice(0, this.maxCandidates);
+    if (!list.length) return [];
+    const q = String(query ?? "");
+    const results = [];
+    for (let i = 0; i < list.length; i += this.batchSize) {
+      const chunk = list.slice(i, i + this.batchSize);
+      const passages = chunk.map((c) => [c.title, c.content].filter(Boolean).join("\n"));
+      const scores = await this._scores(q, passages);
+      if (!Array.isArray(scores) || scores.length !== chunk.length) {
+        throw new Error("reranker scorer returned mismatched scores");
+      }
+      for (let j = 0; j < chunk.length; j++) {
+        results.push({ id: chunk[j].id, score: clamp01(Number(scores[j]) || 0) });
+      }
+    }
+    // Silent-failure tripwire (issue #188): a reranker whose every candidate
+    // scores identically is not ranking anything — e.g. a single-logit head
+    // read through the dual-logit formula. Warn once so the degradation is
+    // observable instead of a constant 0.5 column hiding behind a "ready"
+    // status forever.
+    if (results.length > 1 && results.every((r) => r.score === results[0].score)) {
+      if (!this._constantScoreWarned) {
+        this._constantScoreWarned = true;
+        this.logger?.warn?.(
+          `[dsh-mneme] reranker scores degenerated to a constant (${results[0].score}) — check the model's output dims (single vs dual logit head)`
+        );
+      }
+    }
+    return results
+      .filter((r) => r.score >= this.scoreThreshold)
+      .sort((a, b) => b.score - a.score);
+  }
+
+  get modelHash() {
+    return modelHash(this.model);
+  }
+
+  dispose() {
+    try {
+      this.pipeline?.dispose?.();
+    } catch {
+      // best-effort: some engines free resources on GC
+    }
+    this.pipeline = null;
+    this._queryVec = null;
+    this._queryKey = null;
+  }
+}

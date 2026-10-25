@@ -1,31 +1,76 @@
-# amadeus-memory
+# Amadeus Memory Enhancer
 
-管理有来源和权限范围的共同经历、关系信息、授权召回及可替换记忆后端。
+Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权的长期信息，在对话时检索相关记忆，并提供可视化的记忆、标签权重、实体关系和备份管理。此版本继承 Mneme 的插件 ID 与数据格式，方便已有用户升级。
 
-**当前状态：仅仓库与文档初始化，无实现、安装包或正式发布；尚未完成平台联调。**
+> 当前增强版 `0.9.5-amadeus.1` 在 [PR #1](https://github.com/jeskoky-pixel/amadeus-memory/pull/1) 审阅中，尚未公开发行或部署到生产 DSH。
 
-项目入口：[Amadeus-dsh](https://github.com/jeskoky-pixel/Amadeus-dsh)。开发顺序：P1。当前仓库已于 2026-10-25 根据用户要求公开，便于网页端审阅。
+## 日常使用
 
-## 职责与边界
+在 DSH 设置中打开 **Amadeus 记忆**，可以看到记忆库状态，创建、搜索、编辑、归档和删除记忆；调整自动记忆、注入和 Embedding 参数；设置标签及实体权重；创建、校验并确认恢复备份。复杂图谱与审计仍可从“打开完整记忆管理”进入原 Mneme 面板。若向量服务未配置，关键词检索继续可用；页面会明确显示降级状态。安装前请先阅读 [中文用户指南](dsh-mneme/docs/USER_GUIDE.zh.md) 和 [安装与升级说明](dsh-mneme/docs/INSTALL.md)。
 
-检索前按可信场景授权，派生摘要和关系继承来源限制。基础身份、Life 账本和发送回执不依赖记忆服务；关闭后当前对话可继续。
+[![tests](https://img.shields.io/badge/tests-490%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/1)
 
-基于官方 DSH 运行，不另建主 Agent 推理循环。人格统一由项目基础能力定义。需要受保护动作时不可绕过可信身份、数据范围与外发权限；可选模块未安装或故障时仅降级受影响能力。
+This branch packages a separately installable Mneme bundle in [`dsh-mneme/`](dsh-mneme/). It extends the existing SQLite memory store, retrieval, graph and Desktop panel with stable typed identities, reviewed aliases and canonical links, Tag/entity ranking preferences, and a controlled Life experience intake. The upstream import and license are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 
-## 模块约定
+The enhancement is developed on `codex/memory-enhancer` and reviewed in [Memory PR #1](https://github.com/jeskoky-pixel/amadeus-memory/pull/1). It is not installed in the production DSH Profile by this branch.
 
-独立安装、升级、卸载，独立版本、测试和发布。后续必须声明能力、必要/可选依赖、契约兼容版本、健康状态与故障降级。目前这些契约仍待核实和确定，不声称已有可用接口。
+## Package and installation
 
-## 开发入口
+- Source package: `dsh-mneme/`, package name `@modusensus/dsh-mneme`, enhanced version `0.9.5-amadeus.1` (same plugin ID/data path as upstream 0.9.4).
+- Reviewed installation archive: `dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz`. The archive is a local review artifact while controlled distribution is prepared; its SHA-256 is recorded in `docs/CREATOR_FINAL_PRODUCTIZATION.md`.
+- Native DSH Settings entry: **Amadeus 记忆 / Amadeus Memory** (overview, automatic memory, Embedding, Tag/entity preferences, link to the full Memory panel).
+- In an isolated DSH Desktop Profile, choose and verify a dedicated `memoryDir` **before enabling** the bundle, then use Plugin Manager **Install bundle** with this archive. Set `apiToken` only if the optional trusted intake API is needed. The source package can also be linked during development.
+- Keep only one Memory bundle enabled; the same plugin ID must not run twice. Keep the old Mneme package and a SQLite consistent backup for rollback. Do not point a development Profile at a live memory database.
 
-- [HANDOFF.md](HANDOFF.md)：当前状态、下一步与未运行检查。
-- [总体规格](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/main/docs/AMADEUS_SPEC.md)
-- [多仓库约定](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/main/docs/ARCHITECTURE.md)
+The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist`. `npm run sync`, `node scripts/check-sync.js` and the focused tests check generated `lib/` files and behavior before packing. Install/upgrade/rollback details are in [Memory INSTALL](dsh-mneme/docs/INSTALL.md).
 
-需求与验收关注：R-07、R-11、R-13、R-15；重点验收 A-08—A-10、A-17。
+## Development
 
-下一步：等待基础身份、scope 与事件契约确定，先定义 record/retrieve/correct/forget/health 与跨场景正反例。
+```powershell
+cd dsh-mneme
+npm test        # 运行 490 个测试
+npm run test:all              # full suite; 32 upstream/environment failures, not green
+npm run test:upstream-release # 21 upstream release-only failures, expected non-green
+npm run test:compat-windows   # Windows symlink/spawn capability probe
+```
 
-## 发布与隐私
+`npm test` is the green product gate (490 tests): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) is **not** green on this Windows sandbox because upstream release-only fixtures/workflows and some symlink/spawn capabilities are unavailable; use `npm run test:upstream-release` and `npm run test:compat-windows` for those separate, explicitly non-green checks.
 
-尚无可用安装命令。许可证尚待明确，不因主仓库选择 MIT 而自动继承授权。第三方代码在复用前核查许可并保留来源；不提交真实凭据、私聊、记忆、设备登录资料或未经授权素材。
+## Documentation
+
+- [Native-settings install and acceptance checklist](dsh-mneme/docs/INSTALL.md)
+- [User guide (Chinese)](dsh-mneme/docs/USER_GUIDE.zh.md)
+- [Backup, upgrade and rollback](dsh-mneme/docs/BACKUP_ROLLBACK.md)
+- [Release notes and package identity](dsh-mneme/docs/RELEASE_NOTES.md)
+- [Measured performance and token cost](dsh-mneme/docs/PERFORMANCE.md)
+- [QA memoryDir guard](dsh-mneme/docs/QA_GUARD.md)
+- [Windows capability report](docs/WINDOWS_COMPATIBILITY.md)
+- [Enhancement design and migration details](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)
+- [Initial and focused quality acceptance](docs/verification/MEMORY_ENHANCER_ACCEPTANCE.md)
+- [Real isolated DSH Desktop acceptance](docs/verification/REAL_DSH_ACCEPTANCE_2026-10-25.md)
+
+## 路线图
+
+| 版本 | 主题 | 状态 |
+|------|------|------|
+| **v0.7** | 记忆核心与面板 | ✅ 已发布 |
+| **v0.8** | 实体与身份增强 | ✅ 已发布 |
+| **v0.9** | Amadeus Memory 产品化（0.9.5-amadeus.1） | PR 审阅中，未公开发行 |
+
+## Roadmap
+
+| Version | Theme | Status |
+|---------|-------|--------|
+| **v0.7** | Memory core and panel | ✅ Released |
+| **v0.8** | Entity and identity enhancement | ✅ Released |
+| **v0.9** | Amadeus Memory productization (0.9.5-amadeus.1) | PR under review; not publicly released |
+
+The Desktop acceptance exercises only synthetic memories. It does not validate production load or authorize production deployment. PR #1 remains open until a separate deployment decision.
+
+## 隐私承诺
+
+Memory 的巩固与摘要走**宿主模型**：默认开启的 `autoDream` / `autoSummarize` 会把待整理的记忆正文交给当前 DSH 宿主的模型服务；Embedding 默认配置也可能访问远端服务。只有显式把 Embedding 改为 `local` 并使用本地运行时，语义向量才在本地计算。这个插件不会把记忆正文发送到 Amadeus 自有服务器；远端模型的隐私边界由宿主模型提供方决定。安装前请阅读 [Memory INSTALL](dsh-mneme/docs/INSTALL.md) 与 [Enhancement design](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)。
+
+## Privacy
+
+Memory consolidation and summarization use the **host model**: the default-on `autoDream` / `autoSummarize` paths send memory text to the current DSH host's model service, and the default embedding configuration may call a remote provider. Semantic vectors stay local only when Embedding is explicitly set to `local` with a local runtime. This plugin does not send memory bodies to an Amadeus-owned server; the remote model provider's privacy boundary applies. Read [Memory INSTALL](dsh-mneme/docs/INSTALL.md) before installing.

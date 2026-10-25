@@ -1,0 +1,358 @@
+// Fully-local embedding backends for dsh-mneme: ONNX via transformers.js,
+// Ollama's HTTP API, and the OpenAI-compatible HTTP API (extracted from the
+// old embedding.js logic). All classes share one interface so the orchestrator
+// can pick a backend by provider name and degrade gracefully on failure.
+// Methods throw on error — the caller decides the fallback chain.
+import { defaultModelCacheDir, defaultRuntimeDir } from "./runtime/layout.js";
+import { installResilientFetch } from "./runtime/model-fetch.js";
+import { loadTransformers } from "./runtime/loader.js";
+
+const DEFAULT_TIMEOUT_MS = 15000;
+
+/** djb2 — stable, fast fingerprint for a provider/model string. */
+function hashString(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h.toString(16);
+}
+
+/** Full provider+model fingerprint used for index-consistency checks. */
+function modelHash(model) {
+  return `${model}#${hashString(model)}`;
+}
+
+/**
+ * Model families whose embedding is the CLS token rather than a mean over tokens.
+ *
+ * BGE (BAAI/bge-*) is trained that way: the model's own `1_Pooling/config.json`
+ * declares `pooling_mode_cls_token: true` / `pooling_mode_mean_tokens: false`, and
+ * the official README says "select the last hidden state of the first token" plus
+ * L2 normalization. transformers.js's `feature-extraction` defaults to `mean`, so
+ * feeding it a BGE model silently produces slightly-off vectors — no error, just a
+ * worse ranking. This table is the extension point: a family goes in only once its
+ * pooling is confirmed against the model's own `1_Pooling` (or equivalent) config.
+ */
+const CLS_POOLED_MODEL_PATTERNS = [/bge/i];
+
+/**
+ * Resolve the pooling to embed with.
+ *
+ * `auto` (default) picks by model family — BGE → `cls`, everything else → `mean`,
+ * so models that were never affected keep their exact previous behavior. An
+ * explicit `cls` / `mean` wins over the family table.
+ */
+export function resolvePooling(pooling, model) {
+  const mode = String(pooling ?? "auto").trim().toLowerCase();
+  if (mode === "cls" || mode === "mean") return mode;
+  return CLS_POOLED_MODEL_PATTERNS.some((re) => re.test(String(model ?? ""))) ? "cls" : "mean";
+}
+
+/**
+ * Lazy default loader: dynamic import keeps module load cheap.
+ *
+ * 经 runtime/loader.js 的三层解析取运行时（自管 payload 优先，其次宿主裸 specifier）：
+ * 这样 PR-B 把 @huggingface/transformers 从 dependencies 摘掉、pnpm 把宿主那份 prune
+ * 掉之后，本地嵌入仍然可用；而在那之前，宿主那份照样能被第 ② 层兜住。
+ * runtimeDir 从 options 里取走后再传 pipeline，免得把插件自己的配置项混进
+ * transformers 的选项里。
+ */
+async function defaultPipelineLoader(task, model, options) {
+  const { runtimeDir, remoteHost, resilientModelDownload, logger, ...pipelineOptions } = options ?? {};
+  const { module } = await loadTransformers({
+    runtimeDir: runtimeDir || defaultRuntimeDir()
+  });
+  const { env, pipeline } = module;
+  // issue #13: transformers.js's get_tokenizer_files() drops the caller's
+  // cache_dir when it pre-checks tokenizer_config.json metadata, so the HEAD
+  // request falls back to env.cacheDir and hits the network even when the
+  // model is fully cached locally. Mirroring the cache_dir onto env.cacheDir
+  // makes that pre-check resolve locally too — fully offline loading.
+  if (pipelineOptions.cache_dir) env.cacheDir = pipelineOptions.cache_dir;
+  // issue #188 补充：embedModelMirror 此前是死配置（定义了但全仓无人读取）。
+  // transformers.js 不认 HF_ENDPOINT（那是 Python huggingface_hub 的变量），
+  // 模型下载源由 env.remoteHost 决定——把镜像接到真正的开关上，否则
+  // huggingface.co 不可达的网络连模型都下不下来。
+  if (remoteHost) env.remoteHost = remoteHost;
+  // issue #194：模型文件（几百 MB～1GB）下载中断后从断点续传。开关关 = env.fetch 一字不动。
+  installResilientFetch(env, {
+    enabled: resilientModelDownload === true,
+    cacheDir: pipelineOptions.cache_dir,
+    logger
+  });
+  return pipeline(task, model, pipelineOptions);
+}
+
+/** Flatten a transformers.js Tensor [batch, dim] into number[][]. */
+function tensorToRows(tensor) {
+  const { data, dims } = tensor;
+  const rowLen = dims[dims.length - 1] || 0;
+  const rows = [];
+  for (let i = 0; i < data.length; i += rowLen) {
+    rows.push(Array.from(data.subarray(i, i + rowLen)));
+  }
+  // Single-text input may come back without the batch axis.
+  if (rows.length === 0 && rowLen > 0) rows.push(Array.from(data));
+  return rows;
+}
+
+/**
+ * ONNX text embedder backed by transformers.js (onnxruntime-node underneath).
+ * Runs fully offline; pooling is resolved per model family (BGE → CLS, else mean —
+ * see resolvePooling) and vectors are L2-normalized. `engineFactory` is injectable
+ * for tests.
+ */
+export class LocalEmbedder {
+  constructor(opts = {}) {
+    this.model = opts.model || "Xenova/bge-small-zh-v1.5";
+    this._dimension = opts.dimension || 512;
+    this.device = opts.device || "cpu";
+    this.batchSize = opts.batchSize || 8;
+    this.cacheDir = String(opts.cacheDir ?? "").trim() || defaultModelCacheDir();
+    // 自管运行时根目录（issue #131）：空表示用默认位置，具体解析交给 loader。
+    this.runtimeDir = String(opts.runtimeDir ?? "").trim();
+    // issue #194：模型文件下载断点续传。只在显式传 true 时启用——直连构造的旧调用方
+    // （含测试）保持裸 fetch 的现状，配置默认值由 index.js 传进来。
+    this.resilientModelDownload = opts.resilientModelDownload === true;
+    this.useDtype = opts.useDtype || "q8";
+    // 池化：配置值（auto/cls/mean）→ 生效值（cls/mean）。解析结果既进 embed()，
+    // 也进 modelHash —— 换池化就是换向量空间，旧索引必须被判失配后重建。
+    this.poolingMode = String(opts.pooling ?? "auto").trim().toLowerCase();
+    this.pooling = resolvePooling(this.poolingMode, this.model);
+    // 模型镜像下载源（embedModelMirror，#188 补充）：空 = transformers 默认。
+    this.remoteHost = String(opts.remoteHost ?? "").trim();
+    this.logger = opts.logger ?? null;
+    // Test hook: replace the pipeline factory without touching modules.
+    this.engineFactory = opts.engineFactory || defaultPipelineLoader;
+    this.extractor = null;
+    // issue #6: readiness flag for the service's scheduleEmbed gate. False until
+    // init() succeeds, so "ready" in embedder is observable even pre-init.
+    this.ready = false;
+  }
+
+  /** Load the model; throws when it cannot be loaded. Idempotent. */
+  async init() {
+    if (this.extractor) return this; // already initialized: no-op
+    const options = {
+      dtype: this.useDtype,
+      device: this.device
+    };
+    if (this.cacheDir) options.cache_dir = this.cacheDir;
+    // 传给注入的 engineFactory，由 defaultPipelineLoader 取走后交给三层解析。
+    if (this.runtimeDir) options.runtimeDir = this.runtimeDir;
+    if (this.remoteHost) options.remoteHost = this.remoteHost;
+    options.resilientModelDownload = this.resilientModelDownload;
+    options.logger = this.logger;
+    this.extractor = await this.engineFactory("feature-extraction", this.model, options);
+    this.ready = true; // service reads this to flush queued re-embeds
+    this.logger?.info?.(
+      `[dsh-mneme] local embedder ready: ${this.model} (dim=${this._dimension}, device=${this.device}, pooling=${this.pooling})`
+    );
+    return this;
+  }
+
+  /** Embed many texts with the model's pooling; chunks at batchSize. */
+  async embed(texts) {
+    if (!Array.isArray(texts)) throw new TypeError("embed expects an array of strings");
+    if (!this.extractor) throw new Error("LocalEmbedder not initialized");
+    const out = [];
+    for (let i = 0; i < texts.length; i += this.batchSize) {
+      const chunk = texts.slice(i, i + this.batchSize);
+      const tensor = await this.extractor(chunk, { pooling: this.pooling, normalize: true });
+      out.push(...tensorToRows(tensor));
+    }
+    return out;
+  }
+
+  async embedSingle(text) {
+    const rows = await this.embed([String(text)]);
+    return rows[0];
+  }
+
+  get dimension() {
+    return this._dimension;
+  }
+
+  get modelHash() {
+    // Pooling is part of the vector space: a CLS index cannot be queried with mean
+    // vectors (or vice versa). Keep the historical `model#hash` shape for `mean` so
+    // indexes that were never affected are not invalidated needlessly; every other
+    // pooling gets a fingerprint of its own, which makes the index-consistency gate
+    // flag the stale mean-space index and rebuild it.
+    return this.pooling === "mean"
+      ? modelHash(this.model)
+      : modelHash(`${this.model}@${this.pooling}`);
+  }
+
+  dispose() {
+    try {
+      this.extractor?.dispose?.();
+    } catch {
+      // best-effort: some engines free resources on GC
+    }
+    this.extractor = null;
+    this.ready = false;
+  }
+}
+
+/** Chunk texts into batches of at most `size`. */
+function chunk(texts, size) {
+  const out = [];
+  for (let i = 0; i < texts.length; i += size) out.push(texts.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Ollama embedder over its native HTTP API. `dimension` is inferred from the
+ * first response. init() verifies reachability and that the model exists.
+ */
+export class OllamaEmbedder {
+  constructor(opts = {}) {
+    this.baseUrl = String(opts.baseUrl ?? "http://localhost:11434").trim().replace(/\/+$/, "");
+    this.model = String(opts.model ?? "nomic-embed-text").trim();
+    this.logger = opts.logger ?? null;
+    this._dimension = null;
+    // #118: async-init embedders expose `ready` so the service queues re-embeds
+    // until init lands and the status card can show "initializing".
+    this.ready = false;
+  }
+
+  async _post(body) {
+    return fetch(`${this.baseUrl}/api/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
+    });
+  }
+
+  /** Probe the server with a tiny prompt; throws when unreachable/missing. */
+  async init() {
+    const res = await this._post({ model: this.model, prompt: "ping" });
+    if (!res.ok) throw new Error(`Ollama ${this.model} unavailable: HTTP ${res.status}`);
+    const body = await res.json();
+    if (!Array.isArray(body?.embedding)) throw new Error(`Ollama ${this.model} returned no embedding`);
+    this._dimension = body.embedding.length;
+    this.ready = true;
+    this.logger?.info?.(
+      `[dsh-mneme] ollama embedder ready: ${this.model} (dim=${this._dimension})`
+    );
+    return this;
+  }
+
+  async embed(texts) {
+    if (!Array.isArray(texts)) throw new TypeError("embed expects an array of strings");
+    const out = [];
+    for (const text of texts) out.push(await this.embedSingle(text));
+    return out;
+  }
+
+  async embedSingle(text) {
+    const res = await this._post({ model: this.model, prompt: String(text).slice(0, 8000) });
+    if (!res.ok) throw new Error(`Ollama embed failed: HTTP ${res.status}`);
+    const body = await res.json();
+    const vec = body?.embedding;
+    if (!Array.isArray(vec) || !vec.length) throw new Error("Ollama returned no embedding");
+    if (this._dimension == null) this._dimension = vec.length;
+    return Array.from(vec);
+  }
+
+  get dimension() {
+    return this._dimension ?? 0;
+  }
+
+  get modelHash() {
+    return modelHash(this.model);
+  }
+
+  dispose() {
+    this._dimension = null;
+  }
+}
+
+/**
+ * OpenAI-compatible embedder (OpenAI, SiliconFlow, Zhipu, local proxies).
+ * Backward-compatible behavior lifted from embedding.js, but batchable and
+ * throwing on failure instead of returning null.
+ */
+export class OpenAIEmbedder {
+  constructor(opts = {}) {
+    this.baseUrl = String(opts.baseUrl ?? "").trim().replace(/\/+$/, "");
+    this.apiKey = String(opts.apiKey ?? "").trim();
+    this.model = String(opts.model ?? "").trim();
+    this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.logger = opts.logger ?? null;
+    this._dimension = null;
+    // Accept both "https://host/v1" and a full path ending in /embeddings.
+    this._url = /\/embeddings$/i.test(this.baseUrl)
+      ? this.baseUrl
+      : this.baseUrl ? `${this.baseUrl}/embeddings` : "";
+  }
+
+  async init() {
+    if (!this._url || !this.apiKey || !this.model) {
+      throw new Error("OpenAI embedder requires baseUrl, apiKey and model");
+    }
+    this.logger?.info?.(`[dsh-mneme] openai embedder ready: ${this.model}`);
+    return this;
+  }
+
+  async embed(texts) {
+    if (!Array.isArray(texts)) throw new TypeError("embed expects an array of strings");
+    const out = [];
+    for (const batch of chunk(texts, 32)) {
+      const res = await fetch(this._url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({ model: this.model, input: batch.map((t) => String(t).slice(0, 8000)) }),
+        signal: AbortSignal.timeout(this.timeoutMs)
+      });
+      if (!res.ok) throw new Error(`Embedding API failed: HTTP ${res.status}`);
+      const body = await res.json();
+      const list = body?.data;
+      if (!Array.isArray(list) || list.length !== batch.length) {
+        throw new Error("Embedding API returned unexpected payload");
+      }
+      for (const item of list) {
+        const vec = item?.embedding;
+        if (!Array.isArray(vec) || !vec.length) throw new Error("Embedding API returned empty vector");
+        if (this._dimension == null) this._dimension = vec.length;
+        out.push(Array.from(vec));
+      }
+    }
+    return out;
+  }
+
+  async embedSingle(text) {
+    const rows = await this.embed([String(text)]);
+    return rows[0];
+  }
+
+  get dimension() {
+    return this._dimension ?? 0;
+  }
+
+  get modelHash() {
+    return modelHash(this.model);
+  }
+
+  dispose() {
+    this._dimension = null;
+  }
+}
+
+/** Pick a backend instance by provider name. Throws on unknown providers. */
+export function createEmbedderByProvider(provider, opts) {
+  switch (String(provider ?? "").toLowerCase()) {
+    case "local":
+      return new LocalEmbedder(opts);
+    case "ollama":
+      return new OllamaEmbedder(opts);
+    case "openai":
+      return new OpenAIEmbedder(opts);
+    default:
+      throw new Error(`Unknown embedding provider: ${provider}`);
+  }
+}

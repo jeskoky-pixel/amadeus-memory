@@ -1,0 +1,133 @@
+{
+  "name": "@modusensus/dsh-mneme",
+  "description": "Amadeus Memory (enhanced Mneme 0.9.4): cross-session memory with stable typed identities, native DSH settings, SQLite storage, autoDream, vector retrieval and 13 model tools.",
+  "version": "0.9.5-amadeus.1",
+  "license": "MIT",
+  "amadeus": {
+    "edition": "enhanced",
+    "upstream": "@modusensus/dsh-mneme@0.9.4",
+    "product": "memory"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/slow-stack/mneme.git"
+  },
+  "homepage": "https://github.com/slow-stack/mneme#readme",
+  "bugs": {
+    "url": "https://github.com/slow-stack/mneme/issues"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "icon": "assets/icon.svg",
+  "bin": {
+    "dsh-mneme": "bin/cli.mjs",
+    "dsh-mneme-mcp": "bin/dsh-mneme-mcp.mjs",
+    "dsh-mneme-serve": "bin/dsh-mneme-serve.mjs"
+  },
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./serve": {
+      "default": "./lib/serve.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*": "./locale/*"
+  },
+  "files": [
+    "assets",
+    "bin",
+    "lib",
+    "locale",
+    "src",
+    "docs",
+    "scripts",
+    "test",
+    "runtime-manifest.json",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "slots",
+        "locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.0-rc.6 <0.2.0 || >=0.1.5-rc.0 <0.3.0 || >=0.2.0-rc.0 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.1.0-rc.6 <0.2.0 || >=0.1.5-rc.0 <0.3.0 || >=0.2.0-rc.0 <0.3.0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.0-rc.6 <0.2.0 || >=0.1.5-rc.0 <0.3.0 || >=0.2.0-rc.0 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.6 <0.2.0 || >=0.1.5-rc.0 <0.3.0 || >=0.2.0-rc.0 <0.3.0",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@huggingface/transformers": ">=4.2.0 <5",
+    "dsh-better-sidebar": ">=0.18.0 <1"
+  },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    },
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@huggingface/transformers": "^4.3.0",
+    "c8": "^12.0.0",
+    "lucide": "^1.42.0"
+  },
+  "scripts": {
+    "sync": "node scripts/sync-lib.js",
+    "prepack": "npm run sync",
+    "test": "npm run quality:amadeus",
+    "test:amadeus": "node scripts/quality.mjs",
+    "test:all": "node --test test/*.test.js",
+    "test:upstream-release": "node --test test/pipeline.test.js test/pipeline-runner.test.js test/workflow-guards.test.js",
+    "test:compat-windows": "node scripts/compat-windows.mjs",
+    "privacy:source": "node scripts/privacy-check.mjs --source-only",
+    "privacy:package": "node scripts/privacy-check.mjs",
+    "quality:amadeus": "node scripts/clean-test-tmp.mjs && npm run sync && node scripts/check-sync.js && node scripts/privacy-check.mjs --source-only && npm run test:amadeus",
+    "package:amadeus": "npm run quality:amadeus && npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist && node scripts/package-hash.mjs && node scripts/privacy-check.mjs",
+    "test:coverage": "c8 node --test test/*.test.js",
+    "badge:sync": "node scripts/sync-test-badge.mjs",
+    "e2e": "node scripts/e2e-dsh.js",
+    "stress": "node scripts/stress-dsh.js"
+  },
+  "c8": {
+    "reporter": [
+      "text",
+      "lcov"
+    ],
+    "exclude": [
+      "lib/**",
+      "test/**",
+      "**/*.test.js"
+    ]
+  },
+  "dependencies": {
+    "morphicons": "^1.7.1"
+  },
+  "overrides": {
+    "adm-zip": "0.6.1",
+    "brace-expansion": "5.0.12"
+  },
+  "allowScripts": {
+    "onnxruntime-node@1.30.0": true
+  }
+}
