@@ -21,6 +21,7 @@ import { langOf } from "./lang.js";
 import { createService } from "./service.js";
 import { createMaintenance } from "./maintenance.js";
 import { createStandaloneApi } from "./api-standalone.js";
+import { configureScene } from "./scene.js";
 import { createSemantic } from "./semantic.js";
 import { createVectorIndex } from "./vector-index.js";
 import { provisionRuntime } from "./runtime/provision.js";
@@ -44,7 +45,8 @@ const EMBED_PROVIDERS = new Set(["off", "local", "ollama", "openai"]);
  *   tokenExisted — 启动前 kv 里是否已有 token;false 时本次为首次生成,入口层可提示。
  */
 export async function createServeRuntime({
-  memoryDir, port, host, logger = null, strictPort = true, embed = "local", embedder = null, reranker = null
+  memoryDir, port, host, logger = null, strictPort = true, embed = "local", embedder = null, reranker = null,
+  sceneIsolationEnabled = false, sceneStrictQQ = false
 } = {}) {
   if (!EMBED_PROVIDERS.has(embed)) {
     throw new Error(`invalid embed provider: ${String(embed)}(允许 off/local/ollama/openai)`);
@@ -60,7 +62,14 @@ export async function createServeRuntime({
   // 配最小集,与第三方 embedded 挂载实测同形:language 参与镜像渲染与去重标题;
   // documentMemoryEnabled 关掉 document 子系统(daemon 不建 documentIndex,service
   // 内部 if-guard 安全,index.js:261 的 documentIndex 仅宿主装配)。
-  const cfg = { language: "zh", documentMemoryEnabled: false };
+  const cfg = { language: "zh", documentMemoryEnabled: false, sceneIsolationEnabled, sceneStrictQQ };
+  // The daemon has no Host scene adapter. Initialize the policy explicitly and
+  // never enable cross-scene grants here (hostContract stays false).
+  configureScene({
+    enabled: cfg.sceneIsolationEnabled === true,
+    strictQQ: cfg.sceneStrictQQ === true,
+    hostContract: false
+  });
   const mirror = createMirror(dir, langOf(cfg));
   const service = createService({ store, mirror, config: cfg, logger });
 

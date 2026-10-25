@@ -11,6 +11,8 @@ import { createSettings } from "../src/settings.js";
 import { mountAdminApi } from "../src/admin-api.js";
 import { applyStagedRestore } from "../src/backup.js";
 import { assertIsolatedMemoryDir } from "../src/qa-guard.js";
+import { configureRecentContext, recordTrustedRecentEvent, resetRecentContextForTests } from "../src/recent-context.js";
+import { mintTrustedScene } from "../src/scene.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..", ".test-tmp");
@@ -25,7 +27,8 @@ function setup() {
     language: "zh", autoInject: true, autoSummarize: true, autoDream: false,
     sleepModeEnabled: false, entityExtractionEnabled: false, memoryPreferenceEnabled: false,
     trustedIntakeEnabled: false, rerankEnabled: false, embedProvider: "openai",
-    memoryQualityFilter: { enabled: true }, llmAudit: { enabled: true }
+    memoryQualityFilter: { enabled: true }, llmAudit: { enabled: true },
+    coreMemoryEnabled: true
   };
   const service = createService({ store, mirror: null, config });
   const settings = createSettings(store.db);
@@ -178,6 +181,83 @@ test("archived status is authoritative in list/detail and quality-filter auto-ar
     assert.equal(short.json.data.memory.archived, true, "quality-filter auto-archive must be visible in the create response");
     const shortArchived = await call(h.route, { url: "/api/amadeus-memory/admin/memories?archived=1" });
     assert.equal(shortArchived.json.data.items.find((item) => item.id === short.json.data.memory.id)?.archived, true);
+  } finally {
+    h.close();
+    h.cleanup();
+  }
+});
+
+test("scene and recent admin status are bounded and clear is owner-only", async () => {
+  const h = setup();
+  resetRecentContextForTests();
+  configureRecentContext({ enabled: true, ttlMs: 600000, maxEvents: 20, maxTokens: 500 });
+  const scene = mintTrustedScene({ platform: "qq", kind: "group", id: "admin-status", verified: true });
+  recordTrustedRecentEvent({ eventId: "e1", scene, text: "synthetic recent text", at: Date.now() });
+  try {
+    const sceneRes = await call(h.route, { url: "/api/amadeus-memory/admin/scene" });
+    assert.equal(sceneRes.status, 200);
+    const sceneBody = sceneRes.json.data;
+    assert.equal(typeof sceneBody.enabled, "boolean");
+    assert.equal(typeof sceneBody.strict_qq, "boolean");
+    assert.equal(typeof sceneBody.host_contract, "boolean");
+    assert.equal(sceneBody.unknown_provenance, "deny");
+    assert.equal(sceneBody.legacy_untagged, "readable");
+    assert.ok(Array.isArray(sceneBody.grants));
+    assert.equal(JSON.stringify(sceneBody).includes("synthetic recent text"), false, "status must not expose bodies");
+
+    const recentRes = await call(h.route, { url: "/api/amadeus-memory/admin/recent" });
+    assert.equal(recentRes.status, 200);
+    assert.equal(recentRes.json.data.total_events, 1);
+    assert.equal(recentRes.json.data.ttl_ms, 600000);
+    assert.equal(JSON.stringify(recentRes.json.data).includes("synthetic recent text"), false, "recent counts expose no text");
+
+    const clearRes = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/recent/clear", body: {}
+    });
+    assert.equal(clearRes.status, 200);
+    assert.equal(clearRes.json.data.cleared, true);
+    assert.equal(clearRes.json.data.total_events, 0);
+    assert.equal((await call(h.route, { url: "/api/amadeus-memory/admin/recent" })).json.data.total_events, 0);
+  } finally {
+    h.close();
+    h.cleanup();
+    resetRecentContextForTests();
+  }
+});
+
+test("owner core management protects, annotates, unprotects and deletes", async () => {
+  const h = setup();
+  try {
+    const created = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/memory",
+      body: { type: "history", title: "Core synthetic", content: "A synthetic core memory with enough body length." }
+    });
+    const id = created.json.data.memory.id;
+    let res = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/core",
+      body: { action: "protect", id, note: "first person" }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.data.memory.protected, true);
+    assert.equal(res.json.data.memory.core_note, "first person");
+
+    res = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/core",
+      body: { action: "note", id, note: "updated note" }
+    });
+    assert.equal(res.json.data.memory.core_note, "updated note");
+    res = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/core",
+      body: { action: "unprotect", id }
+    });
+    assert.equal(res.json.data.memory.protected, false);
+
+    res = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/core",
+      body: { action: "delete", id, confirm: "DELETE" }
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await call(h.route, { url: `/api/amadeus-memory/admin/memory?id=${encodeURIComponent(id)}` })).status, 404);
   } finally {
     h.close();
     h.cleanup();

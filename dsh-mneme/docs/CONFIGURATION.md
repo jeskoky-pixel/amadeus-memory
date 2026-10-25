@@ -37,6 +37,22 @@ DSH 设置左侧的 **Amadeus 记忆 / Amadeus Memory** 页面与 Plugin Manager
 | `scopeEnabled` | `false` | 存储层总开关：**两条写入路径**（工具调用 `memory_save`/`memory_update`，以及机器提炼·会话蒸馏）都自动标注 agent_scope / workspace_scope（标注只贴**新建行**：并入既有行时不重贴，既有行的归属属于它原来被提炼出来的语境），去重键扩展；检索与注入排序按当前会话作用域加权（命中 ×1.25、他 scope ×0.5 保留可见，issue #339 补齐注入通道） | opt-in；关 = 写入不标注、行为与 A1 前逐字节一致 |
 | `strictScope` | `false` | 硬过滤模式（A3）：他 scope 完全不可见、未标注恒可见（fail-closed）；硬过滤先于软加权执行 | 依赖 `scopeEnabled` 打开才有意义；关 = A2 软隔离（他 scope 降权保留可见，检索与注入同权重） |
 
+## Scene / Recent Context / Core（默认全关）
+
+Trusted scene IDs come only from a verified Host/platform adapter; no route or
+model tool accepts a scene. Without a real Host contract, QQ cross-scene sharing
+stays off.
+
+| 键 | 默认 | 作用 | 开启后果 / 冲突 |
+|---|---|---|---|
+| `sceneIsolationEnabled` | `false` | 启用场景归属与读取过滤；严格模式下未标注来源不视为公共 | 关 = 旧行为逐字节一致 |
+| `sceneStrictQQ` | `false` | 仅对 QQ 场景启用严格模式；拒绝跨场景普通记忆、图谱/API 身份面并 fail closed | 关 = 只存储场景标注，不改变读取 |
+| `recentContextEnabled` | `false` | 有界内存近期上下文；不调用 Embedding/LLM、不写长期记忆 | 关 = 无缓冲、无注入 |
+| `recentContextTtlMs` | `600000` | 近期事件有效期（毫秒） | 过期不可读 |
+| `recentContextMaxEvents` | `20` | 每个场景最多事件数 | 超出淘汰最旧 |
+| `recentContextMaxTokens` | `500` | 单次读取 token 预算 | 超出跳过较旧事件 |
+| `coreMemoryEnabled` | `false` | 允许受保护核心记忆工具与 GUI 管理 | 关 = 工具隐藏、管理接口拒绝 |
+
 ## 作用域级可逆闸门（issue #471）
 
 上面两个键是**事实轴**——答「这条记忆属于谁」，改的是归属数据、跟着记忆行走。下面两个键是**政策轴**——答「这个作用域现在通不通」，由人按作用域整体按下、跨会话存续、松开即原样回来，**一条记忆行都不动、一个配置键都不改、不用重启**。两条轴落在同一个判定出口（`gateByScope`，全仓唯一的过滤实现），可叠加。

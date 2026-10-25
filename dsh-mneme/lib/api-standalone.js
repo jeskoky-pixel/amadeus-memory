@@ -287,6 +287,10 @@ function scopeFromSearchParams(url) {
  */
 export function createStandaloneApi({ service, store, config = {}, logger, settings, port, host, maintenance, strictPort = false, embedder = null, embedTimeoutMs = 3000 }) {
   const persisted = settings?.getExternalApi?.() ?? {};
+  const strictSceneMode = config.sceneIsolationEnabled === true && config.sceneStrictQQ === true;
+  // Off flags do not declassify already tagged rows. Check per request so a row
+  // tagged after startup is covered too.
+  const sceneDataPresent = () => store?.hasSceneScopedRows?.() === true;
 
   let token = typeof persisted.token === "string" ? persisted.token : "";
   if (!token) {
@@ -319,6 +323,15 @@ export function createStandaloneApi({ service, store, config = {}, logger, setti
       // Health is the single unauthenticated probe (monitor checks).
       if (req.method === "GET" && pathname === "/health") {
         sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      // Strict QQ scene mode has no trusted output-scene binding on this
+      // independent data plane. Token authentication is not scene
+      // authorization, so deny every non-health route before auth/body/count/
+      // existence details are touched. MCP stdio uses this plane.
+      if (strictSceneMode || sceneDataPresent()) {
+        sendJson(res, 403, { error: "scene-isolation-active" });
         return;
       }
 

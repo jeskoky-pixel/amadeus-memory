@@ -14,6 +14,7 @@ import {
 import { IDENTITY_SCHEMA, seedIdentitySchema } from "./identity.js";
 import { PREFERENCE_SCHEMA } from "./preferences.js";
 import { INTAKE_SCHEMA } from "./intake.js";
+import { INTERNAL_AUTHORITY } from "./internal-authority.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -38,6 +39,11 @@ CREATE TABLE IF NOT EXISTS memories (
   _full_content     TEXT,
   evidence    TEXT,
   doc_path    TEXT,
+  scene_scope TEXT,
+  protected   INTEGER NOT NULL DEFAULT 0,
+  protected_at TEXT,
+  protected_by TEXT,
+  core_note   TEXT,
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
@@ -558,6 +564,11 @@ function toRow(row) {
     scope_decided_at: row.scope_decided_at ?? undefined,
     sensitivity: row.sensitivity ?? undefined,
     occurred_at: row.occurred_at ?? undefined,
+    scene_scope: row.scene_scope ?? undefined,
+    protected: row.protected === 1,
+    protected_at: row.protected_at ?? undefined,
+    protected_by: row.protected_by ?? undefined,
+    core_note: row.core_note ?? undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
     last_accessed_at: row.last_accessed_at ?? undefined,
@@ -893,6 +904,11 @@ export function createStore(path) {
   addColumn("memories", "epistemic_status", "ALTER TABLE memories ADD COLUMN epistemic_status TEXT NOT NULL DEFAULT 'subjective'");
   addColumn("memories", "content_history", "ALTER TABLE memories ADD COLUMN content_history TEXT");
   addColumn("memories", "quality_score", "ALTER TABLE memories ADD COLUMN quality_score REAL");
+  addColumn("memories", "scene_scope", "ALTER TABLE memories ADD COLUMN scene_scope TEXT");
+  addColumn("memories", "protected", "ALTER TABLE memories ADD COLUMN protected INTEGER NOT NULL DEFAULT 0");
+  addColumn("memories", "protected_at", "ALTER TABLE memories ADD COLUMN protected_at TEXT");
+  addColumn("memories", "protected_by", "ALTER TABLE memories ADD COLUMN protected_by TEXT");
+  addColumn("memories", "core_note", "ALTER TABLE memories ADD COLUMN core_note TEXT");
 
   // v0.8.0 A1（issue #17）scope 隔离存储层：四列全部可空、不带 DEFAULT——存量行
   // 零重写，读侧把 NULL 视为未标注（= 全局可见）。是否落值由 scopeEnabled 门控
@@ -901,6 +917,9 @@ export function createStore(path) {
   addColumn("memories", "workspace_scope", "ALTER TABLE memories ADD COLUMN workspace_scope TEXT");
   addColumn("memories", "sensitivity", "ALTER TABLE memories ADD COLUMN sensitivity TEXT");
   addColumn("memories", "occurred_at", "ALTER TABLE memories ADD COLUMN occurred_at TEXT");
+  // Index after the additive column exists; a legacy table lacks scene_scope
+  // until the ALTER above, so it cannot live in the base SCHEMA block.
+  initRetry("index memories_scene", () => db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scene ON memories(scene_scope)"));
 
   // v0.8.1 底座（issue #170）：scope 标注的来源与决策时间。三列全部可空不带
   // DEFAULT（与 A1 同款零重写迁移）。来源拆成 agent/workspace 各一列而非单列
@@ -1208,8 +1227,8 @@ export function createStore(path) {
       : inferEpistemicStatus(memory);
     runAtomically(() => {
       db.prepare(
-        `INSERT INTO memories (id, type, title, content, tags, importance, forgotten, archived, archived_at, source, content_history, quality_score, embedding, epistemic_status, agent_scope, workspace_scope, agent_scope_source, workspace_scope_source, scope_decided_at, sensitivity, occurred_at, evidence, doc_path, content_hash, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO memories (id, type, title, content, tags, importance, forgotten, archived, archived_at, source, content_history, quality_score, embedding, epistemic_status, agent_scope, workspace_scope, agent_scope_source, workspace_scope_source, scope_decided_at, sensitivity, occurred_at, evidence, doc_path, scene_scope, protected, protected_at, protected_by, core_note, content_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id,
         type,
@@ -1236,6 +1255,11 @@ export function createStore(path) {
         normalizeOccurredAt(memory.occurred_at),
         evidence,
         docPath,
+        memory.scene_scope ?? null,
+        memory.protected ? 1 : 0,
+        memory.protected ? (normalizeOccurredAt(memory.protected_at) ?? now) : null,
+        memory.protected ? (memory.protected_by ?? null) : null,
+        memory.core_note ?? null,
         contentHash,
         now,
         now
@@ -1298,6 +1322,15 @@ export function createStore(path) {
     if (patch.tags !== undefined && !Array.isArray(patch.tags)) {
       throw new Error("tags must be an array");
     }
+    if (existing.protected && patch[INTERNAL_AUTHORITY] !== true) {
+      const destructive = ["type", "title", "content", "tags", "importance", "forgotten", "archived"]
+        .some((key) => patch[key] !== undefined);
+      if (destructive) {
+        const error = new Error("PROTECTED_MEMORY");
+        error.code = "PROTECTED_MEMORY";
+        throw error;
+      }
+    }
     const now = nowIso();
     const embedding = patch.embedding !== undefined
       ? (Array.isArray(patch.embedding) && patch.embedding.length ? JSON.stringify(patch.embedding) : null)
@@ -1330,6 +1363,10 @@ export function createStore(path) {
     const nextDecidedAt = patch.scope_decided_at !== undefined
       ? normalizeOccurredAt(patch.scope_decided_at)
       : (existing.scope_decided_at ?? null);
+    const nextProtected = existing.protected === true;
+    const nextProtectedAt = nextProtected ? (existing.protected_at ?? now) : null;
+    const nextProtectedBy = nextProtected ? (existing.protected_by ?? null) : null;
+    const nextCoreNote = existing.core_note ?? null;
     // #254：标题或正文变了，锚跟着重算——它是当前内容的派生物，留旧值等于让「这行
     // 现在装的什么」和标记对不上。
     const nextTitle = patch.title ?? existing.title;
@@ -1337,7 +1374,7 @@ export function createStore(path) {
     const contentHash = contentHashOf({ title: nextTitle, content: nextContent });
     runAtomically(() => {
       db.prepare(
-        `UPDATE memories SET type=?, title=?, content=?, tags=?, importance=?, source=?, content_history=?, quality_score=?, embedding=?, epistemic_status=?, agent_scope=?, workspace_scope=?, agent_scope_source=?, workspace_scope_source=?, scope_decided_at=?, evidence=?, content_hash=?, updated_at=? WHERE id=?`
+        `UPDATE memories SET type=?, title=?, content=?, tags=?, importance=?, source=?, content_history=?, quality_score=?, embedding=?, epistemic_status=?, agent_scope=?, workspace_scope=?, agent_scope_source=?, workspace_scope_source=?, scope_decided_at=?, evidence=?, protected=?, protected_at=?, protected_by=?, core_note=?, content_hash=?, updated_at=? WHERE id=?`
       ).run(
         type,
         nextTitle,
@@ -1355,6 +1392,10 @@ export function createStore(path) {
         nextWorkspaceSource,
         nextDecidedAt,
         evidence,
+        nextProtected ? 1 : 0,
+        nextProtectedAt,
+        nextProtectedBy,
+        nextCoreNote,
         contentHash,
         now,
         id
@@ -1370,7 +1411,9 @@ export function createStore(path) {
     return getById(id);
   }
 
-  function remove(id) {
+  function remove(id, { force = false } = {}) {
+    const existing = getById(id);
+    if (existing?.protected && !force) return false;
     runAtomically(() => {
       // #399：memory_provenance 的 ON DELETE CASCADE 在本库是惰性的（createStore
       // 从不打开 PRAGMA foreign_keys），所以链接在这里显式清。不用翻转全局 pragma
@@ -1405,6 +1448,15 @@ export function createStore(path) {
     }
     if (patch.tags !== undefined && !Array.isArray(patch.tags)) {
       throw new Error("tags must be an array");
+    }
+    if (existing.protected && patch[INTERNAL_AUTHORITY] !== true) {
+      const destructive = ["type", "title", "content", "tags", "importance", "forgotten", "archived"]
+        .some((key) => patch[key] !== undefined);
+      if (destructive) {
+        const error = new Error("PROTECTED_MEMORY");
+        error.code = "PROTECTED_MEMORY";
+        throw error;
+      }
     }
     const now = nowIso();
     const embedding = patch.embedding !== undefined
@@ -1460,6 +1512,8 @@ export function createStore(path) {
   }
 
   function setForget(id, forgotten) {
+    const existing = getById(id);
+    if (existing?.protected && (forgotten === true || forgotten === 1)) return existing;
     runAtomically(() => {
       db.prepare("UPDATE memories SET forgotten = ?, updated_at = ? WHERE id = ?")
         .run(forgotten === true || forgotten === 1 ? 1 : 0, nowIso(), id);
@@ -1474,6 +1528,8 @@ export function createStore(path) {
   // 幂等：已是归档态再调 archived=true，不刷新 archived_at（重复归档不是新一次
   // 归档，否则「重复调 setArchived」又变成一次净增——那正是代理口径被推翻的原因）。
   function setArchived(id, archived) {
+    const existing = getById(id);
+    if (existing?.protected && archived) return existing;
     const next = archived ? 1 : 0;
     runAtomically(() => {
       // nowIso 在事务内取（与改动前一致）：单调顶推的时间戳不该被一次回滚白白消耗。
@@ -1491,6 +1547,24 @@ export function createStore(path) {
       ).run(next, next, now, next, now, id);
       incrementGeneration();
     });
+    return getById(id);
+  }
+
+  function setProtected(id, protectedFlag, { by = "owner", note, protectedAt } = {}) {
+    const existing = getById(id);
+    if (!existing) return undefined;
+    const next = protectedFlag === true;
+    db.prepare(
+      "UPDATE memories SET protected = ?, protected_at = ?, protected_by = ?, core_note = ?, updated_at = ? WHERE id = ?"
+    ).run(
+      next ? 1 : 0,
+      next ? (protectedAt ?? nowIso()) : null,
+      next ? by : null,
+      note !== undefined ? note : (existing.core_note ?? null),
+      nowIso(),
+      id
+    );
+    incrementGeneration();
     return getById(id);
   }
 
@@ -1512,8 +1586,8 @@ export function createStore(path) {
   function demoteToSummary(id, summary, { minRefTimeMs } = {}) {
     let changed = false;
     runAtomically(() => {
-      const row = db.prepare("SELECT title, last_accessed_at, content, _full_content FROM memories WHERE id = ?").get(id);
-      if (!row || row._full_content) return;
+      const row = db.prepare("SELECT title, last_accessed_at, content, _full_content, protected FROM memories WHERE id = ?").get(id);
+      if (!row || row._full_content || row.protected === 1) return;
       if (minRefTimeMs !== undefined && row.last_accessed_at) {
         const lastMs = Date.parse(row.last_accessed_at);
         if (lastMs >= minRefTimeMs) return; // touched after snapshot — still hot
@@ -1559,6 +1633,10 @@ export function createStore(path) {
        LIMIT ?`
     ).all(cutIso, limit);
     return rows.map(toRow);
+  }
+
+  function hasSceneScopedRows() {
+    return Boolean(db.prepare("SELECT 1 FROM memories WHERE scene_scope IS NOT NULL LIMIT 1").get());
   }
 
   function list({ type, excludeTypes = null, limit = 50, offset = 0, order = "importance", includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, minImportance = null, source = null, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null } = {}) {
@@ -2854,7 +2932,8 @@ export function createStore(path) {
    */
   function saveAttr({ entity_id, attr_key, attr_value, memory_id, confidence, source }) {
     const now = nowIso();
-    invalidateOldAttr(entity_id, attr_key, now);
+    const sceneScope = memory_id ? (getById(memory_id)?.scene_scope ?? null) : null;
+    invalidateOldAttr(entity_id, attr_key, now, sceneScope);
     const id = randomUUID();
     db.prepare(
       `INSERT INTO entity_attrs (id, entity_id, attr_key, attr_value, memory_id, valid_from, valid_until, confidence, source)
@@ -2864,10 +2943,23 @@ export function createStore(path) {
   }
 
   /** Mark every currently-valid attr row for entityId+attrKey as expired. Returns rows changed. */
-  function invalidateOldAttr(entityId, attrKey, now) {
+  function invalidateOldAttr(entityId, attrKey, now, sceneScope = null) {
+    if (sceneScope == null) {
+      return db.prepare(
+        `UPDATE entity_attrs SET valid_until = ?
+         WHERE entity_id = ? AND attr_key = ? AND valid_until IS NULL
+           AND (
+             memory_id IS NULL
+             OR memory_id NOT IN (SELECT id FROM memories WHERE scene_scope IS NOT NULL)
+           )`
+      ).run(now, entityId, attrKey).changes;
+    }
+    // A write in scene B must never expire the current value seen by scene A.
     return db.prepare(
-      `UPDATE entity_attrs SET valid_until = ? WHERE entity_id = ? AND attr_key = ? AND valid_until IS NULL`
-    ).run(now, entityId, attrKey).changes;
+      `UPDATE entity_attrs SET valid_until = ?
+       WHERE entity_id = ? AND attr_key = ? AND valid_until IS NULL
+         AND memory_id IN (SELECT id FROM memories WHERE scene_scope = ?)`
+    ).run(now, entityId, attrKey, sceneScope).changes;
   }
 
   /** Only the live value per attr_key (valid_until IS NULL). */
@@ -3394,12 +3486,14 @@ export function createStore(path) {
     remove,
     setForget,
     setArchived,
+    setProtected,
     touchLastAccess,
     demoteToSummary,
     restoreContent,
     getUnrecalledSince,
     list,
     all,
+    hasSceneScopedRows,
     // #430：有界单列读，写路径（质量过滤）用。
     recentContents,
     search,

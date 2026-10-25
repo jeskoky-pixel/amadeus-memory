@@ -10,6 +10,7 @@ import { computeHeat } from "./heat.js";
 import { EFFORT_REJECT_RE, describeStreamFailure, resolveRoute, withEffortFallback } from "./dream.js";
 import { getInjectionSnapshot } from "./inject.js";
 import { renderUserSettingsBlock } from "./user-settings.js";
+import { scenePolicy } from "./scene.js";
 import { describeLocalRuntime, publicRuntimeStatus } from "./runtime/loader.js";
 import { hostModulesDir, provisionRuntime } from "./runtime/provision.js";
 import { classify, fetchLatestVersion, PACKAGE_VERSION } from "./version-check.js";
@@ -141,7 +142,7 @@ function needsToken(req, policy, apiToken) {
  * 唯一的登记入口：校验 policy、拒绝重复路径、把 handler 包上鉴权。
  * 返回的 count() 供 createApi 汇报真实路由数（此前的字面量 36 已经和现实脱节）。
  */
-export function createRouteRegistrar(webServer, apiToken, disposers) {
+export function createRouteRegistrar(webServer, apiToken, disposers, { hasSceneScopedRows = () => false } = {}) {
   const seen = new Set();
   const register = (route) => {
     if (!ROUTE_POLICIES.includes(route.policy)) {
@@ -155,6 +156,24 @@ export function createRouteRegistrar(webServer, apiToken, disposers) {
     seen.add(key);
     const inner = route.handler;
     const handler = (req, res) => {
+      // In strict QQ scene mode raw graph identity surfaces cannot be safely
+      // filtered without a trusted output scene; fail closed instead of
+      // pretending same-scene graph reads work. Memory search/inject still use
+      // the scene-filtered service path.
+      const strict = scenePolicy().enabled && scenePolicy().strictQQ;
+      // The off switch must not declassify already tagged rows. If the store
+      // contains any scene-scoped memory, untrusted ordinary HTTP routes fail
+      // closed even when the feature flags are off.
+      const protectedData = strict || hasSceneScopedRows() === true;
+      // Without a real trusted Host scene binding there is no safe way to
+      // authorize an ordinary HTTP content route: /list and /count are raw
+      // store passthroughs, not the scene-filtered service path. Fail closed
+      // for every non-admin route in strict QQ mode; authenticated owner admin
+      // (/api/amadeus-memory/admin) remains separate.
+      if (protectedData) {
+        sendJson(res, 403, { error: "scene-isolation-active" });
+        return undefined;
+      }
       if (!needsToken(req, route.policy, apiToken)) return inner(req, res);
       sendJson(res, 401, { error: "unauthorized" });
       return undefined;
@@ -334,7 +353,9 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
   }
 
   // 所有路由都经这一处登记：policy 必填、鉴权在这里统一判定（见 createRouteRegistrar）。
-  const { register, count: countRoutes } = createRouteRegistrar(webServer, apiToken, disposers);
+  const { register, count: countRoutes } = createRouteRegistrar(webServer, apiToken, disposers, {
+    hasSceneScopedRows: () => service.hasSceneScopedRows?.() === true
+  });
 
   // /api/dsh-mneme prefix fallback → 404 JSON for unknown sub-paths
   register({

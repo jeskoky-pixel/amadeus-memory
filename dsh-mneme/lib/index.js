@@ -21,6 +21,8 @@ import { createStandaloneApi } from "./api-standalone.js";
 // #275 存储生命周期第一批：无损回收（手动入口，不挂启动路径）。
 import { createMaintenance } from "./maintenance.js";
 import { createSettings } from "./settings.js";
+import { configureScene } from "./scene.js";
+import { configureRecentContext } from "./recent-context.js";
 import { mountAdminApi } from "./admin-api.js";
 import { applyStagedRestore } from "./backup.js";
 import { createCommandManager } from "./commands.js";
@@ -303,6 +305,21 @@ export const apply = (ctx, config) => {
       })()
     : createLiveConfig(rawCfg, flatFlags, nestedFlags);
 
+  // Scene isolation is off by default and has no production Host adapter in
+  // this fork: hostContract stays false, so actual QQ cross-scene sharing is
+  // disabled. Synthetic trusted events can exercise the contract without QQ.
+  configureScene({
+    enabled: cfg.sceneIsolationEnabled === true,
+    strictQQ: cfg.sceneStrictQQ === true,
+    hostContract: false
+  });
+  configureRecentContext({
+    enabled: cfg.recentContextEnabled === true,
+    ttlMs: cfg.recentContextTtlMs,
+    maxEvents: cfg.recentContextMaxEvents,
+    maxTokens: cfg.recentContextMaxTokens
+  });
+
   // 失败表的启动期清理也放在装配之后（此前它在 createStore 之后、装配之前，写死
   // 90 天）。保留期现在是显式配置键 reflectionFailureRetentionDays；等它进面板
   // 白名单的那天，这里读的就是装配后的值，不用再改第二处。best-effort 语义不变：
@@ -505,8 +522,13 @@ export const apply = (ctx, config) => {
   // thresholds are both exceeded. onRun is deferred through `dream` so the
   // closure sees the assigned scheduler; the null guard keeps a run safe even
   // if the hook fires before assignment or after dispose.
+  // Background derivation cannot safely propagate per-scene visibility. Gate it
+  // whenever scene isolation is enabled OR the store already contains tagged
+  // rows, even if the user turned the flags off afterwards. Runtime guards below
+  // also cover tagged rows arriving after startup.
+  const sceneUnsafeDerivation = () => cfg.sceneIsolationEnabled === true || store.hasSceneScopedRows() === true;
   let dream = null;
-  if (cfg.autoDream) {
+  if (cfg.autoDream && !sceneUnsafeDerivation()) {
     dream = createDreamScheduler({
       thresholdCount: cfg.dreamThresholdCount,
       thresholdChars: cfg.dreamThresholdChars,
@@ -548,7 +570,9 @@ export const apply = (ctx, config) => {
           metadata: JSON.stringify({ count, chars })
         });
       },
-      onRun: () => (dream ? dream.runDream(ctx, service, cfg) : Promise.resolve({ ok: true, skipped: true }))
+      onRun: () => (dream && !sceneUnsafeDerivation()
+        ? dream.runDream(ctx, service, cfg)
+        : Promise.resolve({ ok: true, skipped: true, reason: "scene-isolation" }))
     });
     service.setDreamHook(() => dream.maybeSchedule(service));
   }
@@ -559,13 +583,15 @@ export const apply = (ctx, config) => {
   // service.enqueue so they serialize with autoDream — the two never overlap.
   // Abortable on user activity; audited into dream_runs with run_type='sleep'.
   let sleep = null;
-  if (cfg.sleepModeEnabled) {
+  if (cfg.sleepModeEnabled && !sceneUnsafeDerivation()) {
     sleep = createSleepScheduler({
       service,
       config: cfg,
       logger: ctx.logger,
       lastRunAtSeed: store.lastDreamRunAt("sleep"),
-      onRun: (signal) => (sleep ? runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal) : Promise.resolve({ ok: true, skipped: true }))
+      onRun: (signal) => (sleep && !sceneUnsafeDerivation()
+        ? runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal)
+        : Promise.resolve({ ok: true, skipped: true, reason: "scene-isolation" }))
     });
     service.setSleepHook(() => sleep.noteWrite());
   }
@@ -637,7 +663,7 @@ export const apply = (ctx, config) => {
     disposers.push(createTools(toolsCtx, service, cfg, embedder));
   });
 
-  const summarizer = createSummarizer(ctx, service, cfg);
+  const summarizer = sceneUnsafeDerivation() ? { dispose() {} } : createSummarizer(ctx, service, cfg);
   disposers.push(summarizer.dispose);
 
   // #275 存储生命周期第一批：无损回收的手动入口。刻意不挂启动路径、不接定时器——

@@ -6,6 +6,8 @@ import { MEMORY_GUIDE_SECTION } from "./guide.js";
 import { adaptiveInjectBudget } from "./search/adaptive.js";
 import { injectChildEnabled } from "./config.js";
 import { safeSlice } from "./safe-slice.js";
+import { readRecentContext } from "./recent-context.js";
+import { scenePolicy, currentScene } from "./scene.js";
 
 // Issue #179：注入预览的数据底座。systemPrompt 渲染是同步回调，面板只能事后
 // 拉取，所以在这里旁路缓存「最近一帧组装」——快照就是本次渲染用过的同一份
@@ -224,9 +226,25 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     maxRounds: config.hotMemoryRounds ?? 5,
     maxTokens: config.hotMemoryMaxTokens ?? 2000
   });
+  // Strict QQ hot-memory scene latch: same-scene session hot memory remains
+  // available; once a scene change is observed, older rounds are ambiguous and
+  // the hot block stays disabled for the rest of this injector/session.
+  let hotSceneId = null;
+  let hotSceneBlocked = false;
 
   function renderHotContext(ctx) {
     if (config.hotMemoryEnabled === false) return "";
+    if (scenePolicy().enabled && scenePolicy().strictQQ) {
+      const scene = currentScene();
+      if (!scene) return "";
+      if (hotSceneId === null) {
+        hotSceneId = scene.sceneId;
+      } else if (hotSceneId !== scene.sceneId) {
+        hot.clear();
+        hotSceneBlocked = true;
+      }
+      if (hotSceneBlocked) return "";
+    }
     const rounds = extractRounds(ctx, config.hotMemoryRounds ?? 5);
     if (!rounds.length) return "";
     hot.clear();
@@ -234,6 +252,13 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     const body = hot.getContext();
     if (!body) return "";
     return escapePromptVars(STR.hotHeader[language](rounds.length, body));
+  }
+
+  function renderRecentContext() {
+    const events = readRecentContext();
+    if (!events.length) return "";
+    const lines = events.map((event) => `- [${new Date(event.at).toISOString()}] ${event.text}`);
+    return escapePromptVars(`[近期授权上下文 / Recent authorized context]\n${lines.join("\n")}`);
   }
 
   function render(candidates, pinnedStats = null) {
@@ -396,12 +421,13 @@ export function createInjector(ctx, service, settings, config, gate = null) {
         // the documented injection order 1→2. Folding it here (instead of a
         // separate context) keeps the prompt assembly stable at two blocks.
         const hotText = renderHotContext(ctx);
+        const recentText = renderRecentContext();
         const body = render(candidates, pinnedStats);
         // #333（issue #34 恢复）：时间前缀只在会话首轮出现（per-session 闩锁），
         // 排在整个记忆块的最前——模型先知道「今天几号」，再看热上下文与长期记忆。
         const timePrefix = renderTimePrefix(ctx);
-        // 拼接次序：时间 → 热上下文 → 长期记忆（三者都可能为空，逐级判空拼接）。
-        const withHot = !hotText ? body : body ? `${hotText}\n\n${body}` : hotText;
+        // 拼接次序：时间 → 热上下文 → 近期授权上下文 → 长期记忆（逐级判空）。
+        const withHot = [hotText, recentText, body].filter(Boolean).join("\n\n");
         const finalBody = !timePrefix ? withHot : withHot ? `${timePrefix}\n\n${withHot}` : timePrefix;
         // Issue #179：旁路缓存一帧——面板「注入预览」卡据此展示构成与体积。
         // chars 为条目内容的截断后近似值（与 render 同一函数计长），totalChars

@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { FEATURE_FLAG_SPEC } from "./settings.js";
 import { TYPES } from "./store.js";
+import { INTERNAL_AUTHORITY } from "./internal-authority.js";
+import { scenePolicy, currentScene, listSceneGrants } from "./scene.js";
+import { recentContextConfig, recentContextCounts, clearRecentContext } from "./recent-context.js";
 import {
   createBackup,
   listBackups,
@@ -152,6 +155,11 @@ function memorySummary(m, status = m) {
     // active and removes the restore action from the settings page.
     archived: Boolean(status?.archived),
     forgotten: Boolean(status?.forgotten),
+    scene_scope: status?.scene_scope ?? null,
+    protected: status?.protected === true,
+    protected_at: status?.protected_at ?? null,
+    protected_by: status?.protected_by ?? null,
+    core_note: status?.core_note ?? null,
     created_at: m.created_at,
     updated_at: m.updated_at
   };
@@ -168,7 +176,12 @@ function memoryFull(service, id) {
   return {
     ...dto,
     archived: Boolean(row.archived),
-    forgotten: Boolean(row.forgotten)
+    forgotten: Boolean(row.forgotten),
+    scene_scope: row.scene_scope ?? null,
+    protected: row.protected === true,
+    protected_at: row.protected_at ?? null,
+    protected_by: row.protected_by ?? null,
+    core_note: row.core_note ?? null
   };
 }
 
@@ -392,6 +405,44 @@ async function handle(req, res, deps) {
   const path = url.pathname.slice(PREFIX.length) || "/";
   if (req.method === "GET") {
     if (path === "/overview") return send(res, 200, { ok: true, data: overview(deps) });
+    if (path === "/scene") {
+      const policy = scenePolicy();
+      const current = currentScene();
+      const tagged = service.hasSceneScopedRows?.() === true;
+      const grants = listSceneGrants().slice(0, 50);
+      return send(res, 200, {
+        ok: true,
+        data: {
+          enabled: policy.enabled === true,
+          strict_qq: policy.strictQQ === true,
+          host_contract: policy.hostContract === true,
+          current_scene: current?.sceneId ?? null,
+          has_scene_scoped_rows: tagged,
+          unknown_provenance: "deny",
+          legacy_untagged: "readable",
+          degraded: tagged || policy.enabled === true || policy.strictQQ === true,
+          degraded_surfaces: (tagged || policy.strictQQ === true)
+            ? ["ordinary-http", "standalone-mcp", "graph-identity-preference", "background-derivation"]
+            : [],
+          grants
+        }
+      });
+    }
+    if (path === "/recent") {
+      const cfg = recentContextConfig();
+      const counts = recentContextCounts().slice(0, 64);
+      return send(res, 200, {
+        ok: true,
+        data: {
+          enabled: cfg.enabled,
+          ttl_ms: cfg.ttlMs,
+          max_events: cfg.maxEvents,
+          max_tokens: cfg.maxTokens,
+          scenes: counts,
+          total_events: counts.reduce((sum, row) => sum + row.count, 0)
+        }
+      });
+    }
     if (path === "/memories") {
       const q = String(url.searchParams.get("q") ?? "").trim();
       const archived = url.searchParams.get("archived") === "1";
@@ -497,6 +548,7 @@ async function handle(req, res, deps) {
     }
     let updated = existing;
     if (Object.keys(patch).length) {
+      if (existing.protected) patch[INTERNAL_AUTHORITY] = true;
       updated = service.compareAndUpdate(id, expected, patch, { actor: "settings-page" });
       if (!updated) {
         return send(res, 409, { ok: false, error: "memory changed since it was opened", data: { memory: memoryFull(service, id) } });
@@ -526,6 +578,48 @@ async function handle(req, res, deps) {
     if (!existing) return send(res, 404, { ok: false, error: "memory not found" });
     service.remove(id);
     return send(res, 200, { ok: true, data: { deleted: id } });
+  }
+  if (path === "/recent/clear") {
+    clearRecentContext();
+    const cfg = recentContextConfig();
+    return send(res, 200, {
+      ok: true,
+      data: {
+        cleared: true,
+        enabled: cfg.enabled,
+        ttl_ms: cfg.ttlMs,
+        max_events: cfg.maxEvents,
+        max_tokens: cfg.maxTokens,
+        scenes: recentContextCounts(),
+        total_events: 0
+      }
+    });
+  }
+  if (path === "/core") {
+    if (deps.config?.coreMemoryEnabled !== true) {
+      return send(res, 409, { ok: false, error: "core memory feature is disabled" });
+    }
+    const action = String(body.action ?? "");
+    const id = String(body.id ?? "").trim();
+    if (!id) return send(res, 400, { ok: false, error: "id is required" });
+    const existing = service.getById(id);
+    if (!existing) return send(res, 404, { ok: false, error: "memory not found" });
+    if (action === "protect") {
+      deps.store.setProtected(id, true, { by: "settings-page", note: typeof body.note === "string" ? body.note : undefined });
+    } else if (action === "unprotect") {
+      deps.store.setProtected(id, false, { by: "settings-page" });
+    } else if (action === "note") {
+      if (!existing.protected) return send(res, 409, { ok: false, error: "memory is not protected" });
+      deps.store.setProtected(id, true, { by: existing.protected_by ?? "settings-page", note: typeof body.note === "string" ? body.note : "" });
+    } else if (action === "delete") {
+      if (body.confirm !== "DELETE") return send(res, 400, { ok: false, error: "confirm must be DELETE" });
+      deps.store.setProtected(id, false, { by: "settings-page" });
+      service.remove(id);
+      return send(res, 200, { ok: true, data: { deleted: id } });
+    } else {
+      return send(res, 400, { ok: false, error: "action must be protect, unprotect, note or delete" });
+    }
+    return send(res, 200, { ok: true, data: { memory: memoryFull(service, id) } });
   }
   if (path === "/backup") {
     const backup = createBackup({ store: deps.store, memoryDir: requireMemoryDir(deps) });
