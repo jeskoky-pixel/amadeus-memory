@@ -258,7 +258,7 @@ export function createTools(ctx, service, config, embedder) {
           ...(scope ? { scope } : {}),
           ...(occurredFrom !== null || occurredTo !== null ? { occurredFrom, occurredTo } : {})
         });
-        return { items: service.toApiList(rows) };
+        return { items: service.toApiList(rows, { includePreference: false }) };
       }
     }),
 

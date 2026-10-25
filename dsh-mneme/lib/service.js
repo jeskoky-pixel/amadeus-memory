@@ -13,6 +13,9 @@ import { createOrganizer } from "./organize.js";
 import { createBM25Index } from "./search/bm25.js";
 import { adaptiveThreshold } from "./search/adaptive.js";
 import { anchorSeeds, normalizePath, cascadeDepths, HOP_QUOTA } from "./graph/anchoring.js";
+import { createIdentityService } from "./identity.js";
+import { createPreferenceService } from "./preferences.js";
+import { createIntakeService } from "./intake.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
 // 原先不收——本机活跃库实测 378/1820（20.8%）因此永不可自动注入，而它们在同一库
@@ -74,6 +77,13 @@ const CONTENT_HISTORY_MAX = 20;
 // evidence_degraded 是 #230 注册端的求交标记（quality-filter 不写它，但同样
 // 不许被更新抹掉）。
 const SIGNAL_TAGS = ["low_quality", "duplicate", "meta", "repetitive", "short_content", "self_referential", "evidence_degraded"];
+
+// Amadeus trusted-intake vocabulary: only the structured intake route may mint
+// these event tags. An LLM calling memory_save (or any normal caller) cannot
+// turn "it was planned" into "it happened" by adding a tag.
+const TRUSTED_EVENT_TAGS = new Set([
+  "event:self_action", "event:direct_interaction", "event:reported_by_other", "event:observation"
+]);
 
 // scopeKeyOf 已上提到 ./scope.js（v0.8.1，issue #170 第 2 步）：与 sleep 的跨
 // scope 配对共用同一把比较钥匙，避免两处定义漂移。
@@ -241,6 +251,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
   // never leaves the mirror file diverged from the database; transaction()
   // replays them exactly once against the committed state.
   let txDepth = 0;
+
+  // Amadeus memory enhancer: stable identity/canonical view and opt-in
+  // preference weights. Both are always constructed (schema is additive), but
+  // preference ranking only runs when config.memoryPreferenceEnabled is true
+  // *and* at least one non-default weight exists.
+  const identity = createIdentityService({ db: store.db, store, logger });
+  const preferences = createPreferenceService({ db: store.db, store, identity, config });
 
   // Serial task queue (sleep v0.4.0). Long-running background passes — dream
   // consolidation, sleep cycles — must never overlap: two sleep runs racing
@@ -450,26 +467,78 @@ export function createService({ store, mirror, config, onWrite, logger, document
    * @param {object|null} [options.scope] 当前会话 scope，供 strictScope 闸门使用
    * @returns {any[]}
    */
-  function searchByEntity(entityName, { topK = 20, scope = null } = {}) {
-    const entity = store.findEntityByName(entityName);
-    if (!entity) return [];
-    const attrs = store.getCurrentAttrs(entity.id);
-    const memoryIds = [...new Set(attrs.map((a) => a.memory_id).filter(Boolean))];
-    const attrHits = memoryIds.map((id) => store.getById(id)).filter(Boolean);
-    // 关键词这一路的窗口取两倍：闸门在截断之前生效，出局的候选会让位，窗口按最终条数
-    // 取就会不够（与融合路给向量检索取 lim * 2 同一个理由）。没有候选被闸掉时结果与
-    // 取 topK 逐字节一致——多出来的是排在后面的低分候选，进不了 topK。
-    const keywordHits = store.search(entityName, { limit: topK * 2 });
+  function searchByEntity(entityName, { topK = 20, scope = null, publicOnly = false } = {}) {
+    // Stable identity first: accept a UUID, a confirmed alias or a name. A
+    // duplicate name resolves to a *list* of candidate groups; the view keeps
+    // them separate (no implicit merge). Public/open callers (API /search)
+    // restrict resolution to UUID or exact display name so aliases cannot be
+    // used as an existence oracle.
+    const publicGroups = publicOnly ? identity.groupsMatchingPublicIdentity(entityName) : null;
+    const resolution = publicOnly
+      ? { groups: publicGroups, ambiguous: publicGroups.length > 1 }
+      : identity.resolveForSearch(entityName);
+    const groups = resolution.groups;
+    if (!groups.length) return [];
+    const lim = topK > 0 ? topK : 20;
+    const scorer = preferences.createScorer();
+    const recallWindow = scorer.active ? Math.min(200, Math.max(lim * 8, 60)) : lim;
     const merged = new Map();
-    for (const mem of attrHits) merged.set(mem.id, { ...mem, _source: "entity_attr", _score: 1.0 });
-    for (const mem of keywordHits) {
-      if (!merged.has(mem.id)) merged.set(mem.id, { ...mem, _source: "keyword", _score: 0.7 });
+    const groupSummaries = resolution.ambiguous
+      ? groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          type: group.type,
+          member_ids: group.member_ids,
+          aliases: group.aliases.map((alias) => alias.alias)
+        }))
+      : undefined;
+    for (const group of groups) {
+      for (const memberId of group.member_ids) {
+        const attrs = store.getCurrentAttrs(memberId);
+        for (const attr of attrs) {
+          if (!attr.memory_id) continue;
+          if (merged.has(attr.memory_id)) continue;
+          const mem = store.getById(attr.memory_id);
+          if (!mem) continue;
+          merged.set(mem.id, {
+            ...mem,
+            _source: "entity_attr",
+            _score: 1.0,
+            _entity_id: group.id,
+            _canonical_id: group.id
+          });
+        }
+      }
+      const labels = new Set([group.name, ...group.aliases.map((alias) => alias.alias)]);
+      for (const member of group.members) labels.add(member.name);
+      const keywordLimit = scorer.active ? recallWindow : topK * 2;
+      for (const label of labels) {
+        for (const mem of store.search(label, { limit: keywordLimit })) {
+          if (merged.has(mem.id)) continue;
+          // A bare name shared by two unmerged people cannot attribute a
+          // keyword-only row to one of them. Keep the row, but only stamp a
+          // canonical id when the lookup resolved a single group.
+          merged.set(mem.id, {
+            ...mem,
+            _source: "keyword",
+            _score: 0.7,
+            ...(groups.length === 1 ? { _entity_id: group.id, _canonical_id: group.id } : {})
+          });
+        }
+      }
     }
-    // 先过闸、再截 topK：反过来做的话，出局的候选会占掉名额、可见的补不进来——topK=1
-    // 而首位出局时直接返回空数组。排序本身不动，只是把闸门插在截断之前，与融合池那条
-    // 路同序（那边也是先 filter 后 slice）。
     const ranked = Array.from(merged.values()).sort((a, b) => b._score - a._score);
-    const visible = gateByScope(ranked, scope).slice(0, topK);
+    const gated = gateByScope(ranked, scope);
+    let visible = scorer.active
+      ? preferences.rerankRows(gated, { scorer, scoreKey: "_score", lim })
+      : gated.slice(0, lim);
+    if (groupSummaries) {
+      visible = visible.map((row) => ({
+        ...row,
+        _identity_ambiguous: true,
+        _identity_candidates: groupSummaries
+      }));
+    }
     // 闸门还必须在 touchRecalled **之前**：放在后面的话，一次越权检索照样会给出局的
     // 行刷回温时钟，并在被动确认开启时 bump 它们的关联边——命中反馈落到了调用方
     // 本不该看见的行上。
@@ -557,16 +626,16 @@ export function createService({ store, mirror, config, onWrite, logger, document
    * 邻居权重 = HOP_QUOTA[hop] × linked tier（attr 1.0 / relation 0.9），仍低于
    * 直达种子的满权，绝不喧宾夺主。
    */
-  function entityRecall(q, limit) {
+  function entityRecall(q, limit, { publicOnly = false } = {}) {
     if (config?.entityRecallEnabled !== true) return [];
     try {
-      const entities = store.findEntitiesMentionedIn(q);
+      const entities = identity.findEntitiesMentionedIn(q, { publicOnly });
       if (!entities.length) return [];
       // 关闭锚定级联=逐字节复用 #219 单跳轴：种子裁剪/重排/截断全是 #24 新增的
       // 行为，默认关时一条都不许漏进旧路径（graphSeedCap 也只在开启后生效——
       // 无论 cap 调多小，关档时命中实体仍全量挂联）。
       if (config?.graphAnchoringEnabled !== true) {
-        const linked = store.getLinkedMemoryIds(entities.map((e) => e.id));
+        const linked = identity.linkedMemoryIds(entities.map((e) => e.id));
         if (!linked.size) return [];
         const hits = [];
         for (const [id, tier] of linked) {
@@ -590,14 +659,14 @@ export function createService({ store, mirror, config, onWrite, logger, document
         if (!row || row.archived || row.forgotten) return;
         scored.set(memId, score);
       };
-      const seedLinked = store.getLinkedMemoryIds(seeds.map((s) => s.id));
+      const seedLinked = identity.linkedMemoryIds(seeds.map((s) => s.id));
       for (const [memId, tier] of seedLinked) {
         push(memId, tier === "attr" ? 1.0 : 0.9);
       }
       // 级联：沿 entity_relations 走 BFS，邻居挂联的记忆以 hop 配额权重补位——
       // 不覆盖种子直达分（MAX 语义保证），只填「种子里没有但邻居可达」的槽。
       const seedIds = seeds.map((s) => s.id);
-      const adjacency = store.getEntityNeighbors(seedIds);
+      const adjacency = identity.neighborsOf(seedIds);
       const depths = cascadeDepths({
         seeds,
         // 逐节点懒取邻居：初次查询只带种子那一层的邻接，BFS 走到 1-hop 节点时
@@ -605,7 +674,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
         // 虚设。节点数随图度数增长，热路径上以 graphCascadeDepth≤3 为天然上界，
         // 真遇到大图再考虑查询配额。
         adjacencyOf: (id) => {
-          if (!adjacency.has(id)) adjacency.set(id, store.getEntityNeighbors([id]).get(id) ?? []);
+          if (!adjacency.has(id)) adjacency.set(id, identity.neighborsOf([id]).get(id) ?? []);
           return adjacency.get(id);
         },
         maxDepth: config?.graphCascadeDepth ?? 2
@@ -616,7 +685,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
         if (hop < 1) continue;
         if (neighborsSeen >= Math.max(1, Math.floor(neighborCap))) break;
         neighborsSeen++;
-        const neighborLinked = store.getLinkedMemoryIds([nid]);
+        const neighborLinked = identity.linkedMemoryIds([nid]);
         for (const [memId, tier] of neighborLinked) {
           const tierW = tier === "attr" ? 1.0 : 0.9;
           push(memId, HOP_QUOTA[Math.min(hop, 3)] * tierW);
@@ -892,6 +961,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
    *   topK          — max rows (default 20)
    *   threshold     — explicit vector score floor (overrides adaptive)
    *   useRerank     — apply the reranker if available (default true)
+   *   publicOnly    — open API calls: graph recall seeds resolve only public
+   *                   display names (never private aliases/external IDs)
    *   recordRecall  — write a recall_runs audit row (default from config)
    *
    * Returns an array of memory rows { id, title, content, score, source, ... },
@@ -910,6 +981,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       scope = null,
       occurredFrom = null,
       occurredTo = null,
+      publicOnly = false,
       recordRecall = options.recordRecall ?? (config?.recallRecordDefault ?? true)
     } = options;
     const q = String(query ?? "").trim();
@@ -927,11 +999,20 @@ export function createService({ store, mirror, config, onWrite, logger, document
     }
 
     const lim = topK > 0 ? topK : 20;
+    // Preference reranking needs a larger relevant pool: fusion used to truncate
+    // to `lim` before later ranking, which made it impossible to promote a
+    // near-relevant weighted row. Only expand when the feature is actually
+    // active with a non-default weight; otherwise every fetch below is
+    // byte-identical to the legacy path.
+    const preferenceScorer = preferences.createScorer();
+    const recallLimit = preferenceScorer.active
+      ? Math.min(200, Math.max(lim * 8, 60))
+      : lim;
 
     // Keyword results, decorated with a score so they can be weight-blended
     // with vector results and reported uniformly. source tracks where each
     // candidate came from for the recall layer receipt.
-    const rawKeyword = store.search(q, { limit: lim });
+    const rawKeyword = store.search(q, { limit: recallLimit });
     const keyword = rawKeyword.map((m) => ({ ...m, score: scoreKeyword(m, q), source: "keyword" }));
     const wantVector = mode === "vector" || mode === "hybrid" || (mode === "auto" && !!embedder);
     let vector = [];
@@ -952,8 +1033,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
             ? Math.min(0.5, adaptiveThreshold(q))
             : (threshold ?? 0);
           const search = vectorIndex
-            ? vectorIndex.search(qv, { limit: lim * 2, threshold: fetchThreshold })
-            : store.searchVector(qv, { limit: lim * 2, threshold: fetchThreshold });
+            ? vectorIndex.search(qv, { limit: recallLimit * 2, threshold: fetchThreshold })
+            : store.searchVector(qv, { limit: recallLimit * 2, threshold: fetchThreshold });
           const finalThreshold = adaptive && threshold === undefined
             ? adaptiveThreshold(q, search)
             : (threshold ?? 0);
@@ -967,7 +1048,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // BM25 third path (v0.5.0 1.1): IDF-weighted token overlap recalls rows
     // whose query terms are scattered — the gap LIKE substring matching
     // cannot close. Scores are already normalized to [0,1].
-    const bm25 = bm25Recall(q, lim).map((m) => ({ ...m, source: "bm25" }));
+    const bm25 = bm25Recall(q, recallLimit).map((m) => ({ ...m, source: "bm25" }));
     // Loose blend weight: BM25 confirms and backfills, never dominates the
     // semantic signal. Same-memory overlap boosts, unseen ids backfill.
     const wb = 0.3;
@@ -976,7 +1057,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // mentioned entities pull their linked memories into the pool. Keyword
     // mode stays text-only per the mode contract, so the axis is skipped
     // there even when enabled.
-    const entity = mode === "keyword" ? [] : entityRecall(q, lim);
+    const entity = mode === "keyword" ? [] : entityRecall(q, recallLimit, { publicOnly });
     // Entity axis shares BM25's backfill weight (we = wb) until #217 recall
     // data justifies a distinct entity weight.
 
@@ -984,7 +1065,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const wv = config?.hybridSearchVectorWeight ?? DEFAULT_HYBRID_WEIGHTS.vector;
     const wk = config?.hybridSearchKeywordWeight ?? DEFAULT_HYBRID_WEIGHTS.keyword;
 
-    const { merged: fusedMerged, signals } = fuseRecall({ keyword, vector, bm25, entity, lim, mode, wv, wk, wb, we: wb });
+    const { merged: fusedMerged, signals } = fuseRecall({ keyword, vector, bm25, entity, lim: recallLimit, mode, wv, wk, wb, we: wb });
     let merged = fusedMerged;
     // v0.8.0 A3（issue #17）：strictScope 硬过滤——他 scope 的候选直接出局
     // （区别于 A2 的降权保留可见）；未标注行与命中行保留。strict 与 A2 加权
@@ -1009,10 +1090,15 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // it is the documented text-only path and must not be altered by
     // embedding state.
     merged = mode === "keyword" ? merged : semanticDeduplicate(merged);
-    merged = merged.slice(0, lim);
-    let result = useRerank && reranker && merged.length
-      ? await rerankCandidates(q, merged, lim)
-      : merged;
+    // With preferences on, keep the larger pool alive until after rerank and
+    // scope/epistemic weighting; the final topK cut happens in rerankRows.
+    const beforeFinalCut = preferenceScorer.active ? merged : merged.slice(0, lim);
+    const rerankWindow = preferenceScorer.active
+      ? Math.min(recallLimit, Math.max(lim * 2, lim + 10))
+      : lim;
+    let result = useRerank && reranker && beforeFinalCut.length
+      ? await rerankCandidates(q, beforeFinalCut, rerankWindow)
+      : beforeFinalCut;
     // Epistemic trust (v0.4.5): opt-in re-weighting of the final candidate
     // scores by source credibility. When off (default) `result` is returned
     // untouched — exactly the legacy behavior.
@@ -1022,8 +1108,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
           ...m,
           score: (m.score ?? 0) * (EPISTEMIC_WEIGHTS[m.epistemic_status] ?? 1)
         }))
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .slice(0, lim);
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+      if (!preferenceScorer.active) result = result.slice(0, lim);
     }
 
     // v0.8.0 A2（issue #17）：scope 检索加权——两维都无法确立 foreign 的候选
@@ -1034,8 +1120,17 @@ export function createService({ store, mirror, config, onWrite, logger, document
     if (config.scopeEnabled === true && scope && (scope.agent_scope || scope.workspace_scope)) {
       result = result
         .map((m) => ({ ...m, score: (m.score ?? 0) * scopeMultiplier(m, scope) }))
-        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        .slice(0, lim);
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+      if (!preferenceScorer.active) result = result.slice(0, lim);
+    }
+    // Preference reranking (opt-in): modest bounded factors over a larger
+    // relevant pool, applied before the final topK cut and after scope,
+    // archive/forget and semantic reranking gates. When no stored weight is
+    // non-default or the scorer is inactive this block is a plain slice.
+    if (preferenceScorer.active) {
+      const before = result;
+      const reranked = preferences.rerankRows(before, { scorer: preferenceScorer, scoreKey: "score", lim });
+      result = reranked === before ? before.slice(0, lim) : reranked;
     }
 
     // Recall layer receipt: with recordRecall on, hand the actual merged
@@ -1348,6 +1443,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
     if (memory?.type === "document") {
       throw new Error("type 'document' is minted only via registerDocument (summary + doc_path + evidence)");
     }
+    // Trusted-intake event tags are provenance, not free-form labels. Strip them
+    // from every normal write; only submitTrustedMemory (source=trusted_intake)
+    // may set them.
+    if (memory?.source !== "trusted_intake" && Array.isArray(memory?.tags)) {
+      const filtered = memory.tags.filter((tag) => !TRUSTED_EVENT_TAGS.has(String(tag)));
+      if (filtered.length !== memory.tags.length) memory = { ...memory, tags: filtered };
+    }
     // Bug7: score quality once (after dedupe lookup, before write). Failures
     // inside the evaluator are impossible (pure function), but the write that
     // records the score must never fail the save — wrap defensively.
@@ -1659,6 +1761,12 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const softScopeActive = config?.scopeEnabled === true && scope != null &&
       Boolean(scope.agent_scope || scope.workspace_scope);
     const scopeMultOf = (m) => (softScopeActive ? scopeMultiplier(m, scope) : 1);
+    // Preference weights (opt-in): a bounded factor inside the existing
+    // priority tiers. It never crosses the type/importance/scope/archive gates
+    // above and never lifts an unrelated row past a relevant one by more than
+    // the documented clamp. Inactive scorer → factor 1 everywhere.
+    const preferenceScorer = preferences.createScorer();
+    const prefOf = (m) => (preferenceScorer.active ? preferenceScorer.factorFor(m).factor : 1);
     const items = filtered.sort((a, b) => {
         // 编码记忆在编码任务时优先于普通 decision（与 preference 同级），
         // importance 乘 codingBoostFactor 加权（封顶 5，保持 importance 语义）。
@@ -1682,8 +1790,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
         // 软加权乘在层内数值积上（priority 档位不动）：foreign ×0.5 后压不过
         // 同档自己行——E7 的同 importance 档设计正是这个场景。
         return pa - pb ||
-          (effImportance(b) * qualityWeight(b) * heatOf(b) * scopeMultOf(b)) -
-          (effImportance(a) * qualityWeight(a) * heatOf(a) * scopeMultOf(a));
+          (effImportance(b) * qualityWeight(b) * heatOf(b) * scopeMultOf(b) * prefOf(b)) -
+          (effImportance(a) * qualityWeight(a) * heatOf(a) * scopeMultOf(a) * prefOf(a));
       });
     let candidates = items;
     if (config.hybridInject !== false && q) {
@@ -1736,9 +1844,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
         // issue #339（CodeRabbit review on #350）：首轮 BM25 兜底领跑合并池，
         // 而 selectiveInject 相似度重排要等查询向量就绪才执行——软加权必须
         // 在这里就位，否则 foreign 命中绕过降权直接占注入位。
-        if (softScopeActive) {
+        if (softScopeActive || preferenceScorer.active) {
           semanticItems.sort((a, b) =>
-            (b.score ?? 0) * scopeMultOf(b) - (a.score ?? 0) * scopeMultOf(a));
+            (b.score ?? 0) * scopeMultOf(b) * prefOf(b) - (a.score ?? 0) * scopeMultOf(a) * prefOf(a));
         }
       }
       if (semanticItems.length) {
@@ -1774,7 +1882,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
           // 乘乘数会让 foreign 缺失项反而排到自己的缺失项之上，故不乘）。
           const scopedSim = (m) => {
             const s = sim.get(m.id);
-            return s === undefined ? -1 : s * scopeMultOf(m);
+            return s === undefined ? -1 : s * scopeMultOf(m) * prefOf(m);
           };
           candidates = [...candidates].sort((a, b) => scopedSim(b) - scopedSim(a));
         }
@@ -1898,6 +2006,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
       }
       if (gateStats) gateStats.frame = { ...gateFrame, judged: judgedPart.length };
     }
+    // Explain the preference contribution without exposing any inaccessible
+    // content: only this row's own tags/entity labels and the bounded factor.
+    if (preferenceScorer.active) injected = injected.map((m) => preferenceScorer.annotate(m));
     touchRecalled(injected);
     // #217 口径（2026-09-19 拍板）：注入是曝光型访问事件，与检索命中同表分账
     // （mode='inject'，candidates 存实际注入集）。跟随 recallRecordDefault——
@@ -2081,7 +2192,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     }));
   }
 
-  function toApiList(rows) {
+  function toApiList(rows, { includePreference = true } = {}) {
     return rows.map((m) => ({
       id: m.id,
       type: m.type,
@@ -2105,7 +2216,12 @@ export function createService({ store, mirror, config, onWrite, logger, document
       ...(m.occurred_at !== undefined ? { occurred_at: m.occurred_at } : {}),
       // #230：document 指针行的文件定位随行透出——「全文按需读」的入口就是
       // 这个路径；普通行恒不带键，DTO 与 #230 前逐字节同形。
-      ...(m.doc_path !== undefined && m.doc_path !== null ? { doc_path: m.doc_path } : {})
+      ...(m.doc_path !== undefined && m.doc_path !== null ? { doc_path: m.doc_path } : {}),
+      // Amadeus: preference contribution is only attached when the preference
+      // flag was active for this recall. Off / all-1.0 rows keep exactly the
+      // legacy DTO shape. Tool DTOs opt out (their item schema is closed and
+      // models do not need the panel-only explanation).
+      ...(includePreference && m.preference !== undefined ? { preference: m.preference } : {})
     }));
   }
 
@@ -2564,8 +2680,24 @@ export function createService({ store, mirror, config, onWrite, logger, document
     }
   });
 
-  return {
+  const serviceApi = {
+    // Amadeus memory enhancer: stable identity (aliases / typed external IDs /
+    // reversible canonical links) and opt-in preference weights. Exposed as
+    // cohesive blocks; API routes and the panel call these rather than SQL.
+    identity,
+    preferences,
+    listEntities: (o) => identity.listEntities(o),
+    listEntitiesPage: (o) => identity.listEntitiesPage(o),
+    listTagWeights: () => preferences.listTagWeights(),
+    listEntityWeights: () => preferences.listEntityWeights(),
+    getPreferenceState: () => preferences.getState(),
+    setTagWeight: (input) => preferences.setTagWeight(input),
+    deleteTagWeight: (input) => preferences.deleteTagWeight(input),
+    setEntityWeight: (input) => preferences.setEntityWeight(input),
+    deleteEntityWeight: (input) => preferences.deleteEntityWeight(input),
     saveWithDedupe,
+    searchByEntity,
+    searchByAttr,
     registerDocument,
     // agent 主动整理接口（#231）：内聚块在 src/organize.js，这里只做依赖注入 +
     // barrel 出口。本体不带配置键（第一批口径），暴露闸住在工具层（#231 第二批的
@@ -2777,13 +2909,18 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // migrates entity_attrs on merge. Bookkeeping writes like the audit
     // passthroughs above — never write-hook-triggering memory mutations.
     saveRelation: (r) => store.saveRelation(r),
-    listEntities: (o) => store.listEntities(o),
-    getRelations: (id) => store.getRelations(id),
+    // Canonical view: relation endpoints resolve to the stable canonical UUID,
+    // internal edges of one merged group are hidden, duplicate endpoints are
+    // aggregated with all original edge ids preserved.
+    getRelations: (id) => identity.relationsForEntity(id),
+    groupsForEntityIds: (ids) => identity.groupsForEntityIds(ids),
     // v0.7.0 实体热投影：实体热 = 关联记忆 heat 聚合（取 max）。无关联记忆
     // 或 heatEnabled=false 时返回 null；前端据此决定图谱节点大小/明暗。
     entityHeat: (entityId) => {
       if (config.heatEnabled === false) return null;
-      const rels = store.getRelations(entityId) ?? [];
+      const group = identity.groupForEntity(entityId);
+      if (!group) return null;
+      const rels = serviceApi.getRelations(entityId) ?? [];
       let max = -Infinity;
       for (const rel of rels) {
         if (!rel.memory_id) continue;
@@ -2797,11 +2934,59 @@ export function createService({ store, mirror, config, onWrite, logger, document
     saveAttr: (r) => store.saveAttr(r),
     createEntity: (r) => store.createEntity(r),
     findEntityByName: (n) => store.findEntityByName(n),
+    findEntitiesByName: (n) => store.findEntitiesByName(n),
     findEntityById: (id) => store.findEntityById(id),
+    // Stable-ID resolution for the panel/API. `findEntityGroup` returns the
+    // canonical group for a UUID, confirmed alias or name; callers that get
+    // multiple groups must ask the human which one (no implicit merge).
+    findEntityGroup: (raw) => identity.resolveForSearch(raw),
+    findEntityGroupPublic: (raw) => {
+      const groups = identity.groupsMatchingPublicIdentity(raw);
+      return { groups, ambiguous: groups.length > 1 };
+    },
+    entityHistory: (opts) => identity.history(opts),
     getAttrsByMemory: (id) => store.getAttrsByMemory(id),
     // 记忆详情侧栏：一条记忆关联到的实体（entity_attrs.memory_id 反查，纯读）。
-    entitiesForMemory: (id) => store.entitiesForMemory(id),
-    getCurrentAttrs: (id) => store.getCurrentAttrs(id),
+    // Canonical view: duplicates in one group collapse, member UUIDs stay visible.
+    entitiesForMemory: (id) => {
+      const rows = store.entitiesForMemory(id);
+      const seen = new Set();
+      const out = [];
+      for (const row of rows) {
+        const group = identity.groupForEntity(row.id);
+        if (!group || seen.has(group.id)) continue;
+        seen.add(group.id);
+        out.push({
+          id: group.id,
+          canonical_id: group.id,
+          name: group.name,
+          type: group.type,
+          merged: group.merged,
+          member_ids: group.member_ids,
+          aliases: group.aliases.map((alias) => alias.alias)
+        });
+      }
+      return out;
+    },
+    // Current attributes are the union over every member of the canonical
+    // group; historical rows stay readable through identity/history.
+    getCurrentAttrs: (id) => {
+      const group = identity.groupForEntity(id);
+      if (!group) return [];
+      return group.member_ids.flatMap((memberId) => store.getCurrentAttrs(memberId));
+    },
+    getAttrHistory: (id) => {
+      const group = identity.groupForEntity(id);
+      if (!group) return [];
+      return group.member_ids.flatMap((memberId) => store.getAttrHistory(memberId));
+    },
     migrateAttrsToMemory: (fromId, toId, now) => store.migrateAttrsToMemory(fromId, toId, now)
   };
+  // Trusted intake is constructed after the service surface exists (it submits
+  // through the normal save/dedupe path, not through SQL).
+  const intake = createIntakeService({ service: serviceApi, store });
+  serviceApi.submitTrustedMemory = (body) => intake.submit(body);
+  serviceApi.validateTrustedIntake = (body) => intake.validate(body);
+  serviceApi.trustedProvenanceFor = (memoryId) => intake.provenanceFor(memoryId);
+  return serviceApi;
 }

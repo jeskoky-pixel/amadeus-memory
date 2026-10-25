@@ -754,7 +754,9 @@ test("GET /api/dsh-mneme/features returns empty overrides and effective config d
   // 不需要 NESTED_FLAG_PATHS 条目）= 104。
   // 人格寻址口径新增 personaStrictAddressing（顶层扁平键，同上）= 105。
   // issue #497 新增 profileExtractEnabled（画像提取草稿；顶层扁平键，同上）= 106。
-  assert.equal(Object.keys(data.effective).length, 106);
+  // Amadeus memory enhancer 新增 memoryPreferenceEnabled / trustedIntakeEnabled
+  // （均为顶层扁平键，默认关）= 108。
+  assert.equal(Object.keys(data.effective).length, 108);
   assert.equal(data.effective.dreamSkipInvalid, true);
   assert.equal(data.effective.allowCrossTypeMerge, false);
   assert.equal(data.effective.dreamMergeGuard, true);

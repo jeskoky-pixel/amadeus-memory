@@ -191,7 +191,7 @@ node scripts/mneme-runtime.mjs verify    # 真加载运行时并跑一次推理
 v0.3.0 起新增**记忆基因**层：从记忆里抽取**命名实体**、**带时间轴的属性**、**实体间关系**，让搜索从"字面关键词"升级为"按实体/属性精确召回"。
 
 - **三表**：`entities` / `entity_attrs`（`valid_until` 快照式时间轴）/ `entity_relations`，旧库打开自动建表，幂等无迁移成本
-- **自动抽取**：`entityExtractionEnabled=true` 后，新写入的记忆 fire-and-forget 触发 LLM 抽取（同名实体去重、属性存时间轴、关系追加；失败绝不阻塞写入）
+- **自动抽取**：`entityExtractionEnabled=true` 后，新写入的记忆 fire-and-forget 触发 LLM 抽取（实体按稳定身份/唯一名称解析；同名歧义返回候选而不是自动合并；属性存时间轴、关系追加；失败绝不阻塞写入）
 - **实体搜索**（`searchMemories` 前缀路由，`entitySearchEnabled` 默认开）：
   - `entity:阿尔托` → 属性精确关联的记忆（`_score 1.0`）排在关键词提及（`_score 0.7`）之前
   - `attr:国籍=芬兰` → 精确匹配该属性值的记忆
@@ -199,6 +199,20 @@ v0.3.0 起新增**记忆基因**层：从记忆里抽取**命名实体**、**带
 - **autoDream 联动**：update 决策写 `supersedes` 自引用（属性版本被替代）；merge 决策把 loser 的属性归属迁移到 keeper（keeper 已有同键当前值则失效）
 
 > 📖 详见 [实体结构化记忆设计](docs/ENTITIES.md) · [语义增强架构](docs/SEMANTIC.md) · [本地模型部署指南](docs/LOCAL_MODEL.md)
+
+### Amadeus 记忆增强（identity / preference / trusted intake）
+
+Amadeus 分支在实体层之上增加三块**默认不影响旧行为**的能力：
+
+- **稳定身份**：实体 UUID 不变；新增带类型的外部标识 `(platform, entity_type, external_id)`、带来源/确认/撤销状态的别名、可逆规范映射与 append-only 审计。旧实体名只作为未确认标签，不自动合并；QQ 群号按 `QQ群<id>` / `群<id>` 解析为 group 标识；旧库中 organization 型 QQ 群名也按确定性数字规则重分类为 group，原类型写入审计/证据；同号重复群保留为人工合并候选，不自动合并。同名人物只给候选，必须人工确认。
+- **非破坏去重**：同名/相似名只生成候选；合并 = 插入规范链接，不改任何记忆、属性历史、关系 source/weight 或实体 UUID。先 `merge-preview` 出影响报告，再 `merge`，可 `merge-undo`。图谱 / `entity:` 搜索 / 记忆侧实体 / 计数统一按规范视图去重。
+- **偏好权重**（`memoryPreferenceEnabled`，默认关）：标签与规范实体权重范围 0.5–2.0，默认 1.0；组合后夹在 0.6–1.6，并只对达到最高相关度 65% 的候选生效。关闭或全为 1.0 时检索结果不变。自动重要性 1–5 不参与、也不被改写。
+- **受信经历写入**（`trustedIntakeEnabled`，默认关）：`POST /api/dsh-mneme/intake` 要求 `apiToken`、显式 scope、来源/参与者/完成状态；planned/unconfirmed 一律拒绝。只有该通道派生 `event:self_action` 等确定性标签，LLM 不会从闲聊里猜「做过」。
+
+身份、别名、外部标识、重复候选、合并历史与偏好权重接口均要求服务端 `apiToken`（未配置时返回 `503 api-token-required`，面板显示设置提示）；旧实体目录/图谱开放接口只返回原有公开字段，并且只按公开实体 UUID / 精确显示名解析，**不会**用别名或外部 ID 作为查询键（防止探测隐私别名）。实体目录按 `limit`/`offset`（可选 `q` 仅匹配公开显示名）分页并返回真实 `total`/`has_more`，面板用「加载更多」保证大图谱也可完整浏览，不会静默隐藏第 500 条之后的实体。
+
+配置键、API、迁移/回滚与合成基准见
+[Amadeus 记忆增强文档](docs/AMADEUS_MEMORY_ENHANCER.md)。
 
 ### 记忆质量过滤 🧼（v0.4.6，默认开）
 
@@ -463,6 +477,8 @@ dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-0.9.0.tgz"
 | `entityRecallEnabled` | `false` | 图召回轴（v0.8.4，#219）：实体挂联记忆并入检索融合池（三源扩四源，blend/rrf/minmax 全配方参与）；依赖实体抽取产出，也走 feature_flags 白名单，lightMode 强制关 |
 | `entityExtractionMaxAttrs` | `20` | 每实体属性数上限 |
 | `entitySearchEnabled` | `true` | `entity:` / `attr:` 前缀搜索开关 |
+| `memoryPreferenceEnabled` | `false` | Amadeus 偏好权重：标签/规范实体权重（0.5–2.0，默认 1.0，组合后夹在 0.6–1.6）参与召回与注入；关闭或全为 1.0 时行为不变 |
+| `trustedIntakeEnabled` | `false` | Amadeus 受信经历写入接口（`POST /api/dsh-mneme/intake`）；还需配置 `apiToken`，请求必须带显式 scope，拒绝 planned/unconfirmed |
 | `trustEpistemicWeighting` | `false` | 记忆可信度加权（v0.4.5，opt-in 默认关）：记忆按来源分级 `observation`> `inferred` > `subjective`，开启后检索排序优先高可信记忆、注入对 observation 标注 `[verified]`、dream merge/conflict 偏向高可信一方；关闭时 `epistemic_status` 仅随保存落库、不参与行为 |
 | `evalPersistTestResults` | `false` | 检索评估落库（v0.4.5，opt-in 默认关）：开启后 `evaluateRetrieval` 把 precision/recall/mrr 快照写入 `recall_evals`；默认关时仅返回调用方不落库。生产 `searchMemories` 审计始终走 `recall_runs`，无条件不触碰 `recall_evals` |
 | `autoReindexOnBoot` | `true` | 存量记忆缺 embedding 时，向量已配置则启动后延迟后台按批次限速自动回填重建（设为 `false` 仅手动重建）。只补**活跃**记忆（归档/遗忘行不参与召回，#128）；模型指纹一致时照常补缺失行、不再短路（#128） |

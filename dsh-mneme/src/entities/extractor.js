@@ -1,4 +1,4 @@
-const VALID_TYPES = new Set(["person", "project", "concept", "technology", "organization"]);
+const VALID_TYPES = new Set(["person", "group", "project", "concept", "technology", "organization"]);
 const VALID_RELATIONS = new Set(["uses", "depends_on", "part_of", "related_to"]);
 const MAX_MEMORY_CHARS = 4000;
 
@@ -9,14 +9,16 @@ function buildSystemPrompt(config) {
   return `You are an entity extraction engine. Extract named entities, their attributes, and relations from the given text.
 
 RULES:
-- Entities are concrete people, projects, technologies, concepts, or organizations.
+- Entities are concrete people, groups, projects, technologies, concepts, or organizations.
+- Use type "group" for chat groups. A clearly identified QQ group number (QQ群<id>, QQ 群 <id>, 群<id>) is the group's stable identifier; the name may still include the number.
+- Never treat a group as a person or merge two different group numbers. Different stable identifiers are different entities even when the display name is the same.
 - Attributes are characteristic states of an entity. Only extract attributes explicitly mentioned in the text.
 - Do NOT infer, guess, or hallucinate. Only extract what is clearly stated.
 - Use canonical names (full name / primary name). Do NOT merge synonyms — different spellings of the same person are different entities.
 - Output MUST be strict JSON with this exact structure:
 {
   "entities": [
-    {"name": "string", "type": "person|project|concept|technology|organization", "attrs": [{"key": "string", "value": "string", "confidence": 0.9}]}
+    {"name": "string", "type": "person|group|project|concept|technology|organization", "attrs": [{"key": "string", "value": "string", "confidence": 0.9}]}
   ],
   "relations": [
     {"from": "entityName", "to": "entityName", "type": "uses|depends_on|part_of|related_to"}
@@ -24,7 +26,7 @@ RULES:
 }
 
 CONSTRAINTS:
-- "type" must be one of: person, project, concept, technology, organization. If unsure, use "concept".
+- "type" must be one of: person, group, project, concept, technology, organization. If unsure, use "concept".
 - "relations" from/to must reference entity names from the "entities" list.
 - Maximum ${maxEntities} entities. Maximum ${maxAttrs} attributes per entity. Truncate if exceeded.
 - Only include entity-related attributes. Ignore irrelevant miscellaneous details.
@@ -130,17 +132,28 @@ function sanitizeExtractedData(data, config) {
   return { entities, relations };
 }
 
-async function resolveEntity(entity, store) {
+async function resolveEntity(entity, store, identity, evidence) {
+  // Stable identity is the single resolver: typed external IDs first, then a
+  // unique confirmed alias / name. Ambiguous same-name people are returned to
+  // the caller as suggestions and are never silently merged by name.
+  if (identity?.resolveEntityForWrite) {
+    return identity.resolveEntityForWrite({
+      name: entity.name,
+      type: entity.type,
+      actor: "entity_extractor",
+      evidence
+    });
+  }
   const existing = store.findEntityByName(entity.name);
   if (existing) {
     store.updateEntity(existing.id, {});
-    return existing.id;
+    return { ok: true, entity: existing, canonical_id: existing.id, created: false, matched_by: "name" };
   }
   const created = store.createEntity({ name: entity.name, type: entity.type });
-  return created.id;
+  return { ok: true, entity: created, canonical_id: created.id, created: true, matched_by: "new" };
 }
 
-export async function extractEntities(memory, { store, config, callLLM, logger }) {
+export async function extractEntities(memory, { store, config, callLLM, logger, identity }) {
   try {
     if (!memory || !memory.content) {
       return { ok: false, error: "Invalid memory: missing content" };
@@ -181,15 +194,38 @@ export async function extractEntities(memory, { store, config, callLLM, logger }
     const { entities, relations } = sanitizeExtractedData(rawData, config);
     
     const resolvedEntities = [];
+    const unresolved = [];
     const entityIdMap = new Map();
     let skipCount = 0;
-    
+
     // Resolve entities
     for (const entity of entities) {
       try {
-        const entityId = await resolveEntity(entity, store);
-        entityIdMap.set(entity.name, entityId);
-        resolvedEntities.push({ ...entity, entity_id: entityId });
+        const resolution = await resolveEntity(entity, store, identity, [
+          { kind: "memory", value: memory.id ?? null }
+        ]);
+        if (!resolution.ok) {
+          // Ambiguous or type-boundary: keep the LLM's assertion in the return
+          // value for human review, never write attrs against a guessed UUID.
+          skipCount++;
+          unresolved.push({
+            name: entity.name,
+            type: entity.type,
+            reason: resolution.reason,
+            candidates: (resolution.candidates ?? []).map((group) => ({
+              id: group.id,
+              name: group.name,
+              type: group.type,
+              member_ids: group.member_ids
+            }))
+          });
+          logger?.warn?.(
+            `[extractor] entity "${entity.name}" not resolved (${resolution.reason}); candidate confirmation required`
+          );
+          continue;
+        }
+        entityIdMap.set(entity.name, resolution.entity.id);
+        resolvedEntities.push({ ...entity, entity_id: resolution.entity.id, canonical_id: resolution.canonical_id });
       } catch (err) {
         skipCount++;
         logger?.warn?.(`[extractor] Failed to resolve entity "${entity.name}":`, err.message);
@@ -247,6 +283,7 @@ export async function extractEntities(memory, { store, config, callLLM, logger }
       entities: resolvedEntities,
       attrs,
       relations: savedRelations,
+      unresolved,
       skipped: skipCount
     };
     

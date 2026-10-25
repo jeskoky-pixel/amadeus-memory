@@ -272,6 +272,60 @@ window.__ModuleLoader__.load({
         "memory.tab.history": "历史",
         "memory.tab.summary": "小结",
         "memory.settings.title": "记忆库设置",
+        "memory.settings.group.identity": "身份与偏好",
+        "memory.settings.identity.title": "身份与偏好权重",
+        "memory.settings.identity.desc": "同名实体只作为候选，不会自动合并；为标签或规范实体设置 0.5–2.0 的偏好权重（默认 1.0，组合后夹在 0.6–1.6）。总开关关闭或权重全为 1.0 时检索行为不变。",
+        "memory.settings.identity.tags": "标签权重",
+        "memory.settings.identity.tagPlaceholder": "标签，如 person:close",
+        "memory.settings.identity.weight": "权重",
+        "memory.settings.identity.addTag": "添加标签权重",
+        "memory.settings.identity.entities": "实体偏好",
+        "memory.settings.identity.entityPlaceholder": "实体 UUID 或名称",
+        "memory.settings.identity.addEntity": "添加实体权重",
+        "memory.settings.identity.candidates": "重复候选",
+        "memory.settings.identity.candidatesHint": "只根据名称/别名提出候选；确认前不会合并或改写任何记忆。先预览影响，再确认。",
+        "memory.settings.identity.preview": "预览影响",
+        "memory.settings.identity.previewLeft": "以左侧为准",
+        "memory.settings.identity.previewRight": "以右侧为准",
+        "memory.settings.identity.confirm": "确认合并",
+        "memory.settings.identity.undo": "撤销合并",
+        "memory.settings.identity.links": "已建立的规范映射",
+        "memory.settings.identity.noCandidates": "没有待确认的候选",
+        "memory.settings.identity.noLinks": "没有规范映射",
+        "memory.settings.identity.counts": "实体 {entities} · 属性 {attrs} · 关系 {relations} · 记忆 {memories} · 冲突 {conflicts}",
+        "memory.settings.identity.blocked": "存在阻断项：{reason}",
+        "memory.settings.identity.dryRun": "影响报告已生成（未写入）",
+        "memory.settings.identity.saved": "已保存",
+        "memory.settings.identity.deleted": "已删除",
+        "memory.settings.identity.error": "操作失败",
+        "memory.settings.identity.delete": "删除",
+        "memory.settings.identity.save": "保存",
+        "memory.identity.needToken": "身份与来源详情需要服务端 apiToken：在插件配置里设置 apiToken，并在「设置 → 连接与安全 → API Token」填入同一个值。",
+        "memory.identity.title": "身份",
+        "memory.identity.aliases": "别名",
+        "memory.identity.externalIds": "外部标识",
+        "memory.identity.history": "历史与证据",
+        "memory.identity.aliasPlaceholder": "新增别名…",
+        "memory.identity.addAlias": "添加",
+        "memory.identity.confirmAlias": "确认",
+        "memory.identity.editAlias": "改名",
+        "memory.identity.unlink": "解除",
+        "memory.identity.externalPlaceholder": "外部 ID",
+        "memory.identity.platformPlaceholder": "平台，如 qq",
+        "memory.identity.typePlaceholder": "类型",
+        "memory.identity.addExternal": "绑定外部 ID",
+        "memory.identity.preference": "偏好权重",
+        "memory.identity.preferenceHint": "当前规范实体的偏好权重（0.5–2.0，默认 1.0）。",
+        "memory.identity.members": "规范成员",
+        "memory.identity.merged": "已合并视图",
+        "memory.identity.provenance": "来源",
+        "memory.identity.weight": "权重",
+        "memory.identity.saveWeight": "保存权重",
+        "memory.identity.noAliases": "暂无别名",
+        "memory.identity.noExternal": "暂无外部标识",
+        "memory.identity.duplicateName": "同名实体",
+        "memory.graph.edgeWeight": "权重 {weight} · 来源 {source}",
+        "memory.graph.canonicalHint": "此节点是规范视图，包含 {n} 个原始实体",
         "memory.settings.group.personal": "个性化",
         "memory.settings.group.engine": "记忆引擎",
         "memory.settings.group.search": "搜索",
@@ -351,6 +405,7 @@ window.__ModuleLoader__.load({
         "memory.explorer.tabSettings": "设置",
         "memory.explorer.tabStatus": "状态",
         "memory.entities.count": "{n} 个实体",
+        "memory.entities.loadMore": "加载更多实体",
         "memory.entities.pick": "从左侧选择一个实体，查看它的属性与关系",
         // 搜索框有字但一条没筛出来时用它；与 entities.none（库里真没实体）分开，
         // 否则「暂无实体」会把打错一个字误导成「你还没开抽取」。
@@ -382,6 +437,7 @@ window.__ModuleLoader__.load({
         "memory.explorer.created": "创建",
         "memory.explorer.updated": "更新",
         "memory.explorer.tags": "标签",
+        "memory.explorer.preference": "偏好权重",
         "memory.explorer.importance": "重要性",
         "memory.explorer.heat": "热度",
         "memory.explorer.heatSort": "热度优先",
@@ -532,6 +588,10 @@ window.__ModuleLoader__.load({
         "memory.features.injectTimePrefix.hint": "开：每个新会话的第一轮注入一次日期与星期，「今天」「上周」这类说法更稳；关：注入里不带时间（时间前缀，默认关）",
         "memory.features.entityExtractionEnabled": "顺手抽出人名、项目和概念",
         "memory.features.entityExtractionEnabled.hint": "开：每条新记忆里抽出人物/项目/概念，关系图谱自己长起来，也能按「谁」找记忆；关：只存整条记忆，不建关系（实体抽取，默认关）",
+        "memory.features.memoryPreferenceEnabled": "偏好权重参与检索",
+        "memory.features.memoryPreferenceEnabled.hint": "开：标签权重与规范实体权重以 0.6–1.6 的温和乘数参与召回（先过相关度下限），只影响排序，不改自动重要性；关（默认）：检索与改动前一致。",
+        "memory.features.trustedIntakeEnabled": "受信经历写入接口",
+        "memory.features.trustedIntakeEnabled.hint": "开：允许 Life 通过 POST /intake 携带来源、参与者与完成状态写入共同经历；需要服务端配置 apiToken，缺省关闭。不会让模型从闲聊里猜「做过」。",
         "memory.features.entityExtractionProvider": "实体抽取 Provider",
         "memory.features.entityExtractionModel": "实体抽取模型",
         "memory.features.entityExtractionReasoning": "实体抽取思考强度",
@@ -990,6 +1050,60 @@ window.__ModuleLoader__.load({
         "memory.tab.history": "History",
         "memory.tab.summary": "Summaries",
         "memory.settings.title": "Memory Settings",
+        "memory.settings.group.identity": "Identity & preferences",
+        "memory.settings.identity.title": "Identity & preference weights",
+        "memory.settings.identity.desc": "Same-name entities stay candidates until a human links them; set 0.5–2.0 weights for tags or canonical entities (default 1.0, combined and clamped to 0.6–1.6). With the master switch off or every weight at 1.0, retrieval is unchanged.",
+        "memory.settings.identity.tags": "Tag weights",
+        "memory.settings.identity.tagPlaceholder": "tag, e.g. person:close",
+        "memory.settings.identity.weight": "Weight",
+        "memory.settings.identity.addTag": "Add tag weight",
+        "memory.settings.identity.entities": "Entity preferences",
+        "memory.settings.identity.entityPlaceholder": "entity UUID or name",
+        "memory.settings.identity.addEntity": "Add entity weight",
+        "memory.settings.identity.candidates": "Duplicate candidates",
+        "memory.settings.identity.candidatesHint": "Name/alias similarity only proposes; nothing is merged or rewritten before confirmation. Preview the impact first, then confirm.",
+        "memory.settings.identity.preview": "Preview impact",
+        "memory.settings.identity.previewLeft": "Keep left",
+        "memory.settings.identity.previewRight": "Keep right",
+        "memory.settings.identity.confirm": "Confirm merge",
+        "memory.settings.identity.undo": "Undo merge",
+        "memory.settings.identity.links": "Canonical links",
+        "memory.settings.identity.noCandidates": "No candidates waiting for confirmation",
+        "memory.settings.identity.noLinks": "No canonical link",
+        "memory.settings.identity.counts": "Entities {entities} · attrs {attrs} · relations {relations} · memories {memories} · conflicts {conflicts}",
+        "memory.settings.identity.blocked": "Blocked: {reason}",
+        "memory.settings.identity.dryRun": "Impact report generated (nothing written)",
+        "memory.settings.identity.saved": "Saved",
+        "memory.settings.identity.deleted": "Deleted",
+        "memory.settings.identity.error": "Operation failed",
+        "memory.settings.identity.delete": "Delete",
+        "memory.settings.identity.save": "Save",
+        "memory.identity.needToken": "Identity and provenance details require the server apiToken: set apiToken in the plugin config and enter the same value under Settings → Connections & safety → API Token.",
+        "memory.identity.title": "Identity",
+        "memory.identity.aliases": "Aliases",
+        "memory.identity.externalIds": "External identifiers",
+        "memory.identity.history": "History & evidence",
+        "memory.identity.aliasPlaceholder": "New alias…",
+        "memory.identity.addAlias": "Add",
+        "memory.identity.confirmAlias": "Confirm",
+        "memory.identity.editAlias": "Rename",
+        "memory.identity.unlink": "Unlink",
+        "memory.identity.externalPlaceholder": "external id",
+        "memory.identity.platformPlaceholder": "platform, e.g. qq",
+        "memory.identity.typePlaceholder": "type",
+        "memory.identity.addExternal": "Bind external id",
+        "memory.identity.preference": "Preference weight",
+        "memory.identity.preferenceHint": "Preference weight for this canonical entity (0.5–2.0, default 1.0).",
+        "memory.identity.members": "Canonical members",
+        "memory.identity.merged": "Merged view",
+        "memory.identity.provenance": "Source",
+        "memory.identity.weight": "Weight",
+        "memory.identity.saveWeight": "Save weight",
+        "memory.identity.noAliases": "No aliases yet",
+        "memory.identity.noExternal": "No external identifiers",
+        "memory.identity.duplicateName": "Same-name entity",
+        "memory.graph.edgeWeight": "weight {weight} · source {source}",
+        "memory.graph.canonicalHint": "Canonical view of {n} original entities",
         "memory.settings.group.personal": "Personalization",
         "memory.settings.group.engine": "Memory engine",
         "memory.settings.group.search": "Search",
@@ -1069,6 +1183,7 @@ window.__ModuleLoader__.load({
         "memory.explorer.tabSettings": "Settings",
         "memory.explorer.tabStatus": "Status",
         "memory.entities.count": "{n} entities",
+        "memory.entities.loadMore": "Load more entities",
         "memory.entities.pick": "Select an entity to see its attributes and relations",
         "memory.entities.noMatch": "No entities match that search — try another word",
         "memory.entities.none": "No entities yet — turn on entity extraction and people / projects / concepts will accumulate here",
@@ -1098,6 +1213,7 @@ window.__ModuleLoader__.load({
         "memory.explorer.created": "Created",
         "memory.explorer.updated": "Updated",
         "memory.explorer.tags": "Tags",
+        "memory.explorer.preference": "Preference weight",
         "memory.explorer.importance": "Importance",
         "memory.explorer.heat": "Heat",
         "memory.explorer.heatSort": "By heat",
@@ -1237,6 +1353,10 @@ window.__ModuleLoader__.load({
         "memory.features.injectTimePrefix.hint": "On: the first turn of each new session gets the date and weekday once, so \"today\" and \"last week\" land reliably. Off: no time in the injection (time prefix, off by default)",
         "memory.features.entityExtractionEnabled": "Also pull out people, projects and concepts",
         "memory.features.entityExtractionEnabled.hint": "On: each new memory yields people / projects / concepts, so the relation graph grows by itself and recall can key on who. Off: memories stay whole, no relations (entity extraction, off by default)",
+        "memory.features.memoryPreferenceEnabled": "Preference weights in recall",
+        "memory.features.memoryPreferenceEnabled.hint": "On: tag and canonical-entity weights join recall as a mild 0.6–1.6 multiplier after a relevance floor; only ordering changes, automatic importance is untouched. Off (default): retrieval is unchanged.",
+        "memory.features.trustedIntakeEnabled": "Trusted experience intake",
+        "memory.features.trustedIntakeEnabled.hint": "On: allow Life to POST /intake with source, participation and completion status for shared experiences; requires a server apiToken and is off by default. The model never infers \"I did it\" from casual chat.",
         "memory.features.entityExtractionProvider": "Entity extraction provider",
         "memory.features.entityExtractionModel": "Entity extraction model",
         "memory.features.entityExtractionReasoning": "Entity extraction reasoning",
@@ -2527,48 +2647,83 @@ window.__ModuleLoader__.load({
     function EntityPanel({ t, focusEntity, onJumpMemory }) {
       const [entities, setEntities] = useState(null); // null = still loading
       const [railQuery, setRailQuery] = useState("");
-      const [entityName, setEntityName] = useState(focusEntity || "");
+      const [entityTotal, setEntityTotal] = useState(0);
+      const [entityHasMore, setEntityHasMore] = useState(false);
+      const [entitiesLoading, setEntitiesLoading] = useState(false);
+      const [entityId, setEntityId] = useState(focusEntity || "");
       const [depth, setDepth] = useState(1);
       const [data, setData] = useState(null);
       const [status, setStatus] = useState("idle"); // idle | loading | ready | notfound | error
       const [selected, setSelected] = useState(null); // { kind: "node"|"edge", node?|edge? }
       const [attrs, setAttrs] = useState([]);
       const [related, setRelated] = useState([]);
+      const [identityInfo, setIdentityInfo] = useState(null);
+      const [aliasDraft, setAliasDraft] = useState("");
+      const [extDraft, setExtDraft] = useState({ platform: "qq", entity_type: "group", external_id: "" });
+      const [weightDraft, setWeightDraft] = useState("1");
+      const [identityBusy, setIdentityBusy] = useState(false);
+      const [identityError, setIdentityError] = useState("");
       const svgRef = useRef(null);
       const posRef = useRef([]); // live simulation positions, not React state
       const dragRef = useRef(null); // { id, moved }
       const viewRef = useRef({ x: 0, y: 0, k: 1 }); // pan/zoom viewport, viewBox units
       const [frame, setFrame] = useState(0); // re-render tick driven by the simulation
 
-      useEffect(() => {
-        let cancelled = false;
-        apiFetch("/api/dsh-mneme/entities?limit=500")
-          .then((r) => (r.ok ? r.json() : { entities: [] }))
-          .then((j) => { if (!cancelled) setEntities(Array.isArray(j.entities) ? j.entities : []); })
-          .catch(() => { if (!cancelled) setEntities([]); });
-        return () => { cancelled = true; };
+      const loadDirectory = useCallback(async ({ offset = 0, append = false, query = "" } = {}) => {
+        setEntitiesLoading(true);
+        try {
+          const params = new URLSearchParams({ limit: "500", offset: String(offset) });
+          if (query) params.set("q", query);
+          const res = await apiFetch(`/api/dsh-mneme/entities?${params.toString()}`);
+          const json = res.ok ? await res.json() : { entities: [], total: 0 };
+          const items = Array.isArray(json.entities) ? json.entities : [];
+          setEntities((old) => {
+            if (!append) return items;
+            const merged = [...(old || [])];
+            const seen = new Set(merged.map((entity) => entity.id));
+            for (const entity of items) if (!seen.has(entity.id)) { seen.add(entity.id); merged.push(entity); }
+            return merged;
+          });
+          setEntityTotal(Number.isFinite(json.total) ? json.total : items.length);
+          setEntityHasMore(json.has_more === true);
+        } catch {
+          if (!append) setEntities([]);
+          setEntityHasMore(false);
+        } finally {
+          setEntitiesLoading(false);
+        }
       }, []);
 
       useEffect(() => {
-        if (focusEntity && focusEntity !== entityName) {
-          setEntityName(focusEntity);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [focusEntity]);
+        const query = railQuery.trim();
+        const timer = setTimeout(() => { loadDirectory({ offset: 0, query }); }, query ? 250 : 0);
+        return () => clearTimeout(timer);
+      }, [railQuery, loadDirectory]);
+
+      // focusEntity may be a UUID (preferred), a name (legacy graph links) or
+      // an entity: prefix result. Resolve once the directory is loaded; a UUID
+      // always wins, names only select when unambiguous.
+      useEffect(() => {
+        if (!focusEntity || !entities) return;
+        const byId = entities.find((e) => e.id === focusEntity);
+        if (byId) { setEntityId(byId.id); return; }
+        const byName = entities.filter((e) => e.name === focusEntity);
+        if (byName.length === 1) setEntityId(byName[0].id);
+      }, [focusEntity, entities]);
 
       // Auto-select the most recently seen entity so the layers are never a
       // dead end on first open (the rail still allows picking another one).
       useEffect(() => {
-        if (!entities || entityName || entities.length === 0) return;
-        setEntityName(entities[0].name);
-      }, [entities, entityName]);
+        if (!entities || entityId || entities.length === 0) return;
+        setEntityId(entities[0].id);
+      }, [entities, entityId]);
 
-      const load = useCallback(async (name, d) => {
-        if (!name) { setData(null); setStatus("idle"); return; }
+      const load = useCallback(async (id, d) => {
+        if (!id) { setData(null); setStatus("idle"); return; }
         setStatus("loading");
         setSelected(null);
         try {
-          const res = await apiFetch(`/api/dsh-mneme/semantic/graph/ego?entity=${encodeURIComponent(name)}&depth=${d}`);
+          const res = await apiFetch(`/api/dsh-mneme/semantic/graph/ego?id=${encodeURIComponent(id)}&depth=${d}`);
           if (res.status === 404) { setData(null); setStatus("notfound"); return; }
           if (!res.ok) { setData(null); setStatus("error"); return; }
           const json = await res.json();
@@ -2580,24 +2735,110 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
-      useEffect(() => { load(entityName, depth); }, [load, entityName, depth]);
+      useEffect(() => { load(entityId, depth); }, [load, entityId, depth]);
 
       // Layer data for the selected entity: current attrs + related memories.
       useEffect(() => {
         setAttrs([]);
         setRelated([]);
-        if (!entityName) return;
+        setIdentityInfo(null);
+        if (!entityId) return;
         let cancelled = false;
-        apiFetch(`/api/dsh-mneme/semantic/graph/entity-attrs?entity=${encodeURIComponent(entityName)}`)
+        apiFetch(`/api/dsh-mneme/semantic/graph/entity-attrs?id=${encodeURIComponent(entityId)}`)
           .then((r) => (r.ok ? r.json() : { attrs: [] }))
           .then((j) => { if (!cancelled) setAttrs(Array.isArray(j.attrs) ? j.attrs : []); })
           .catch(() => {});
-        apiFetch(`/api/dsh-mneme/search?q=${encodeURIComponent("entity:" + entityName)}&limit=10`)
+        apiFetch(`/api/dsh-mneme/search?q=${encodeURIComponent("entity:" + entityId)}&limit=10`)
           .then((r) => (r.ok ? r.json() : { items: [] }))
           .then((j) => { if (!cancelled) setRelated(Array.isArray(j.items) ? j.items : []); })
           .catch(() => {});
+        loadIdentity(entityId);
         return () => { cancelled = true; };
-      }, [entityName]);
+      }, [entityId]);
+
+      const loadIdentity = useCallback(async (id) => {
+        if (!id) return;
+        try {
+          const [aliases, external, history, prefs, detail] = await Promise.all([
+            apiFetch(`/api/dsh-mneme/identity/aliases?entity_id=${encodeURIComponent(id)}&include_inactive=1`),
+            apiFetch(`/api/dsh-mneme/identity/external-ids?entity_id=${encodeURIComponent(id)}&include_revoked=1`),
+            apiFetch(`/api/dsh-mneme/identity/history?entity_id=${encodeURIComponent(id)}`),
+            apiFetch("/api/dsh-mneme/preferences"),
+            apiFetch(`/api/dsh-mneme/identity/entity-detail?id=${encodeURIComponent(id)}`)
+          ]);
+          if ([aliases, external, history, prefs, detail].some((res) => res.status === 401 || res.status === 503)) {
+            setIdentityError(t("memory.identity.needToken"));
+            setIdentityInfo({ aliases: [], external_ids: [], events: [], group: null, relations: [] });
+            return;
+          }
+          const aliasBody = aliases.ok ? await aliases.json() : { aliases: [] };
+          const extBody = external.ok ? await external.json() : { external_ids: [] };
+          const historyBody = history.ok ? await history.json() : { events: [] };
+          const prefBody = prefs.ok ? await prefs.json() : { entities: [] };
+          const detailBody = detail.ok ? await detail.json() : { entity: null, relations: [] };
+          setIdentityError("");
+          setIdentityInfo({
+            aliases: aliasBody.aliases || [],
+            external_ids: extBody.external_ids || [],
+            events: historyBody.events || [],
+            group: detailBody.entity || historyBody.group || null,
+            relations: detailBody.relations || []
+          });
+          const pref = (prefBody.entities || []).find((row) => row.entity_id === id);
+          setWeightDraft(String(pref ? pref.weight : 1));
+        } catch {
+          setIdentityInfo({ aliases: [], external_ids: [], events: [], group: null, relations: [] });
+        }
+      }, []);
+
+      const identityWrite = async (path, body) => {
+        setIdentityBusy(true);
+        setIdentityError("");
+        try {
+          const res = await apiFetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...body, actor: "panel" })
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            setIdentityError(json.message || json.error || t("memory.settings.identity.error"));
+            return null;
+          }
+          await loadIdentity(entityId);
+          return json;
+        } catch {
+          setIdentityError(t("memory.settings.identity.error"));
+          return null;
+        } finally {
+          setIdentityBusy(false);
+        }
+      };
+      const addAlias = () => {
+        if (!aliasDraft.trim()) return;
+        identityWrite("/api/dsh-mneme/identity/aliases", {
+          action: "create", entity_id: entityId, alias: aliasDraft.trim(), provenance: "manual", confirmed: false
+        }).then((json) => { if (json) setAliasDraft(""); });
+      };
+      const confirmAlias = (id) => identityWrite("/api/dsh-mneme/identity/aliases", { action: "confirm", id });
+      const renameAlias = (alias) => {
+        const next = window.prompt(t("memory.identity.editAlias"), alias.alias);
+        if (next && next.trim() && next.trim() !== alias.alias) {
+          identityWrite("/api/dsh-mneme/identity/aliases", { action: "update", id: alias.id, alias: next.trim() });
+        }
+      };
+      const unlinkAlias = (id) => identityWrite("/api/dsh-mneme/identity/aliases", { action: "unlink", id });
+      const addExternal = () => {
+        if (!extDraft.external_id.trim()) return;
+        identityWrite("/api/dsh-mneme/identity/external-ids", {
+          action: "add", entity_id: entityId, platform: extDraft.platform,
+          entity_type: extDraft.entity_type, external_id: extDraft.external_id.trim()
+        }).then((json) => { if (json) setExtDraft({ ...extDraft, external_id: "" }); });
+      };
+      const unlinkExternal = (id) => identityWrite("/api/dsh-mneme/identity/external-ids", { action: "unlink", id });
+      const saveWeight = () => identityWrite("/api/dsh-mneme/preferences", {
+        target: "entity", action: "set", entity_id: entityId, weight: Number(weightDraft)
+      });
 
       // Simulation: run in rAF against posRef, tick React only every few frames.
       // Re-seeds when data changes; dragging writes straight into posRef.
@@ -2754,9 +2995,8 @@ window.__ModuleLoader__.load({
       const nodes = posRef.current;
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
-      // --- rail: entity directory grouped by type ---
-      const q = railQuery.trim().toLowerCase();
-      const visibleEntities = (entities || []).filter((e) => !q || (e.name || "").toLowerCase().includes(q));
+      // --- rail: entity directory grouped by type (server-paged) ---
+      const visibleEntities = entities || [];
       const ENTITY_TYPE_ORDER = ["person", "project", "concept", "technology", "organization"];
       const groups = [];
       const byType = new Map();
@@ -2766,7 +3006,13 @@ window.__ModuleLoader__.load({
         byType.get(key).items.push(e);
       }
 
-      const entity = entities?.find((e) => e.name === entityName) || null;
+      const entity = entities?.find((e) => e.id === entityId) || null;
+      const entityView = entity ? { ...entity, ...(identityInfo?.group || {}) } : null;
+      const nameCount = new Map();
+      for (const e of entities || []) nameCount.set(e.name, (nameCount.get(e.name) || 0) + 1);
+      const entityLabel = (e) => nameCount.get(e.name) > 1
+        ? `${e.name} · ${String(e.id).slice(0, 8)}`
+        : e.name;
       const rootEdges = (data?.edges || []).filter((e) => e.from === data?.root?.id || e.to === data?.root?.id);
       const graphStatus = status === "ready" && data && data.nodes.length <= 1 ? "empty" : status;
 
@@ -2782,13 +3028,13 @@ window.__ModuleLoader__.load({
             value: railQuery,
             onChange: (e) => setRailQuery(e.target.value)
           }),
-          entities !== null && entities.length > 0 && h("div", { className: "mneme-xcount" },
-            t("memory.entities.count").replace("{n}", String(entities.length)))
+          entityTotal > 0 && h("div", { className: "mneme-xcount" },
+            t("memory.entities.count").replace("{n}", String(entityTotal)))
         ),
         h("div", { className: "mneme-entrailbody" },
           entities === null && h("div", { className: "mneme-xempty" }, "…"),
-          entities !== null && entities.length === 0 && h("div", { className: "mneme-xempty" }, t("memory.entities.none")),
-          entities !== null && entities.length > 0 && visibleEntities.length === 0 && h("div", { className: "mneme-xempty" }, t("memory.entities.noMatch")),
+          entities !== null && entities.length === 0 && railQuery.trim() && h("div", { className: "mneme-xempty" }, t("memory.entities.noMatch")),
+          entities !== null && entities.length === 0 && !railQuery.trim() && h("div", { className: "mneme-xempty" }, t("memory.entities.none")),
           groups.map((g) => h("div", { key: g.key },
             h("div", { className: "mneme-enttype" },
               h("span", { className: "mneme-xdot", style: { color: typeColor(g.key === "other" ? null : g.key) }, "aria-hidden": "true" }),
@@ -2796,13 +3042,24 @@ window.__ModuleLoader__.load({
             ),
             g.items.map((e) => h("button", {
               key: e.id,
-              className: e.name === entityName ? "mneme-entitem mneme-active" : "mneme-entitem",
-              onClick: () => setEntityName(e.name)
+              className: e.id === entityId ? "mneme-entitem mneme-active" : "mneme-entitem",
+              title: `${e.name} · ${e.id}`,
+              onClick: () => setEntityId(e.id)
             },
-              h("span", { className: "mneme-entname" }, e.name),
+              h("span", { className: "mneme-entname" }, entityLabel(e)),
               h("span", { className: "mneme-entmentions" }, `×${e.mention_count ?? 1}`)
             ))
-          ))
+          )),
+          entities !== null && (entityHasMore || entitiesLoading) && h("div", { style: { padding: "8px 4px" } },
+            h("button", {
+              className: "mneme-footbtn",
+              disabled: entitiesLoading,
+              onClick: () => loadDirectory({
+                offset: (entities || []).length,
+                append: true,
+                query: railQuery.trim()
+              })
+            }, entitiesLoading ? t("memory.graph.loading") : t("memory.entities.loadMore")))
         )
       );
 
@@ -2816,9 +3073,9 @@ window.__ModuleLoader__.load({
                 h(StarGlyph, { size: 11 }),
                 ` ${selected.node.mention_count ?? 1}`)
             ),
-            selected.node.name !== entityName && h("button", {
+            selected.node.id !== entityId && h("button", {
               className: "mneme-footbtn",
-              onClick: () => setEntityName(selected.node.name)
+              onClick: () => setEntityId(selected.node.id)
             }, t("memory.graph.viewInGraph"))
           )
         : selected?.kind === "edge"
@@ -2829,6 +3086,10 @@ window.__ModuleLoader__.load({
               ),
               h("div", { className: "mneme-gs-meta" },
                 `${t("memory.graph.relation")} · ${formatRelativeTime(selected.edge.created_at, t)}`),
+              h("div", { className: "mneme-gs-meta" },
+                t("memory.graph.edgeWeight")
+                  .replace("{weight}", String(selected.edge.weight ?? 1))
+                  .replace("{source}", String(selected.edge.source ?? "manual"))),
               selected.edge.memory_id && h("button", {
                 className: "mneme-footbtn",
                 onClick: () => onJumpMemory && onJumpMemory({ id: selected.edge.memory_id })
@@ -2844,14 +3105,16 @@ window.__ModuleLoader__.load({
           status === "error" && h("div", { className: "mneme-hint" }, t("memory.panel.empty")),
           status === "ready" && entity && h(react.Fragment, null,
             h("div", { className: "mneme-enttitle" },
-              h("span", { className: "mneme-xdot", style: { color: typeColor(entity.type) }, "aria-hidden": "true" }),
-              entity.name
+              h("span", { className: "mneme-xdot", style: { color: typeColor(entityView.type) }, "aria-hidden": "true" }),
+              entityLabel(entityView)
             ),
             h("div", { className: "mneme-entmeta" },
-              h("span", null, entityTypeLabel(t, entity.type || "other")),
-              h("span", null, t("memory.entities.mentions").replace("{n}", String(entity.mention_count ?? 1))),
-              h("span", { title: formatDate(entity.last_seen) },
-                `${t("memory.entities.lastSeen")}: ${formatRelativeTime(entity.last_seen, t)}`)
+              h("span", null, entityTypeLabel(t, entityView.type || "other")),
+              h("span", null, t("memory.entities.mentions").replace("{n}", String(entityView.mention_count ?? 1))),
+              entityView.merged && h("span", { title: (entityView.member_ids || []).join(", ") },
+                t("memory.graph.canonicalHint").replace("{n}", String((entityView.member_ids || []).length))),
+              h("span", { title: formatDate(entityView.last_seen) },
+                `${t("memory.entities.lastSeen")}: ${formatRelativeTime(entityView.last_seen, t)}`)
             ),
             // ① 关系图谱（前置）：图形在属性/列表之前，是实体页的第一眼；
             // 深度/复位 chips 从层头移进图谱工具行（动作靠近作用对象），操作
@@ -2926,7 +3189,9 @@ window.__ModuleLoader__.load({
                       return h("button", {
                         key: e.id,
                         className: "mneme-relrow",
-                        title: e.memory_id ? t("memory.graph.sourceMemory") : undefined,
+                        title: `${e.memory_id ? t("memory.graph.sourceMemory") : ""} · ${t("memory.graph.edgeWeight")
+                          .replace("{weight}", String(e.weight ?? 1))
+                          .replace("{source}", String(e.source ?? "manual"))}`,
                         onClick: () => { if (e.memory_id && onJumpMemory) onJumpMemory({ id: e.memory_id }); }
                       },
                         h("span", { className: "mneme-relname", style: { textAlign: "right", flex: 1 } }, entity.name),
@@ -2936,7 +3201,131 @@ window.__ModuleLoader__.load({
                     })
                   )
             ),
-            // ② 属性 — current snapshot (valid_until IS NULL)；空层整层隐藏
+            // ② 身份 — aliases / typed external ids / preference / provenance.
+            // Every action carries the canonical UUID; names are labels only.
+            identityInfo && h("div", { className: "mneme-layer" },
+              h("div", { className: "mneme-layerhead" },
+                t("memory.identity.title"),
+                identityInfo.group?.merged && h("span", { className: "mneme-layercount" },
+                  t("memory.graph.canonicalHint").replace("{n}", String(identityInfo.group.member_ids.length)))
+              ),
+              identityError && h("div", { className: "mneme-hint", style: { color: "var(--mneme-danger)" } }, identityError),
+              h("div", { className: "mneme-gs-meta" }, t("memory.identity.aliases")),
+              identityInfo.aliases.length === 0 && h("div", { className: "mneme-hint" }, t("memory.identity.noAliases")),
+              identityInfo.aliases.slice(0, 16).map((alias) => h("div", {
+                key: alias.id,
+                className: "mneme-gs-link",
+                style: { display: "flex", alignItems: "center", gap: 6, opacity: alias.active ? 1 : 0.55 }
+              },
+                h("span", { style: { flex: 1, minWidth: 0 } },
+                  alias.alias,
+                  h("span", { style: { marginLeft: 6, fontSize: 11, color: "var(--mneme-fg-dim)" } },
+                    `${alias.provenance}${alias.confirmed ? " · ✓" : ""}`)),
+                alias.active && !alias.confirmed && h("button", {
+                  className: "mneme-footbtn", disabled: identityBusy,
+                  onClick: () => confirmAlias(alias.id)
+                }, t("memory.identity.confirmAlias")),
+                alias.active && h("button", {
+                  className: "mneme-footbtn", disabled: identityBusy,
+                  onClick: () => renameAlias(alias)
+                }, t("memory.identity.editAlias")),
+                alias.active && h("button", {
+                  className: "mneme-footbtn", disabled: identityBusy,
+                  onClick: () => unlinkAlias(alias.id)
+                }, t("memory.identity.unlink"))
+              )),
+              h("div", { style: { display: "flex", gap: 8, marginTop: 8 } },
+                h("input", {
+                  className: "mneme-set-input", style: { marginBottom: 0 },
+                  value: aliasDraft, placeholder: t("memory.identity.aliasPlaceholder"),
+                  onChange: (e) => setAliasDraft(e.target.value),
+                  onKeyDown: (e) => { if (e.key === "Enter") addAlias(); }
+                }),
+                h("button", { className: "mneme-btn", disabled: !aliasDraft.trim() || identityBusy, onClick: addAlias },
+                  t("memory.identity.addAlias"))
+              ),
+              h("div", { className: "mneme-gs-meta", style: { marginTop: 10 } }, t("memory.identity.externalIds")),
+              identityInfo.external_ids.length === 0 && h("div", { className: "mneme-hint" }, t("memory.identity.noExternal")),
+              identityInfo.external_ids.slice(0, 16).map((ext) => h("div", {
+                key: ext.id,
+                className: "mneme-gs-link",
+                style: { display: "flex", alignItems: "center", gap: 6, opacity: ext.active ? 1 : 0.55 }
+              },
+                h("span", { style: { flex: 1, minWidth: 0 } },
+                  `${ext.platform}/${ext.entity_type}: ${ext.external_id}`,
+                  h("span", { style: { marginLeft: 6, fontSize: 11, color: "var(--mneme-fg-dim)" } },
+                    `${ext.source || "manual"}${ext.active ? "" : " · revoked"}`)),
+                ext.active && h("button", {
+                  className: "mneme-footbtn", disabled: identityBusy,
+                  onClick: () => unlinkExternal(ext.id)
+                }, t("memory.identity.unlink"))
+              )),
+              h("div", { style: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" } },
+                h("input", {
+                  className: "mneme-set-input", style: { width: 90, marginBottom: 0 },
+                  value: extDraft.platform, placeholder: t("memory.identity.platformPlaceholder"),
+                  onChange: (e) => setExtDraft({ ...extDraft, platform: e.target.value })
+                }),
+                h("input", {
+                  className: "mneme-set-input", style: { width: 110, marginBottom: 0 },
+                  value: extDraft.entity_type, placeholder: t("memory.identity.typePlaceholder"),
+                  onChange: (e) => setExtDraft({ ...extDraft, entity_type: e.target.value })
+                }),
+                h("input", {
+                  className: "mneme-set-input", style: { flex: 1, minWidth: 120, marginBottom: 0 },
+                  value: extDraft.external_id, placeholder: t("memory.identity.externalPlaceholder"),
+                  onChange: (e) => setExtDraft({ ...extDraft, external_id: e.target.value })
+                }),
+                h("button", { className: "mneme-btn", disabled: !extDraft.external_id.trim() || identityBusy, onClick: addExternal },
+                  t("memory.identity.addExternal"))
+              ),
+              h("div", { className: "mneme-gs-meta", style: { marginTop: 10 } }, t("memory.identity.preference")),
+              h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                h("input", {
+                  className: "mneme-set-input", style: { width: 90, marginBottom: 0 },
+                  type: "number", min: 0.5, max: 2, step: 0.1,
+                  value: weightDraft, onChange: (e) => setWeightDraft(e.target.value)
+                }),
+                h("button", { className: "mneme-btn", disabled: identityBusy, onClick: saveWeight },
+                  t("memory.identity.saveWeight")),
+                h("span", { style: { fontSize: 12, color: "var(--mneme-fg-dim)" } },
+                  t("memory.identity.preferenceHint"))
+              ),
+              identityInfo.group?.merged && h(react.Fragment, null,
+                h("div", { className: "mneme-gs-meta", style: { marginTop: 10 } }, t("memory.identity.members")),
+                h("div", { className: "mneme-attrgrid" },
+                  (identityInfo.group.members || []).map((member) => h("div", { key: member.id, className: "mneme-attrcard" },
+                    h("div", { className: "mneme-attrkey" }, `${member.name} · ${String(member.id).slice(0, 8)}`),
+                    h("div", { className: "mneme-attrval" }, `${member.type || "—"} · ×${member.mention_count ?? 1}`)
+                  ))
+                )
+              ),
+              (identityInfo.relations?.length || 0) > 0 && h(react.Fragment, null,
+                h("div", { className: "mneme-gs-meta", style: { marginTop: 10 } }, t("memory.entities.relations")),
+                identityInfo.relations.slice(0, 12).map((rel) => {
+                  const from = (entities || []).find((e) => e.id === rel.from_entity);
+                  const to = (entities || []).find((e) => e.id === rel.to_entity);
+                  return h("div", {
+                    key: rel.id,
+                    className: "mneme-gs-meta",
+                    title: t("memory.graph.edgeWeight")
+                      .replace("{weight}", String(rel.weight ?? 1))
+                      .replace("{source}", String(rel.source ?? "manual"))
+                  },
+                    `${from?.name ?? String(rel.from_entity).slice(0, 8)} → ${rel.relation_type} → ${to?.name ?? String(rel.to_entity).slice(0, 8)} · `,
+                    t("memory.graph.edgeWeight")
+                      .replace("{weight}", String(rel.weight ?? 1))
+                      .replace("{source}", String(rel.source ?? "manual")));
+                })
+              ),
+              identityInfo.events.length > 0 && h(react.Fragment, null,
+                h("div", { className: "mneme-gs-meta", style: { marginTop: 10 } }, t("memory.identity.history")),
+                identityInfo.events.slice(0, 5).map((event) => h("div", {
+                  key: event.id, className: "mneme-gs-meta"
+                }, `${event.event_type} · ${formatRelativeTime(event.created_at, t)}`))
+              )
+            ),
+            // ③ 属性 — current snapshot (valid_until IS NULL)；空层整层隐藏
             // （原先渲染一行「暂无内容」占住高度，是零信息的堆积）
             attrs.length > 0 && h("div", { className: "mneme-layer" },
               h("div", { className: "mneme-layerhead" },
@@ -3008,7 +3397,7 @@ window.__ModuleLoader__.load({
       // 自动沉淀（写提议到记忆库）、执行记账（/mo-run 开窗）。各自默认关，
       // 开了任何一个都不会顺带打开另一个——写能力必须由人一项一项点。
       { key: "group.mo", items: ["actionPipelineEnabled", "actionNudgeEnabled"] },
-      { key: "group.enhance", items: ["entityExtractionEnabled", "codingRetrospect", "rerankEnabled", "resilientModelDownload", "searchSemanticDedup", "bm25SearchEnabled", "heatEnabled", "documentMemoryEnabled",
+      { key: "group.enhance", items: ["entityExtractionEnabled", "memoryPreferenceEnabled", "trustedIntakeEnabled", "codingRetrospect", "rerankEnabled", "resilientModelDownload", "searchSemanticDedup", "bm25SearchEnabled", "heatEnabled", "documentMemoryEnabled",
         // 人格定义页（beta）：注入总闸。分组随 enhance（行为开关，非座位闸门）；
         // 人格内容在设置页「个性化」区的人格卡。
         // 严格寻址是同一条链上的第二个口径开关（只在总闸打开时起作用）。
@@ -3545,6 +3934,258 @@ window.__ModuleLoader__.load({
       if (/Linux/.test(ua)) return "Linux";
       return "Unknown";
     };
+
+    // --- Amadeus memory enhancer: identity, duplicate candidates, weights ---
+    // All reads use IDs; a duplicate display name never selects a record by
+    // name alone. Mutations are explicit panel actions (dry-run -> confirm).
+    const shortEntityId = (id) => String(id || "").slice(0, 8);
+
+    function IdentityPreferencesCard({ t }) {
+      const [state, setState] = react.useState(null);
+      const [candidates, setCandidates] = react.useState([]);
+      const [links, setLinks] = react.useState([]);
+      const [tagForm, setTagForm] = react.useState({ tag: "", weight: "1.2" });
+      const [entityForm, setEntityForm] = react.useState({ entity: "", weight: "1.2" });
+      const [drafts, setDrafts] = react.useState({});
+      const [report, setReport] = react.useState(null);
+      const [busy, setBusy] = react.useState("");
+      const [error, setError] = react.useState("");
+      const [authError, setAuthError] = react.useState("");
+      const [notice, setNotice] = react.useState("");
+
+      const refresh = react.useCallback(async () => {
+        try {
+          const [prefs, cands, linkRes] = await Promise.all([
+            apiFetch("/api/dsh-mneme/preferences"),
+            apiFetch("/api/dsh-mneme/identity/candidates?limit=30"),
+            apiFetch("/api/dsh-mneme/identity/links")
+          ]);
+          if ([prefs, cands, linkRes].some((res) => res.status === 401 || res.status === 503)) {
+            setAuthError(t("memory.identity.needToken"));
+            setState((old) => old ?? { tags: [], entities: [] });
+            return;
+          }
+          setAuthError("");
+          if (prefs.ok) {
+            const body = await prefs.json();
+            setState(body);
+            const next = {};
+            for (const row of body.tags || []) next["tag:" + row.tag] = String(row.weight);
+            for (const row of body.entities || []) next["entity:" + row.entity_id] = String(row.weight);
+            setDrafts((old) => ({ ...next, ...old }));
+          }
+          if (cands.ok) {
+            const body = await cands.json();
+            setCandidates(Array.isArray(body.candidates) ? body.candidates : []);
+          }
+          if (linkRes.ok) {
+            const body = await linkRes.json();
+            setLinks(Array.isArray(body.links) ? body.links : []);
+          }
+        } catch {
+          setError(t("memory.settings.identity.error"));
+        }
+      }, [t]);
+
+      react.useEffect(() => { refresh(); }, [refresh]);
+
+      const write = async (path, body) => {
+        setBusy(path);
+        setError("");
+        setNotice("");
+        try {
+          const res = await apiFetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          const json = await res.json().catch(() => ({}));
+          if (res.status === 401 || res.status === 503) {
+            setAuthError(t("memory.identity.needToken"));
+            return null;
+          }
+          if (!res.ok) {
+            setError(json.message || json.error || t("memory.settings.identity.error"));
+            return null;
+          }
+          return json;
+        } catch {
+          setError(t("memory.settings.identity.error"));
+          return null;
+        } finally {
+          setBusy("");
+        }
+      };
+
+      const saveTag = async (tag, weight) => {
+        const json = await write("/api/dsh-mneme/preferences", {
+          target: "tag", action: "set", tag, weight: Number(weight), actor: "panel"
+        });
+        if (json) { setState(json); setNotice(t("memory.settings.identity.saved")); }
+      };
+      const deleteTag = async (tag) => {
+        const json = await write("/api/dsh-mneme/preferences", {
+          target: "tag", action: "delete", tag, actor: "panel"
+        });
+        if (json) { setState(json.state || json); setNotice(t("memory.settings.identity.deleted")); }
+      };
+      const saveEntity = async (entity, weight) => {
+        const json = await write("/api/dsh-mneme/preferences", {
+          target: "entity", action: "set", entity_id: entity, weight: Number(weight), actor: "panel"
+        });
+        if (json) { setState(json); setNotice(t("memory.settings.identity.saved")); }
+      };
+      const deleteEntity = async (entity) => {
+        const json = await write("/api/dsh-mneme/preferences", {
+          target: "entity", action: "delete", entity_id: entity, actor: "panel"
+        });
+        if (json) { setState(json.state || json); setNotice(t("memory.settings.identity.deleted")); }
+      };
+      const preview = async (candidate, keepRight = true) => {
+        const from = keepRight ? candidate.left.id : candidate.right.id;
+        const to = keepRight ? candidate.right.id : candidate.left.id;
+        const json = await write("/api/dsh-mneme/identity/merge-preview", {
+          from_entity: from, to_entity: to, actor: "panel"
+        });
+        if (json) { setReport(json); setNotice(t("memory.settings.identity.dryRun")); }
+      };
+      const confirm = async () => {
+        if (!report || report.blocked) return;
+        const json = await write("/api/dsh-mneme/identity/merge", {
+          report_id: report.report_id, actor: "panel"
+        });
+        if (json) {
+          setReport(null);
+          setNotice(t("memory.settings.identity.saved"));
+          refresh();
+        }
+      };
+      const undo = async (link) => {
+        const json = await write("/api/dsh-mneme/identity/merge-undo", {
+          link_id: link.id, actor: "panel"
+        });
+        if (json) { setNotice(t("memory.settings.identity.saved")); refresh(); }
+      };
+
+      if (authError) {
+        return h("section", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-title" }, t("memory.settings.identity.title")),
+          h("div", { className: "mneme-set-desc" }, t("memory.settings.identity.desc")),
+          h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-warn)" } }, authError)
+        );
+      }
+      if (state === null) {
+        return h("section", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-title" }, t("memory.settings.identity.title")),
+          h("div", { className: "mneme-set-hint" }, "…")
+        );
+      }
+
+      const weightInput = (key, fallback, onSave, onDelete) => h("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+        h("input", {
+          className: "mneme-set-input",
+          style: { width: 76, marginBottom: 0 },
+          type: "number", min: 0.5, max: 2, step: 0.1,
+          value: drafts[key] ?? String(fallback),
+          onChange: (e) => setDrafts({ ...drafts, [key]: e.target.value })
+        }),
+        h("button", { className: "mneme-footbtn", disabled: !!busy, onClick: () => onSave(drafts[key] ?? fallback) },
+          t("memory.settings.identity.save")),
+        h("button", { className: "mneme-footbtn", disabled: !!busy, onClick: onDelete },
+          t("memory.settings.identity.delete"))
+      );
+
+      return h("section", { className: "mneme-set-card" },
+        h("div", { className: "mneme-set-title" }, t("memory.settings.identity.title")),
+        h("div", { className: "mneme-set-desc" }, t("memory.settings.identity.desc")),
+        error && h("div", { style: { fontSize: 12, color: "var(--mneme-danger)", marginTop: 6 } }, error),
+        notice && h("div", { className: "mneme-saved", style: { marginTop: 6 } }, notice),
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 12 } }, t("memory.settings.identity.tags")),
+        (state.tags || []).length === 0 && h("div", { className: "mneme-set-hint" }, "—"),
+        (state.tags || []).map((row) => h("div", { key: row.tag, className: "mneme-set-row" },
+          h("span", { className: "mneme-set-ruletext" }, row.tag),
+          weightInput("tag:" + row.tag, row.weight,
+            (weight) => saveTag(row.tag, weight),
+            () => deleteTag(row.tag))
+        )),
+        h("div", { style: { display: "flex", gap: 8, marginTop: 8 } },
+          h("input", {
+            className: "mneme-set-input", style: { marginBottom: 0 },
+            value: tagForm.tag, placeholder: t("memory.settings.identity.tagPlaceholder"),
+            onChange: (e) => setTagForm({ ...tagForm, tag: e.target.value })
+          }),
+          h("input", {
+            className: "mneme-set-input", style: { width: 88, marginBottom: 0 },
+            type: "number", min: 0.5, max: 2, step: 0.1, value: tagForm.weight,
+            onChange: (e) => setTagForm({ ...tagForm, weight: e.target.value })
+          }),
+          h("button", { className: "mneme-btn", disabled: !tagForm.tag || !!busy, onClick: () => saveTag(tagForm.tag, tagForm.weight) },
+            t("memory.settings.identity.addTag"))
+        ),
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 12 } }, t("memory.settings.identity.entities")),
+        (state.entities || []).length === 0 && h("div", { className: "mneme-set-hint" }, "—"),
+        (state.entities || []).map((row) => h("div", { key: row.entity_id, className: "mneme-set-row" },
+          h("span", { className: "mneme-set-ruletext" }, `${row.name || row.entity_id} · ${shortEntityId(row.entity_id)}`),
+          weightInput("entity:" + row.entity_id, row.weight,
+            (weight) => saveEntity(row.entity_id, weight),
+            () => deleteEntity(row.entity_id))
+        )),
+        h("div", { style: { display: "flex", gap: 8, marginTop: 8 } },
+          h("input", {
+            className: "mneme-set-input", style: { marginBottom: 0 },
+            value: entityForm.entity, placeholder: t("memory.settings.identity.entityPlaceholder"),
+            onChange: (e) => setEntityForm({ ...entityForm, entity: e.target.value })
+          }),
+          h("input", {
+            className: "mneme-set-input", style: { width: 88, marginBottom: 0 },
+            type: "number", min: 0.5, max: 2, step: 0.1, value: entityForm.weight,
+            onChange: (e) => setEntityForm({ ...entityForm, weight: e.target.value })
+          }),
+          h("button", { className: "mneme-btn", disabled: !entityForm.entity || !!busy, onClick: () => saveEntity(entityForm.entity, entityForm.weight) },
+            t("memory.settings.identity.addEntity"))
+        ),
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 14 } }, t("memory.settings.identity.candidates")),
+        h("div", { className: "mneme-set-hint" }, t("memory.settings.identity.candidatesHint")),
+        candidates.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.settings.identity.noCandidates")),
+        candidates.map((candidate, index) => h("div", { key: String(index), className: "mneme-set-row" },
+          h("div", { style: { flex: 1, minWidth: 0 } },
+            h("div", { className: "mneme-set-ruletext" },
+              `${candidate.left.name} (${shortEntityId(candidate.left.id)}) → ${candidate.right.name} (${shortEntityId(candidate.right.id)})`),
+            h("div", { className: "mneme-set-hint" },
+              `${t("memory.identity.provenance")}: ${(candidate.reasons || []).join(", ")} · ${candidate.score}`,
+              candidate.blocked ? ` · ${t("memory.settings.identity.blocked").replace("{reason}", (candidate.blockers || []).map((b) => b.code).join(", "))}` : "")
+          ),
+          h("button", { className: "mneme-footbtn", disabled: candidate.blocked || !!busy, onClick: () => preview(candidate, true) },
+            t("memory.settings.identity.previewRight")),
+          h("button", { className: "mneme-footbtn", disabled: candidate.blocked || !!busy, onClick: () => preview(candidate, false) },
+            t("memory.settings.identity.previewLeft"))
+        )),
+        report && h("div", { className: "mneme-set-row", style: { alignItems: "flex-start" } },
+          h("div", { style: { flex: 1, minWidth: 0 } },
+            h("div", { className: "mneme-set-ruletext" }, t("memory.settings.identity.dryRun")),
+            h("div", { className: "mneme-set-hint" },
+              t("memory.settings.identity.counts")
+                .replace("{entities}", String(report.counts.entities))
+                .replace("{attrs}", String(report.counts.attrs_linked))
+                .replace("{relations}", String(report.counts.relations_linked))
+                .replace("{memories}", String(report.counts.memories_linked))
+                .replace("{conflicts}", String(report.counts.attr_conflicts + report.counts.relation_duplicates))),
+            report.blocked && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } },
+              t("memory.settings.identity.blocked").replace("{reason}", (report.blockers || []).map((b) => b.code).join(", ")))
+          ),
+          h("button", { className: "mneme-btn", disabled: report.blocked || !!busy, onClick: confirm },
+            t("memory.settings.identity.confirm"))
+        ),
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 14 } }, t("memory.settings.identity.links")),
+        links.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.settings.identity.noLinks")),
+        links.map((link) => h("div", { key: link.id, className: "mneme-set-row" },
+          h("span", { className: "mneme-set-ruletext" },
+            `${link.entity_name} (${shortEntityId(link.entity_id)}) → ${link.canonical_name} (${shortEntityId(link.canonical_id)})`),
+          h("button", { className: "mneme-footbtn", disabled: !!busy, onClick: () => undo(link) },
+            t("memory.settings.identity.undo"))
+        ))
+      );
+    }
 
     function SettingsContent({ t }) {
       const [profile, setProfile] = react.useState("");
@@ -4321,6 +4962,9 @@ window.__ModuleLoader__.load({
         ),
         // 功能开关 — 后端能力的细粒度闸门；改动即时保存，重启 DSH 后生效。
         h(FeaturesCard, { t }),
+        // —— 身份与偏好：别名 / 外部标识 / 重复候选 / 规范映射 / 权重 ——
+        h("div", { className: "mneme-set-grouphead" }, t("memory.settings.group.identity")),
+        h(IdentityPreferencesCard, { t }),
         // —— 搜索：语义召回 ——
         h("div", { className: "mneme-set-grouphead" }, t("memory.settings.group.search")),
         // 向量搜索 — semantic recall over an embeddings API
@@ -6241,6 +6885,15 @@ window.__ModuleLoader__.load({
             memory.quality_score != null && h(react.Fragment, null,
               h("span", { className: "mneme-dmetakey" }, t("memory.explorer.detail.quality")),
               h("span", { className: "mneme-dmetaval" }, String(memory.quality_score))),
+            memory.preference && h(react.Fragment, null,
+              h("span", { className: "mneme-dmetakey" }, t("memory.explorer.preference")),
+              h("span", {
+                className: "mneme-dmetaval",
+                title: [
+                  ...(memory.preference.tags || []).map((x) => `#${x.tag} ×${x.weight}`),
+                  ...(memory.preference.entities || []).map((x) => `${x.name} ×${x.weight}`)
+                ].join(" · ")
+              }, `×${memory.preference.factor}${memory.preference.clamped ? " (clamped)" : ""}`)),
             h("span", { className: "mneme-dmetakey" }, t("memory.explorer.created")),
             h("span", { className: "mneme-dmetaval", title: formatDate(memory.created_at) }, formatDateShort(memory.created_at)),
             h("span", { className: "mneme-dmetakey" }, t("memory.explorer.updated")),

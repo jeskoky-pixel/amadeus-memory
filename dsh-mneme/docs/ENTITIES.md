@@ -1,5 +1,7 @@
 # 实体结构化记忆（Entity Gene，v0.3.0）
 
+> Amadeus 分支在实体 UUID 之上增加了稳定身份层（带类型外部标识、别名、可逆规范映射）与偏好权重；实体 UUID 与时间轴属性保持原语义。详见 [Amadeus 记忆增强](AMADEUS_MEMORY_ENHANCER.md)。同名实体不再按名称自动合并，LLM 抽取遇到歧义会返回候选并跳过写入。
+
 > dsh-mneme 的**记忆基因**层：从记忆文本里抽取**命名实体**、**带时间轴的属性**、**实体间关系**，并支持按实体/属性精确召回记忆。与 autoDream 联动——update 记录 supersedes、merge 迁移属性归属。
 
 v0.3.0 四个阶段全部落地：

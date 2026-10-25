@@ -11,6 +11,9 @@ import {
   normalizeScopeStateState,
   normalizeScopeStateValue
 } from "./scope-state.js";
+import { IDENTITY_SCHEMA, seedIdentitySchema } from "./identity.js";
+import { PREFERENCE_SCHEMA } from "./preferences.js";
+import { INTAKE_SCHEMA } from "./intake.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -387,6 +390,13 @@ CREATE TABLE IF NOT EXISTS continuity_proposals (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_continuity_session_kind ON continuity_proposals(session_id, kind);
 CREATE INDEX IF NOT EXISTS idx_continuity_status ON continuity_proposals(status, updated_at);
+
+-- Amadeus memory enhancer (identity / preferences / trusted intake). All three
+-- blocks are additive and idempotent: existing entity, attr and relation rows
+-- are never rewritten by these tables.
+${IDENTITY_SCHEMA}
+${PREFERENCE_SCHEMA}
+${INTAKE_SCHEMA}
 `;
 
 // Exported for API-layer type validation (standalone API POST /memories and
@@ -819,6 +829,9 @@ export function createStore(path) {
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(SCHEMA);
+  // Legacy entity names become unconfirmed labels; QQ group numbers become
+  // typed external identifiers. No cross-record merge happens here.
+  seedIdentitySchema(db);
 
   // Schema migrations for legacy databases (idempotent). Each ADD COLUMN is
   // also race-safe: two concurrently-opening processes can both pass the
@@ -2771,7 +2784,12 @@ export function createStore(path) {
   }
 
   function findEntityByName(name) {
-    return toEntity(db.prepare("SELECT * FROM entities WHERE name = ?").get(name));
+    return toEntity(db.prepare("SELECT * FROM entities WHERE name = ? ORDER BY last_seen DESC, id LIMIT 1").get(name));
+  }
+
+  /** Every entity carrying this exact name (duplicate names are legal). */
+  function findEntitiesByName(name) {
+    return db.prepare("SELECT * FROM entities WHERE name = ? ORDER BY last_seen DESC, id").all(name).map(toEntity);
   }
 
   function findEntityById(id) {
@@ -2867,9 +2885,9 @@ export function createStore(path) {
     const seen = new Set();
     const out = [];
     for (const row of rows) {
-      if (seen.has(row.name)) continue;
-      seen.add(row.name);
-      out.push({ name: row.name, type: row.type ?? null });
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      out.push({ id: row.id, name: row.name, type: row.type ?? null, mention_count: row.mention_count ?? 1 });
     }
     return out;
   }
@@ -3422,6 +3440,7 @@ export function createStore(path) {
     listScopeStates,
     createEntity,
     findEntityByName,
+    findEntitiesByName,
     findEntityById,
     listEntities,
     updateEntity,

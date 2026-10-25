@@ -539,6 +539,16 @@ export const Config = z.object({
   entityExtractionMaxAttrs: z.natural().min(1).max(50).default(20),
   // Prefix/semantic search over entity names (used by recall).
   entitySearchEnabled: z.boolean().default(true),
+  // Amadeus memory enhancer — preference weights. Off by default: automatic
+  // importance, recall fusion and injection ordering stay byte-identical until
+  // the user opts in *and* stores a weight other than 1.0. Weights are CRUD'd
+  // in the panel (tag / canonical entity), range [0.5, 2.0], combined as a
+  // bounded geometric product clamped to [0.6, 1.6] with a relevance floor.
+  memoryPreferenceEnabled: z.boolean().default(false),
+  // Amadeus memory enhancer — trusted own-experience intake (POST /intake).
+  // Off by default: this is a write surface for Life and requires an explicit
+  // scope + trusted provenance metadata. It reuses the normal save/dedupe path.
+  trustedIntakeEnabled: z.boolean().default(false),
   // 图召回轴（issue #219）：查询文本命中实体名时，把该实体挂联的记忆并入
   // 检索融合池（与 BM25 同级的确认/回填信号）。默认关=检索行为与 #219 前
   // 逐字节一致；走 feature_flags 面板可启停，lightMode 强制关闭。

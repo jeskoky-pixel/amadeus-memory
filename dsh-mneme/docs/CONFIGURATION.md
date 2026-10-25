@@ -218,6 +218,8 @@
 | `entityExtractionMaxEntities` / `entityExtractionMaxAttrs` | `10` / `20` | 单次抽取的实体数 / 每实体属性数上限 | — |
 | `entitySearchEnabled` | `true` | 实体名前缀/语义搜索（供召回） | — |
 | `entityRecallEnabled` **light** | `false` | 图召回轴：查询命中实体名时并入融合池（#219） | opt-in；依赖实体抽取产出（lightMode 下抽取已关） |
+| `memoryPreferenceEnabled` | `false` | 标签/规范实体偏好权重参与召回（Amadeus） | opt-in；权重范围 0.5–2.0，组合后夹在 0.6–1.6；关闭或全为 1.0 时检索不变 |
+| `trustedIntakeEnabled` | `false` | Life 受信经历写入接口 `POST /api/dsh-mneme/intake`（Amadeus） | opt-in；还要求配置 `apiToken` 且请求带显式 scope，缺 token 直接 503 |
 
 ## 检索
 

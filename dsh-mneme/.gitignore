@@ -1,5 +1,8 @@
 # dependencies
 node_modules/
+# local package cache / benchmark baseline checkout (synthetic only)
+.npm-cache/
+.benchmark/
 
 # build / logs
 *.log

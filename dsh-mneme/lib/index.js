@@ -524,7 +524,7 @@ export const apply = (ctx, config) => {
         config: cfg
       });
       service.setEntityExtractor((memory) =>
-        extractEntities(memory, { store, config: cfg, callLLM: streamEntityText, logger: ctx.logger })
+        extractEntities(memory, { store, config: cfg, callLLM: streamEntityText, logger: ctx.logger, identity: service.identity })
           .catch((err) => {
             ctx.logger?.warn?.(`[dsh-mneme] entity extraction failed: ${String(err)}`);
             return { ok: false, error: String(err) };

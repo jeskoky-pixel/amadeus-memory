@@ -43,6 +43,31 @@ function sendAttachment(res, status, contentType, filename, body) {
   res.end(body);
 }
 
+// Identity / preference / intake routes share one error surface: validation
+// codes are 400, missing records 404, conflicts and stale reports 409, and
+// anything without a known code stays an opaque 500.
+const ROUTE_ERROR_NOT_FOUND = new Set([
+  "entity-not-found", "alias-not-found", "external-id-not-found", "link-not-found", "report-not-found"
+]);
+const ROUTE_ERROR_CONFLICT = new Set([
+  "alias-conflict", "external-id-conflict", "type-boundary", "merge-blocked", "stale-report",
+  "report-applied", "report-undone", "has-dependents", "cycle", "already-linked",
+  "conflicting-stable-ids", "same-entity", "alias-duplicate"
+]);
+function sendRouteError(res, error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  if (!code) {
+    sendJson(res, 500, { error: "internal" });
+    return;
+  }
+  const status = ROUTE_ERROR_NOT_FOUND.has(code) ? 404 : ROUTE_ERROR_CONFLICT.has(code) ? 409 : 400;
+  sendJson(res, status, {
+    error: code,
+    message: error.message,
+    ...(error.details !== undefined ? { details: error.details } : {})
+  });
+}
+
 // 版本号统一从 version-check.js 取（同一份读 package.json 逻辑，读取失败
 // 同样降级 "unknown"）——/info 与 /version-check 两个路由共用，不再各写一份。
 
@@ -185,6 +210,18 @@ function parseBody(text) {
 // 而不是把「没接线」伪装成崩溃（#386 第 4 条）。
 export function createApi(ctx, service, settings, commands, embedder, semantic = null, apiToken = "", config = null, maintenance = null, profileExtract = null) {
   const disposers = [];
+
+  // New identity/provenance/preference routes are not allowed to inherit the
+  // legacy fail-open behavior: an absent server token is a setup error, not an
+  // invitation to serve private aliases/external IDs/provenance.
+  const requireConfiguredToken = (res) => {
+    if (apiToken) return true;
+    sendJson(res, 503, {
+      error: "api-token-required",
+      message: "Configure apiToken in the dsh-mneme plugin config and enter the same token in the panel (Settings → Connections & safety) before using identity, preference or provenance features."
+    });
+    return false;
+  };
 
   // #182 注入状态探测：面板状态页的「极简模式下注入按宿主设计关闭」提示需要
   // 知道当前会话的 agentPreset。注入回调在 minimal 下被宿主整体压制（#175 的
@@ -452,7 +489,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
         // failure degrades to keyword results inside searchMemories. The
         // returned promise lets the test double await the async search.
         return Promise.resolve(
-          service.searchMemories(query, { mode, topK: limit, useRerank: rerank })
+          service.searchMemories(query, { mode, topK: limit, useRerank: rerank, publicOnly: true })
         ).then((rows) => {
           // mode reflects what actually happened: rows marked `vector` came
           // through the semantic path, everything else is keyword fallback.
@@ -1309,48 +1346,77 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
       try {
         const url = new URL(req.url, "http://localhost");
         const name = (url.searchParams.get("entity") ?? "").trim();
-        if (!name) {
+        const id = (url.searchParams.get("id") ?? "").trim();
+        const lookup = id || name;
+        if (!lookup) {
           sendJson(res, 400, { error: "missing-entity" });
           return;
         }
-        const root = service.findEntityByName?.(name);
-        if (!root) {
+        const resolution = service.findEntityGroupPublic?.(lookup) ?? { groups: [] };
+        if (!resolution.groups.length) {
           sendJson(res, 404, { error: "entity-not-found" });
           return;
         }
+        if (resolution.groups.length > 1) {
+          // Duplicate names are legal. The panel resolves by UUID; a bare name
+          // must not silently pick one of several people.
+          sendJson(res, 409, {
+            error: "ambiguous-entity",
+            candidates: resolution.groups.map((group) => ({
+              id: group.id,
+              name: group.name,
+              type: group.type
+            }))
+          });
+          return;
+        }
+        const root = resolution.groups[0];
         const depth = Math.max(1, Math.min(2, Number(url.searchParams.get("depth") ?? 1) || 1));
         const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 40) || 40));
 
-        const nodes = new Map([[root.id, { ...root, distance: 0 }]]);
+        const distances = new Map([[root.id, 0]]);
         let frontier = [root.id];
-        for (let d = 1; d <= depth && nodes.size < limit; d++) {
+        for (let d = 1; d <= depth && distances.size < limit; d++) {
           const next = [];
           for (const id of frontier) {
             for (const rel of service.getRelations?.(id) ?? []) {
               const other = rel.from_entity === id ? rel.to_entity : rel.from_entity;
-              if (nodes.has(other) || nodes.size >= limit) continue;
-              const entity = service.findEntityById?.(other);
-              if (!entity) continue;
-              nodes.set(other, { ...entity, distance: d });
+              if (!other || distances.has(other) || distances.size >= limit) continue;
+              distances.set(other, d);
               next.push(other);
             }
           }
           frontier = next;
         }
+        // Batch the group lookup: the old per-neighbor findEntityGroup call
+        // rebuilt a whole identity snapshot for every node.
+        const groupList = service.groupsForEntityIds?.([...distances.keys()]) ?? [];
+        const groupById = new Map(groupList.map((group) => [group.id, group]));
+        const nodes = new Map();
+        for (const [id, distance] of distances) {
+          const group = groupById.get(id);
+          if (group) nodes.set(id, { ...group, distance });
+        }
 
-        // Collect every relation whose endpoints both survived the limit cut;
-        // each edge is visited twice (once per endpoint) so dedupe by id.
+        // Collect every relation whose canonical endpoints both survived the
+        // limit cut; each canonicalized edge is already deduped by
+        // (from, to, relation_type) with its original edge ids preserved.
         const edgeMap = new Map();
         for (const id of nodes.keys()) {
           for (const rel of service.getRelations?.(id) ?? []) {
             if (nodes.has(rel.from_entity) && nodes.has(rel.to_entity)) {
-              edgeMap.set(rel.id, rel);
+              edgeMap.set(`${rel.from_entity}|${rel.to_entity}|${rel.relation_type}`, rel);
             }
           }
         }
 
         sendJson(res, 200, {
-          root: { id: root.id, name: root.name, type: root.type ?? null, mention_count: root.mention_count ?? 1 },
+          root: {
+            id: root.id,
+            name: root.name,
+            type: root.type ?? null,
+            mention_count: root.mention_count ?? 1
+          },
           nodes: [...nodes.values()].map((n) => ({
             id: n.id,
             name: n.name,
@@ -1387,18 +1453,35 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
       try {
         const url = new URL(req.url, "http://localhost");
         const name = (url.searchParams.get("entity") ?? "").trim();
-        if (!name) {
+        const id = (url.searchParams.get("id") ?? "").trim();
+        const lookup = id || name;
+        if (!lookup) {
           sendJson(res, 400, { error: "missing-entity" });
           return;
         }
-        const entity = service.findEntityByName?.(name);
-        if (!entity) {
+        const resolution = service.findEntityGroupPublic?.(lookup) ?? { groups: [] };
+        if (!resolution.groups.length) {
           sendJson(res, 404, { error: "entity-not-found" });
           return;
         }
-        const attrs = service.getCurrentAttrs?.(entity.id) ?? [];
+        if (resolution.groups.length > 1) {
+          sendJson(res, 409, {
+            error: "ambiguous-entity",
+            candidates: resolution.groups.map((group) => ({
+              id: group.id, name: group.name, type: group.type
+            }))
+          });
+          return;
+        }
+        const group = resolution.groups[0];
+        const attrs = service.getCurrentAttrs?.(group.id) ?? [];
         sendJson(res, 200, {
-          entity: { id: entity.id, name: entity.name, type: entity.type ?? null, mention_count: entity.mention_count ?? 1 },
+          entity: {
+            id: group.id,
+            name: group.name,
+            type: group.type ?? null,
+            mention_count: group.mention_count ?? 1
+          },
           attrs: Array.isArray(attrs)
             ? attrs.map((a) => ({
                 key: a.attr_key,
@@ -1426,8 +1509,37 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
       try {
         const url = new URL(req.url, "http://localhost");
         const limit = Math.min(1000, Math.max(1, Number(url.searchParams.get("limit") ?? 500) || 500));
-        const entities = service.listEntities?.({ limit }) ?? [];
-        sendJson(res, 200, { entities, total: entities.length });
+        const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+        const query = (url.searchParams.get("q") ?? "").trim().slice(0, 200);
+        const page = service.listEntitiesPage?.({ limit, offset, query, publicOnly: true }) ?? {
+          items: service.listEntities?.({ limit }) ?? [],
+          total: service.listEntities?.({ limit: 1000000 })?.length ?? 0,
+          offset,
+          limit,
+          has_more: false,
+          query
+        };
+        // Legacy open shape only. Aliases, external IDs, member UUIDs and
+        // evidence are private and served by authenticated identity routes.
+        const entities = page.items.map((group) => ({
+          id: group.id,
+          name: group.name,
+          type: group.type ?? null,
+          first_seen: group.first_seen,
+          last_seen: group.last_seen,
+          mention_count: group.mention_count ?? 1,
+          canonical_memory_id: group.canonical_memory_id ?? null
+        }));
+        // `total` is the true canonical count (or filtered count), not the page
+        // length; offset/has_more make the whole graph reachable in bounded pages.
+        sendJson(res, 200, {
+          entities,
+          total: page.total,
+          offset: page.offset,
+          limit: page.limit,
+          has_more: page.has_more,
+          query: page.query ?? ""
+        });
       } catch {
         sendJson(res, 500, { error: "internal" });
       }
@@ -1450,9 +1562,407 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
           sendJson(res, 400, { error: "missing-memory-id" });
           return;
         }
-        sendJson(res, 200, { entities: service.entitiesForMemory?.(memoryId) ?? [] });
+        // Legacy open shape: a canonicalized name/type pair only. UUIDs,
+        // aliases and provenance belong to authenticated identity routes.
+        const entities = (service.entitiesForMemory?.(memoryId) ?? []).map((entity) => ({
+          name: entity.name,
+          type: entity.type ?? null
+        }));
+        sendJson(res, 200, { entities });
       } catch {
         sendJson(res, 500, { error: "internal" });
+      }
+    }
+  });
+
+  // --- Amadeus identity: aliases / typed external ids / reversible merges ---
+  // These routes expose private identifiers/evidence, so they are token-gated
+  // *and* fail closed when the server has no apiToken configured.
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/aliases",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        if (req.method === "GET" || req.method === "HEAD") {
+          const url = new URL(req.url, "http://localhost");
+          const entityId = (url.searchParams.get("entity_id") ?? url.searchParams.get("entity") ?? "").trim();
+          if (!entityId) return sendJson(res, 400, { error: "missing-entity" });
+          const group = service.findEntityGroup?.(entityId)?.groups?.[0] ?? null;
+          if (!group) return sendJson(res, 404, { error: "entity-not-found" });
+          return sendJson(res, 200, {
+            entity: { id: group.id, name: group.name, type: group.type, member_ids: group.member_ids },
+            aliases: service.identity?.listAliases({
+              entity_id: group.id,
+              include_inactive: url.searchParams.get("include_inactive") === "1"
+            }) ?? []
+          });
+        }
+        if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+        return readBody(req, res).then((text) => {
+          if (text === null) return undefined;
+          const body = parseBody(text);
+          const action = String(body.action ?? "create");
+          const actor = body.actor ?? "panel";
+          let result;
+          if (action === "create") {
+            result = service.identity.createAlias({
+              entity_id: body.entity_id,
+              alias: body.alias,
+              provenance: body.provenance ?? "manual",
+              confidence: body.confidence ?? 0.8,
+              confirmed: body.confirmed === true,
+              actor,
+              evidence: body.evidence
+            });
+          } else if (action === "confirm") {
+            result = service.identity.confirmAlias({ id: body.id, actor, evidence: body.evidence });
+          } else if (action === "update" || action === "edit") {
+            result = service.identity.updateAlias({ id: body.id, alias: body.alias, actor, evidence: body.evidence });
+          } else if (action === "unlink" || action === "delete") {
+            result = service.identity.unlinkAlias({ id: body.id, actor, evidence: body.evidence });
+          } else {
+            return sendJson(res, 400, { error: "invalid-action" });
+          }
+          return sendJson(res, 200, { alias: result });
+        }).catch((error) => sendRouteError(res, error));
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/external-ids",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        if (req.method === "GET" || req.method === "HEAD") {
+          const url = new URL(req.url, "http://localhost");
+          const entityId = (url.searchParams.get("entity_id") ?? url.searchParams.get("entity") ?? "").trim();
+          if (!entityId) return sendJson(res, 400, { error: "missing-entity" });
+          const group = service.findEntityGroup?.(entityId)?.groups?.[0] ?? null;
+          if (!group) return sendJson(res, 404, { error: "entity-not-found" });
+          return sendJson(res, 200, {
+            entity: { id: group.id, name: group.name, type: group.type, member_ids: group.member_ids },
+            external_ids: service.identity?.listExternalIds({
+              entity_id: group.id,
+              include_revoked: url.searchParams.get("include_revoked") === "1"
+            }) ?? []
+          });
+        }
+        if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+        return readBody(req, res).then((text) => {
+          if (text === null) return undefined;
+          const body = parseBody(text);
+          const action = String(body.action ?? "add");
+          const actor = body.actor ?? "panel";
+          if (action === "unlink" || action === "delete") {
+            return sendJson(res, 200, {
+              external_id: service.identity.unlinkExternalId({ id: body.id, actor, evidence: body.evidence })
+            });
+          }
+          if (action !== "add" && action !== "confirm") {
+            return sendJson(res, 400, { error: "invalid-action" });
+          }
+          return sendJson(res, 200, {
+            external_id: service.identity.linkExternalId({
+              entity_id: body.entity_id,
+              platform: body.platform,
+              entity_type: body.entity_type,
+              external_id: body.external_id,
+              source: body.source ?? "manual",
+              confidence: body.confidence ?? 1,
+              actor,
+              evidence: body.evidence
+            })
+          });
+        }).catch((error) => sendRouteError(res, error));
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/candidates",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        const url = new URL(req.url, "http://localhost");
+        const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") ?? 50) || 50));
+        const minScore = Math.max(0, Math.min(1, Number(url.searchParams.get("min_score") ?? 0.72) || 0.72));
+        const candidates = service.identity?.findDuplicateCandidates({ limit, minScore }) ?? [];
+        sendJson(res, 200, {
+          candidates,
+          requires_confirmation: true,
+          note: "Name/alias similarity only proposes; it never merges or rewrites data. Run merge-preview, then merge with the returned report_id."
+        });
+      } catch (error) {
+        sendRouteError(res, error);
+      }
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/merge-preview",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+      return readBody(req, res).then((text) => {
+        if (text === null) return undefined;
+        try {
+          const body = parseBody(text);
+          sendJson(res, 200, service.identity.dryRunMerge({
+            from_entity: body.from_entity,
+            to_entity: body.to_entity,
+            actor: body.actor ?? "panel",
+            evidence: body.evidence
+          }));
+        } catch (error) {
+          sendRouteError(res, error);
+        }
+        return undefined;
+      });
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/merge",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+      return readBody(req, res).then((text) => {
+        if (text === null) return undefined;
+        try {
+          const body = parseBody(text);
+          sendJson(res, 200, service.identity.confirmMerge({
+            report_id: body.report_id,
+            actor: body.actor ?? "panel",
+            evidence: body.evidence
+          }));
+        } catch (error) {
+          sendRouteError(res, error);
+        }
+        return undefined;
+      });
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/merge-undo",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+      return readBody(req, res).then((text) => {
+        if (text === null) return undefined;
+        try {
+          const body = parseBody(text);
+          sendJson(res, 200, service.identity.undoMerge({
+            link_id: body.link_id,
+            report_id: body.report_id,
+            actor: body.actor ?? "panel",
+            evidence: body.evidence
+          }));
+        } catch (error) {
+          sendRouteError(res, error);
+        }
+        return undefined;
+      });
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/links",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        const url = new URL(req.url, "http://localhost");
+        const includeInactive = url.searchParams.get("include_inactive") === "1";
+        const links = service.identity?.listLinks({
+          include_inactive: includeInactive,
+          limit: Math.min(1000, Math.max(1, Number(url.searchParams.get("limit") ?? 200) || 200))
+        }) ?? [];
+        sendJson(res, 200, {
+          links: links.map((link) => {
+            const entity = service.findEntityById?.(link.entity_id) ?? null;
+            const canonical = service.findEntityById?.(link.canonical_id) ?? null;
+            return {
+              ...link,
+              entity_name: entity?.name ?? link.entity_id,
+              canonical_name: canonical?.name ?? link.canonical_id
+            };
+          })
+        });
+      } catch {
+        sendJson(res, 500, { error: "internal" });
+      }
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/history",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        const url = new URL(req.url, "http://localhost");
+        const entityId = (url.searchParams.get("entity_id") ?? url.searchParams.get("entity") ?? "").trim();
+        if (!entityId) return sendJson(res, 400, { error: "missing-entity" });
+        const group = service.findEntityGroup?.(entityId)?.groups?.[0] ?? null;
+        if (!group) return sendJson(res, 404, { error: "entity-not-found" });
+        return sendJson(res, 200, service.identity.history({ entity_id: group.id }));
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/identity/entity-detail",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        const url = new URL(req.url, "http://localhost");
+        const lookup = (url.searchParams.get("id") ?? url.searchParams.get("entity_id") ?? url.searchParams.get("entity") ?? "").trim();
+        if (!lookup) return sendJson(res, 400, { error: "missing-entity" });
+        const resolution = service.findEntityGroup?.(lookup) ?? { groups: [] };
+        if (!resolution.groups.length) return sendJson(res, 404, { error: "entity-not-found" });
+        if (resolution.groups.length > 1) {
+          return sendJson(res, 409, {
+            error: "ambiguous-entity",
+            candidates: resolution.groups.map((group) => ({ id: group.id, name: group.name, type: group.type }))
+          });
+        }
+        const group = resolution.groups[0];
+        return sendJson(res, 200, {
+          entity: {
+            id: group.id,
+            canonical_id: group.id,
+            name: group.name,
+            type: group.type ?? null,
+            mention_count: group.mention_count ?? 1,
+            merged: group.merged,
+            member_ids: group.member_ids,
+            members: group.members,
+            aliases: group.aliases,
+            external_ids: group.external_ids
+          },
+          attrs: service.getCurrentAttrs?.(group.id) ?? [],
+          relations: service.getRelations?.(group.id) ?? []
+        });
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
+  });
+
+  // --- Amadeus memory preferences (tag + canonical entity weights) ----------
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/preferences",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        if (req.method === "GET" || req.method === "HEAD") {
+          return sendJson(res, 200, service.getPreferenceState());
+        }
+        if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+        return readBody(req, res).then((text) => {
+          if (text === null) return undefined;
+          try {
+            const body = parseBody(text);
+            const target = String(body.target ?? "");
+            const action = String(body.action ?? "set");
+            const actor = body.actor ?? "panel";
+            if (target === "tag") {
+              if (action === "delete" || action === "unlink") {
+                return sendJson(res, 200, {
+                  deleted: service.deleteTagWeight({ tag: body.tag, actor }),
+                  state: service.getPreferenceState()
+                });
+              }
+              service.setTagWeight({ tag: body.tag, weight: body.weight, actor });
+            } else if (target === "entity") {
+              if (action === "delete" || action === "unlink") {
+                return sendJson(res, 200, {
+                  deleted: service.deleteEntityWeight({ entity_id: body.entity_id, actor }),
+                  state: service.getPreferenceState()
+                });
+              }
+              service.setEntityWeight({ entity_id: body.entity_id, weight: body.weight, actor });
+            } else {
+              return sendJson(res, 400, { error: "invalid-target" });
+            }
+            return sendJson(res, 200, service.getPreferenceState());
+          } catch (error) {
+            return sendRouteError(res, error);
+          }
+        });
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
+  });
+
+  // --- Trusted own-experience intake (Life) ---------------------------------
+  // Write-only, authenticated, explicit-scope. This is the only path allowed to
+  // derive event:* tags; it never accepts a planned/unconfirmed action as
+  // completed. Reuses the normal save/dedupe/importance/archive/forget path.
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/intake",
+    policy: "token",
+    handler(req, res) {
+      if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
+      // Trusted intake is a write surface for Life: unlike legacy panel writes,
+      // it refuses to run fail-open when no apiToken is configured.
+      if (!requireConfiguredToken(res)) return;
+      if (config?.trustedIntakeEnabled !== true) return sendJson(res, 409, { error: "disabled" });
+      return readBody(req, res).then((text) => {
+        if (text === null) return undefined;
+        try {
+          const body = parseBody(text);
+          sendJson(res, 200, service.submitTrustedMemory(body));
+        } catch (error) {
+          if (error?.name === "IntakeError" || typeof error?.code === "string") sendRouteError(res, error);
+          else sendJson(res, 500, { error: "internal" });
+        }
+        return undefined;
+      });
+    }
+  });
+
+  register({
+    kind: "exact",
+    path: "/api/dsh-mneme/intake/provenance",
+    policy: "token",
+    handler(req, res) {
+      if (!requireConfiguredToken(res)) return;
+      try {
+        const url = new URL(req.url, "http://localhost");
+        const memoryId = (url.searchParams.get("memoryId") ?? "").trim();
+        if (!memoryId) return sendJson(res, 400, { error: "missing-memory-id" });
+        return sendJson(res, 200, { provenance: service.trustedProvenanceFor(memoryId) });
+      } catch {
+        return sendJson(res, 500, { error: "internal" });
       }
     }
   });
