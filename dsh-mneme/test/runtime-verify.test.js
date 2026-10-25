@@ -1,0 +1,319 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_PROBE_TEXTS, defaultEngine, resolveModelCacheDir, verifyFunctional, verifyPayload } from "../src/runtime/verify.js";
+import { TRANSFORMERS_ENTRY, defaultModelCacheDir } from "../src/runtime/layout.js";
+import { pathToFileURL } from "node:url";
+
+// 验证三件套（issue #131 / PR-A）。重点不是「能跑通」，而是「坏的那几种能被抓住」：
+// 结构对但原生二进制与本机不匹配、返回非归一化向量、向量退化、加载直接抛——
+// 这些都必须变成一条可读的失败结论，而不是让调用方拿到一个假的 ok。
+
+/** 造一个结构上合法的 payload（只有形状，没有真东西）。 */
+function makePayload({ platform = "win32", arch = "x64", withEntry = true } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "mneme-verify-"));
+  const write = (rel, body) => {
+    const full = join(dir, rel);
+    mkdirSync(join(full, ".."), { recursive: true });
+    writeFileSync(full, body);
+  };
+  for (const name of ["@huggingface/transformers", "onnxruntime-node", "sharp"]) {
+    write(join("node_modules", name, "package.json"), JSON.stringify({ name, version: name === "@huggingface/transformers" ? "4.2.0" : "1.0.0" }));
+  }
+  if (withEntry) write(TRANSFORMERS_ENTRY, "export const x = 1;\n");
+  mkdirSync(join(dir, "node_modules", "onnxruntime-node", "bin", "napi-v6", platform, arch), { recursive: true });
+  return dir;
+}
+
+/** 归一化的假向量：`rows` 行，每行 dim 维，方向由 seed 决定。 */
+function fakeRows(rows, dim, seed = 0) {
+  return Array.from({ length: rows }, (_, r) => {
+    const v = Array.from({ length: dim }, (_, i) => Math.sin((i + 1) * (r + 1 + seed)));
+    const length = Math.hypot(...v);
+    return v.map((x) => x / length);
+  });
+}
+
+/** 注入一个「什么都能返回」的 engine。 */
+function engineReturning(value) {
+  return async () => async () => value;
+}
+
+test("功能验证：正常的向量通过，并报出维度与耗时", async () => {
+  const result = await verifyFunctional("/whatever", { engine: engineReturning(fakeRows(2, 512)) });
+  assert.equal(result.ok, true, result.reason);
+  assert.equal(result.dim, 512);
+  assert.equal(result.rows, 2);
+  assert.ok(result.elapsedMs >= 0);
+});
+
+test("功能验证：行数不符要报出来（而不是只取第一行当作通过）", async () => {
+  const result = await verifyFunctional("/whatever", { engine: engineReturning(fakeRows(1, 512)) });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /返回行数不符/);
+});
+
+test("功能验证：非归一化向量要报出来（说明 normalize 没生效）", async () => {
+  const rows = fakeRows(2, 8).map((row) => row.map((x) => x * 3));
+  const result = await verifyFunctional("/whatever", { engine: engineReturning(rows) });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /不是 L2 归一化/);
+});
+
+test("功能验证：向量退化成同一方向要报出来", async () => {
+  const one = fakeRows(1, 16)[0];
+  const result = await verifyFunctional("/whatever", { engine: engineReturning([one, one]) });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /嵌入退化/);
+});
+
+test("功能验证：加载失败与推理失败分别给出不同措辞", async () => {
+  const loadFail = await verifyFunctional("/whatever", {
+    engine: async () => {
+      throw new Error("Cannot find package 'onnxruntime-node'");
+    }
+  });
+  assert.equal(loadFail.ok, false);
+  assert.match(loadFail.reason, /加载运行时失败/);
+  assert.match(loadFail.reason, /onnxruntime-node/);
+
+  const embedFail = await verifyFunctional("/whatever", {
+    engine: async () => async () => {
+      throw new Error("boom");
+    }
+  });
+  assert.equal(embedFail.ok, false);
+  assert.match(embedFail.reason, /推理失败/);
+});
+
+test("功能验证：返回空向量要报出来，而不是当成 dim=0 通过", async () => {
+  const result = await verifyFunctional("/whatever", { engine: engineReturning([[], []]) });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /空向量/);
+});
+
+test("功能验证：cacheDir 与 model 都透传给 engine（面板必须验配置里那一份，不是探针默认值）", async () => {
+  // 锁的是调用链上的接线，不是解析规则本身：tools.js 的 verify 分支把 config 的
+  // embedModelCacheDir / localEmbedModel 交给 verifyPayload，中间任何一段丢参数，
+  // 验的都变成「另一份模型」，结论就不再是用户实际使用情况的证据（issue #387）。
+  let seen = null;
+  const result = await verifyFunctional("/whatever", {
+    engine: async (entryUrl, opts) => {
+      seen = opts;
+      return async () => fakeRows(2, 8);
+    },
+    cacheDir: "",
+    model: "Xenova/bge-m3"
+  });
+  assert.equal(result.ok, true, result.reason);
+  assert.equal(seen.model, "Xenova/bge-m3");
+  assert.equal(seen.cacheDir, "");
+});
+
+test("三件套：结构不过就不再做功能验证（省掉一次无谓的加载）", async () => {
+  const dir = makePayload({ withEntry: false });
+  let engineCalled = false;
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: async () => {
+      engineCalled = true;
+      return async () => fakeRows(2, 8);
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.functional.ok, false);
+  assert.match(result.functional.reason, /跳过功能验证/);
+  assert.equal(engineCalled, false);
+});
+
+test("三件套：结构 + 功能都过、完整性缺失时如实标 unverified 且不判定失败", async () => {
+  const dir = makePayload();
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8))
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.integrity.status, "unverified");
+  assert.equal(result.integrity.ok, true);
+  assert.equal(result.version, "4.2.0");
+});
+
+test("三件套：--strict 场景下哈希不匹配即整体不通过", async () => {
+  const dir = makePayload();
+  const matched = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8)),
+    integrity: { status: "sha512-matched", detail: "tarball 比对通过" }
+  });
+  assert.equal(matched.ok, true);
+  assert.equal(matched.integrity.status, "sha512-matched");
+
+  const mismatch = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8)),
+    integrity: { status: "sha512-mismatch", detail: "与钉死的哈希不一致" }
+  });
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.structural.ok, true, "结构仍然是对的，失败来自完整性");
+  assert.equal(mismatch.functional.ok, true);
+});
+
+test("三件套：清单里记下的来源完整性被认账，不因状态词不同就判失败（issue #268）", async () => {
+  const dir = makePayload();
+  // download.js 在落盘前逐个 tarball 比对过 sha512，把这个结论写进清单的形状与词就是下面这样。
+  writeFileSync(
+    join(dir, "mneme-runtime.json"),
+    JSON.stringify({
+      procedure: "downloaded",
+      version: "4.2.0",
+      integrity: { status: "verified", checked: 3, detail: "每个 tarball 的 sha512 与 runtime-manifest.json 一致" }
+    })
+  );
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8))
+  });
+  assert.equal(result.integrity.status, "verified");
+  assert.equal(result.integrity.ok, true, "下载档记下的 verified 是可用结论，不是失败");
+  assert.match(result.integrity.detail, /每个 tarball/);
+  assert.equal(result.ok, true);
+});
+
+test("三件套：清单里记下的不一致照样判失败（别把「读到一份结论」变成「一律放过」）", async () => {
+  const dir = makePayload();
+  writeFileSync(
+    join(dir, "mneme-runtime.json"),
+    JSON.stringify({ procedure: "downloaded", integrity: { status: "sha512-mismatch", detail: "与钉死的哈希不一致" } })
+  );
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8))
+  });
+  assert.equal(result.integrity.ok, false);
+  assert.equal(result.integrity.status, "sha512-mismatch");
+  assert.equal(result.ok, false);
+});
+
+test("三件套：清单里的 integrity 形状非法时 fail-closed，不读成「没验过」（#269 评审）", async () => {
+  const dir = makePayload();
+  writeFileSync(join(dir, "mneme-runtime.json"), JSON.stringify({ procedure: "downloaded", integrity: false }));
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8))
+  });
+  assert.equal(result.integrity.status, "malformed");
+  assert.equal(result.integrity.ok, false, "形状错误不是「验过了」，也不能当成「没记录」放过");
+  assert.equal(result.ok, false);
+  assert.match(result.integrity.detail, /形状非法/);
+});
+
+test("三件套：显式报 unverified 与「没传」同判，不因为说出口就变失败", async () => {
+  const dir = makePayload();
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning(fakeRows(2, 8)),
+    integrity: { status: "unverified" }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.integrity.status, "unverified");
+  assert.match(result.integrity.detail, /没有可比对的原始产物/);
+});
+
+test("假通过防线 ①：行不是数组时返回失败，而不是抛异常", async () => {
+  // 契约是「任何失败都返回结果对象，不抛」；非数组行会让 .length/.some 直接抛。
+  const dir = makePayload();
+  const result = await verifyPayload(dir, {
+    platform: "win32",
+    arch: "x64",
+    engine: engineReturning([null, null])
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.functional.reason, /不是数组/);
+});
+
+test("假通过防线 ②：非有限数值必须判失败（NaN 的比较恒为 false，会静默通过）", async () => {
+  const dir = makePayload();
+  for (const bad of [[NaN, 0], [Infinity, 0], ["0.5", "0.5"]]) {
+    const result = await verifyPayload(dir, {
+      platform: "win32",
+      arch: "x64",
+      engine: engineReturning([bad, [0, 0]])
+    });
+    assert.equal(result.ok, false, `含 ${JSON.stringify(bad)} 的向量不该被判通过`);
+    assert.match(result.functional.reason, /非有限数值/);
+  }
+});
+
+test("默认 engine 是导出的函数，且探针文本固定（改它等于改验收标准）", () => {
+  assert.equal(typeof defaultEngine, "function");
+  assert.deepEqual(DEFAULT_PROBE_TEXTS, ["猫咪喜欢晒太阳", "the quick brown fox"]);
+});
+
+// ── defaultEngine：注入假 transformers 模块，钉住「真 import + 行切分」的契约 ──
+
+/** 造一个假 transformers 入口：export env + pipeline，把收到的参数记到 globalThis。 */
+function fakeEntry(dims) {
+  const dir = mkdtempSync(join(tmpdir(), "mneme-engine-"));
+  const entry = join(dir, "entry.mjs");
+  writeFileSync(entry, `
+export const env = {};
+export async function pipeline(kind, model, opts) {
+  globalThis.__engineSeen = { kind, model, opts, cacheDir: env.cacheDir, remote: env.allowRemoteModels };
+  const d = ${JSON.stringify(dims)};
+  const data = Float32Array.from({ length: d[0] * d[1] }, (_, i) => i + 1);
+  return async () => ({ dims: d, data });
+}
+`);
+  return pathToFileURL(entry).href;
+}
+
+test("defaultEngine: 假 transformers 入口可驱动嵌入，并按输出维度做行切分；显式 cacheDir 按原样用", async () => {
+  const entry = fakeEntry([2, 4]);
+  const embed = await defaultEngine(entry, { cacheDir: "/tmp/mneme-cache" });
+  const rows = await embed(["猫咪", "fox"]);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], [1, 2, 3, 4]);
+  assert.deepEqual(rows[1], [5, 6, 7, 8]);
+  // 缓存目录与离线开关必须落到 env：验证过程绝不能偷偷下载模型。
+  assert.equal(globalThis.__engineSeen.cacheDir, "/tmp/mneme-cache");
+  assert.equal(globalThis.__engineSeen.opts.cache_dir, "/tmp/mneme-cache", "显式配的目录不许被默认值顶掉");
+  assert.equal(globalThis.__engineSeen.remote, false);
+  assert.equal(globalThis.__engineSeen.kind, "feature-extraction");
+});
+
+test("defaultEngine: cacheDir 省略或为空串时落到用户级默认目录（issue #387）", async () => {
+  // #387 的现场：embedModelCacheDir 的 schema 默认值就是空串，而 transformers.js 收到
+  // 空/undefined 等于「不设置 env.cacheDir」——它转去找包内相对路径，于是真实嵌入用的是
+  // 用户目录那份模型、面板 verify 却在包内找，报出 functional: false 的假失败。
+  // 空值必须在这里补成与嵌入侧同一个目录，「验证用哪份模型」才不再取决于调用方有没有填配置。
+  for (const given of [undefined, "", "   "]) {
+    const entry = fakeEntry([2, 4]);
+    await defaultEngine(entry, { cacheDir: given });
+    const expected = defaultModelCacheDir();
+    assert.equal(globalThis.__engineSeen.cacheDir, expected, `env.cacheDir 没落到默认目录（cacheDir=${JSON.stringify(given)}）`);
+    assert.equal(globalThis.__engineSeen.opts.cache_dir, expected, `pipeline 也没拿到默认目录（cacheDir=${JSON.stringify(given)}）`);
+  }
+});
+
+test("resolveModelCacheDir：只有空值才补默认", () => {
+  assert.equal(resolveModelCacheDir("/custom/models"), "/custom/models");
+  assert.equal(resolveModelCacheDir("  /custom/models  "), "/custom/models");
+  assert.equal(resolveModelCacheDir(undefined), defaultModelCacheDir());
+  assert.equal(resolveModelCacheDir(null), defaultModelCacheDir());
+});
+
+test("defaultEngine: 输出宽度为 0 时明确抛错（防止调用方死循环）", async () => {
+  const entry = fakeEntry([2, 0]);
+  const embed = await defaultEngine(entry, {});
+  await assert.rejects(() => embed(["x"]), /维度不可用/);
+});
