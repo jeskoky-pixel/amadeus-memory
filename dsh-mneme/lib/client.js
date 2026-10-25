@@ -4635,7 +4635,8 @@ window.__ModuleLoader__.load({
     ];
     const AM_FEATURE_KEYS = [
       "autoInject", "autoSummarize", "autoDream", "sleepModeEnabled",
-      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled"
+      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled",
+      "sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"
     ];
     // Keep this list aligned with store.js TYPES minus document (document rows
     // must be minted by registerDocument, not by the ordinary editor).
@@ -4875,7 +4876,10 @@ window.__ModuleLoader__.load({
             importance: data.importance, tags: (data.tags || []).join(", "),
             updated_at: data.updated_at, protected: data.protected === true,
             core_note: data.core_note || "", scene_scope: data.scene_scope || null,
-            protected_at: data.protected_at || null
+            protected_at: data.protected_at || null,
+            original: { type: data.type, title: data.title, content: data.content,
+              importance: data.importance, tags: data.tags || [], protected: data.protected === true,
+              core_note: data.core_note || "" }
           });
         } catch (e) {
           setMemError(String(e.message || e));
@@ -4888,11 +4892,25 @@ window.__ModuleLoader__.load({
         if (!String(memEditor.content || "").trim()) { setMemError(t("memory.am.memory.contentRequired")); return; }
         setMemBusy("save");
         setMemError("");
+        let savedContent = false;
+        let savedId = memEditor.id;
+        let successNotice = t("memory.am.memory.saved");
         try {
           const tags = String(memEditor.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+          const original = memEditor.original;
+          const fieldsChanged = !original || original.type !== memEditor.type ||
+            original.title !== memEditor.title || original.content !== memEditor.content ||
+            original.importance !== Number(memEditor.importance) ||
+            JSON.stringify(original.tags) !== JSON.stringify(tags);
+          const protectionChanged = (original?.protected || false) !== (memEditor.protected === true);
+          const noteChanged = (original?.core_note || "") !== (memEditor.core_note || "");
+          if (memEditor.id && !fieldsChanged && !protectionChanged && !noteChanged) {
+            setMemEditor(null);
+            return;
+          }
           let payload;
           if (memEditor.id) {
-            payload = await adminJson("/memory/update", {
+            payload = fieldsChanged ? await adminJson("/memory/update", {
               method: "POST",
               body: JSON.stringify({
                 id: memEditor.id,
@@ -4903,8 +4921,8 @@ window.__ModuleLoader__.load({
                 importance: Number(memEditor.importance),
                 tags
               })
-            });
-            setMemNotice(t("memory.am.memory.saved"));
+            }) : { memory: { id: memEditor.id, updated_at: memEditor.updated_at } };
+            savedContent = fieldsChanged;
           } else {
             payload = await adminJson("/memory", {
               method: "POST",
@@ -4913,38 +4931,48 @@ window.__ModuleLoader__.load({
                 importance: Number(memEditor.importance), tags
               })
             });
-            setMemNotice(payload.memory?.archived
+            successNotice = payload.memory?.archived
               ? t("memory.am.memory.autoArchived")
-              : payload.action === "merged" ? t("memory.am.memory.merged") : t("memory.am.memory.created"));
+              : payload.action === "merged" ? t("memory.am.memory.merged") : t("memory.am.memory.created");
+            savedContent = true;
           }
           const targetId = payload.memory?.id || memEditor.id;
+          savedId = targetId;
           const wantProtected = memEditor.protected === true;
-          // Core management is an authenticated owner-side action; it never
-          // accepts a model-supplied privilege. Promote/demote then write note.
           if (targetId) {
-            if (wantProtected) {
+            if (wantProtected && protectionChanged) {
               await adminJson("/core", {
                 method: "POST",
                 body: JSON.stringify({ action: "protect", id: targetId, note: memEditor.core_note || "" })
               });
-            } else if (memEditor.id) {
+            } else if (!wantProtected && protectionChanged) {
               await adminJson("/core", {
                 method: "POST",
                 body: JSON.stringify({ action: "unprotect", id: targetId })
               });
             }
-            if (wantProtected && memEditor.id) {
+            if (wantProtected && !protectionChanged && noteChanged) {
               await adminJson("/core", {
                 method: "POST",
                 body: JSON.stringify({ action: "note", id: targetId, note: memEditor.core_note || "" })
               });
             }
           }
+          setMemNotice(successNotice);
           setMemEditor(null);
           await loadMemories(memQuery, memArchived, memEditor.id ? memOffset : 0);
           await load();
         } catch (e) {
-          setMemError(e.message === "memory changed since it was opened"
+          if (savedContent) {
+            // A later Core request may fail after the content write. Keep the
+            // editor open with the new CAS token so the owner can retry safely.
+            const data = savedId ? await adminJson(`/memory?id=${encodeURIComponent(savedId)}`).catch(() => null) : null;
+            if (data) setMemEditor((current) => current && ({ ...current, updated_at: data.updated_at,
+              id: data.id,
+              original: { ...(current.original || {}), type: data.type, title: data.title,
+                content: data.content, importance: data.importance, tags: data.tags || [] } }));
+            setMemError(`${t("memory.am.memory.saved")} · ${String(e.message || e)}`);
+          } else setMemError(e.message === "memory changed since it was opened"
             ? t("memory.am.memory.stale") : String(e.message || e));
         } finally { setMemBusy(""); }
       };

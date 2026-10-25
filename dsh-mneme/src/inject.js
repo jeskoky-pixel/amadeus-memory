@@ -226,24 +226,37 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     maxRounds: config.hotMemoryRounds ?? 5,
     maxTokens: config.hotMemoryMaxTokens ?? 2000
   });
-  // Strict QQ hot-memory scene latch: same-scene session hot memory remains
-  // available; once a scene change is observed, older rounds are ambiguous and
-  // the hot block stays disabled for the rest of this injector/session.
-  let hotSceneId = null;
-  let hotSceneBlocked = false;
+  // Bind hot rounds to the real session, never to the injector instance. The
+  // object check resets an ID reused for a new session; LRU and idle cleanup
+  // bound state retained by a long-lived injector.
+  const hotScenes = new Map();
+  const hotScenesByObject = new WeakMap();
+  const HOT_SCENE_MAX = 500;
+  const HOT_SCENE_IDLE_MS = 6 * 60 * 60 * 1000;
 
   function renderHotContext(ctx) {
     if (config.hotMemoryEnabled === false) return "";
     if (scenePolicy().enabled && scenePolicy().strictQQ) {
       const scene = currentScene();
-      if (!scene) return "";
-      if (hotSceneId === null) {
-        hotSceneId = scene.sceneId;
-      } else if (hotSceneId !== scene.sceneId) {
-        hot.clear();
-        hotSceneBlocked = true;
+      const session = ctx?.agent?.session;
+      const id = session?.id;
+      if (!scene || id === undefined || id === null) return "";
+      const now = Date.now();
+      for (const [key, value] of hotScenes) {
+        if (now - value.seenAt > HOT_SCENE_IDLE_MS) hotScenes.delete(key);
       }
-      if (hotSceneBlocked) return "";
+      let binding = hotScenesByObject.get(session);
+      if (!binding) {
+        binding = { session, sceneId: scene.sceneId, blocked: false, seenAt: now };
+        hotScenesByObject.set(session, binding);
+      } else if (binding.sceneId !== scene.sceneId) {
+        binding.blocked = true;
+      }
+      binding.seenAt = now;
+      hotScenes.delete(id);
+      hotScenes.set(id, binding);
+      if (hotScenes.size > HOT_SCENE_MAX) hotScenes.delete(hotScenes.keys().next().value);
+      if (binding.blocked) return "";
     }
     const rounds = extractRounds(ctx, config.hotMemoryRounds ?? 5);
     if (!rounds.length) return "";
@@ -288,6 +301,12 @@ export function createInjector(ctx, service, settings, config, gate = null) {
       const full = m.graphHint === true
         ? STR.graphHintLine[language](m.type, title, content)
         : STR.entryLine[language](m.type, verified, title, content);
+      // The note is narrative, never a separately recalled fact. It inherits
+      // the selected row's scene visibility and consumes the same block budget.
+      const note = m.protected === true && m.core_note
+        ? `\n  [第一人称短记 / first-person narrative] ${injectMemory({ ...m, content: m.core_note }, maxContent)}`
+        : "";
+      const withNote = full + note;
       // 线索行引导语插在第一个线索行之前（保持块头语义：先声明「这些不是事实」）。
       if (m.graphHint === true && graphSeen === 1) {
         lines.push(STR.graphHintHeader[language]);
@@ -296,10 +315,10 @@ export function createInjector(ctx, service, settings, config, gate = null) {
         // pin 不扣块预算（上面那条设计注释的落地）：pin 一条就够击穿 MAX_BLOCK
         // （PINNED_CONTENT_MAX 2000 > MAX_BLOCK 1500），照扣会把 budget 压成负数，
         // 同一轮随后的普通候选全部退化成标题行——正是本议题要修的结构缺陷。
-        lines.push(full);
-      } else if (budget - full.length >= 0) {
-        lines.push(full);
-        budget -= full.length;
+        lines.push(withNote);
+      } else if (budget - withNote.length >= 0) {
+        lines.push(withNote);
+        budget -= withNote.length;
       } else {
         lines.push(`- [${m.type}] ${verified}${title}`);
       }

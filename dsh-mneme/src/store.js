@@ -1459,9 +1459,12 @@ export function createStore(path) {
       }
     }
     const now = nowIso();
+    const textChanged = (patch.title !== undefined && patch.title !== existing.title) ||
+      (patch.content !== undefined && patch.content !== existing.content);
+    const ownerCoreRevision = existing.protected && patch[INTERNAL_AUTHORITY] === true && textChanged;
     const embedding = patch.embedding !== undefined
       ? (Array.isArray(patch.embedding) && patch.embedding.length ? JSON.stringify(patch.embedding) : null)
-      : existing.embedding ?? null;
+      : textChanged ? null : existing.embedding ?? null;
     const epistemicStatus = resolveEpistemicStatus(existing, patch);
     const contentHistory = Array.isArray(patch.content_history)
       ? JSON.stringify(patch.content_history)
@@ -1482,7 +1485,7 @@ export function createStore(path) {
     let applied = false;
     runAtomically(() => {
       const result = db.prepare(
-        `UPDATE memories SET type=?, title=?, content=?, tags=?, importance=?, source=?, content_history=?, quality_score=?, embedding=?, epistemic_status=?, content_hash=?, updated_at=?
+        `UPDATE memories SET type=?, title=?, content=?, tags=?, importance=?, source=?, content_history=?, quality_score=?, embedding=?, embedding_model=CASE WHEN ? THEN NULL ELSE embedding_model END, epistemic_status=?, content_hash=?, updated_at=?
          WHERE id=? AND updated_at=?`
       ).run(
         type,
@@ -1494,6 +1497,7 @@ export function createStore(path) {
         contentHistory,
         qualityScore,
         embedding,
+        textChanged && patch.embedding === undefined ? 1 : 0,
         epistemicStatus,
         contentHash,
         now,
@@ -1501,6 +1505,13 @@ export function createStore(path) {
         expectedUpdatedAt
       );
       if (result.changes === 0) return; // CAS miss: a concurrent write won
+      if (ownerCoreRevision) {
+        // Previous extracted facts are no longer authoritative after an owner
+        // correction. Keep their audit rows, but remove them from live graph reads.
+        db.prepare("UPDATE entity_attrs SET valid_until = ? WHERE memory_id = ? AND valid_until IS NULL")
+          .run(now, id);
+        db.prepare("DELETE FROM entity_relations WHERE memory_id = ?").run(id);
+      }
       // Issue #202：同 update——CAS 命中即可能改写 embedding，失效缓存条目。
       embeddingCache.delete(id);
       // Only bump desired generation on a successful CAS — a miss writes nothing.

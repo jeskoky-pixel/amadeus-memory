@@ -303,7 +303,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
           embedder
             .embedSingle(text)
             .then((vec) => {
-              if (Array.isArray(vec) && vec.length) {
+              const current = store.getById(memory.id);
+              if (Array.isArray(vec) && vec.length && current?.title === memory.title && current?.content === memory.content) {
                 store.setEmbedding(memory.id, vec);
               }
             })
@@ -354,7 +355,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
         embedder
           .embedSingle(text)
           .then((vec) => {
-            if (Array.isArray(vec) && vec.length) {
+            const current = store.getById(memory.id);
+            if (Array.isArray(vec) && vec.length && current?.title === memory.title && current?.content === memory.content) {
               store.setEmbedding(memory.id, vec);
             }
           })
