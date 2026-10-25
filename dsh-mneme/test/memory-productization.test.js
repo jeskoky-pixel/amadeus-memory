@@ -47,12 +47,32 @@ test("native page Config Forms fields all exist in the published Config schema",
   assert.notEqual(Config.dict?.memoryDir?.meta?.volatile, true, "memoryDir stays a restart-only base field");
 });
 
-test("release and user documents exist for install, upgrade and rollback", () => {
+test("native page exposes ordinary-user management, safety metadata and narrow layout", () => {
+  const client = readFileSync(join(root, "lib", "client.js"), "utf8");
+  for (const marker of [
+    "memory.am.section.memories",
+    "memory.am.section.backup",
+    "memory.am.memory.deleteConfirm",
+    "memory.am.backup.restoreHint",
+    "memory.am.memory.autoArchived",
+    "memory.am.default",
+    "memory.am.range",
+    "memory.am.unit.items",
+    "memory.am.backup.ack",
+    "@media (max-width:560px)",
+    "memory.am.memory.stale"
+  ]) assert.ok(client.includes(marker), `missing product UI marker: ${marker}`);
+  assert.ok(client.includes('"memory.am.section.memories": "记忆管理"'), "Chinese label is required");
+  assert.ok(client.includes('"memory.am.section.memories": "Memory management"'), "English label is required");
+});
+
+test("release and user documents exist for install, upgrade, rollback and performance", () => {
   const docs = [
     "docs/INSTALL.md",
     "docs/USER_GUIDE.zh.md",
     "docs/BACKUP_ROLLBACK.md",
-    "docs/RELEASE_NOTES.md"
+    "docs/RELEASE_NOTES.md",
+    "docs/PERFORMANCE.md"
   ];
   for (const file of docs) {
     assert.equal(existsSync(join(root, file)), true, file);

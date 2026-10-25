@@ -9,4 +9,5 @@
 /memory/
 /profiles/
 /dist/
+/dsh-mneme/.test-tmp/
 node_modules/

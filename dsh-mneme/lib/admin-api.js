@@ -8,9 +8,15 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { FEATURE_FLAG_SPEC } from "./settings.js";
 import { TYPES } from "./store.js";
+import {
+  createBackup,
+  listBackups,
+  preflightBackup,
+  stageRestore
+} from "./backup.js";
 
 const PREFIX = "/api/amadeus-memory/admin";
-const MAX_BODY_BYTES = 64 * 1024;
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const NESTED_FLAG_PATHS = {
   "memoryQualityFilter.enabled": ["memoryQualityFilter", "enabled"],
   "llmAudit.enabled": ["llmAudit", "enabled"],
@@ -127,6 +133,88 @@ function maskKey(key) {
   if (!key) return "";
   if (key.length <= 8) return "***";
   return `${key.slice(0, 3)}***${key.slice(-4)}`;
+}
+
+function memorySummary(m, status = m) {
+  const content = String(m.content ?? "");
+  return {
+    id: m.id,
+    type: m.type,
+    title: m.title,
+    excerpt: content.length > 500 ? `${content.slice(0, 500)}…` : content,
+    content_length: content.length,
+    tags: Array.isArray(m.tags) ? m.tags.slice(0, 50) : [],
+    importance: m.importance,
+    source: m.source,
+    // service.toApiList intentionally omits archived/forgotten from the shared
+    // model DTO. The admin projection must take those statuses from the
+    // authoritative store row or Boolean(undefined) makes archived rows look
+    // active and removes the restore action from the settings page.
+    archived: Boolean(status?.archived),
+    forgotten: Boolean(status?.forgotten),
+    created_at: m.created_at,
+    updated_at: m.updated_at
+  };
+}
+
+function memoryFull(service, id) {
+  const row = service.getById(id);
+  if (!row) {
+    const error = new Error("memory not found");
+    error.status = 404;
+    throw error;
+  }
+  const dto = service.toApiList([row], { includePreference: false })[0];
+  return {
+    ...dto,
+    archived: Boolean(row.archived),
+    forgotten: Boolean(row.forgotten)
+  };
+}
+
+function memoryPatch(body) {
+  const patch = {};
+  if (body.title !== undefined) {
+    if (typeof body.title !== "string" || !body.title.trim()) {
+      const error = new Error("title must be a non-empty string"); error.status = 400; throw error;
+    }
+    patch.title = body.title.trim();
+  }
+  if (body.content !== undefined) {
+    if (typeof body.content !== "string" || !body.content.trim()) {
+      const error = new Error("content must be a non-empty string"); error.status = 400; throw error;
+    }
+    patch.content = body.content.trim();
+  }
+  if (body.importance !== undefined) {
+    if (!Number.isInteger(body.importance) || body.importance < 1 || body.importance > 5) {
+      const error = new Error("importance must be an integer from 1 to 5"); error.status = 400; throw error;
+    }
+    patch.importance = body.importance;
+  }
+  if (body.tags !== undefined) {
+    if (!Array.isArray(body.tags) || body.tags.length > 64 ||
+      !body.tags.every((tag) => typeof tag === "string" && tag.trim())) {
+      const error = new Error("tags must be an array of up to 64 non-empty strings"); error.status = 400; throw error;
+    }
+    patch.tags = body.tags.map((tag) => tag.trim());
+  }
+  return patch;
+}
+
+function memoryType(value) {
+  const type = String(value ?? "").trim();
+  if (!TYPES.has(type) || type === "document") {
+    const error = new Error("type must be an editable Memory type"); error.status = 400; throw error;
+  }
+  return type;
+}
+
+function requireMemoryDir(deps) {
+  if (!deps.memoryDir) {
+    const error = new Error("memoryDir is unavailable in this process"); error.status = 503; throw error;
+  }
+  return deps.memoryDir;
 }
 
 function featureState(settings, config) {
@@ -304,6 +392,36 @@ async function handle(req, res, deps) {
   const path = url.pathname.slice(PREFIX.length) || "/";
   if (req.method === "GET") {
     if (path === "/overview") return send(res, 200, { ok: true, data: overview(deps) });
+    if (path === "/memories") {
+      const q = String(url.searchParams.get("q") ?? "").trim();
+      const archived = url.searchParams.get("archived") === "1";
+      const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? 20) || 20));
+      const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+      let rows;
+      if (q) {
+        rows = service.search(q, {
+          limit: Math.min(100, limit + offset),
+          includeArchived: archived
+        });
+        rows = rows.slice(offset, offset + limit);
+      } else {
+        rows = service.list({
+          limit, offset, includeArchived: archived, onlyArchived: archived, includeForgotten: false
+        });
+      }
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const items = service.toApiList(rows, { includePreference: false })
+        .map((row) => memorySummary(row, byId.get(row.id)));
+      return send(res, 200, { ok: true, data: { items, archived, limit, offset, q } });
+    }
+    if (path === "/memory") {
+      const id = String(url.searchParams.get("id") ?? "").trim();
+      if (!id) return send(res, 400, { ok: false, error: "id is required" });
+      return send(res, 200, { ok: true, data: memoryFull(service, id) });
+    }
+    if (path === "/backups") {
+      return send(res, 200, { ok: true, data: { items: listBackups(requireMemoryDir(deps)) } });
+    }
     if (path === "/preferences") return send(res, 200, { ok: true, data: service.getPreferenceState() });
     if (path === "/vector") {
       const cfg = deps.settings.getVectorConfig() ?? { enabled: false, baseUrl: "", apiKey: "", model: "" };
@@ -324,6 +442,121 @@ async function handle(req, res, deps) {
   }
   if (req.method !== "POST") return send(res, 405, { ok: false, error: "method not allowed" });
   const body = await readJson(req);
+  if (path === "/memory") {
+    const type = memoryType(body.type);
+    if (typeof body.title !== "string" || !body.title.trim()) {
+      return send(res, 400, { ok: false, error: "title must be a non-empty string" });
+    }
+    if (typeof body.content !== "string" || !body.content.trim()) {
+      return send(res, 400, { ok: false, error: "content must be a non-empty string" });
+    }
+    if (body.importance !== undefined &&
+      (!Number.isInteger(body.importance) || body.importance < 1 || body.importance > 5)) {
+      return send(res, 400, { ok: false, error: "importance must be an integer from 1 to 5" });
+    }
+    const tags = body.tags === undefined ? [] : body.tags;
+    if (!Array.isArray(tags) || tags.length > 64 || !tags.every((tag) => typeof tag === "string" && tag.trim())) {
+      return send(res, 400, { ok: false, error: "tags must be an array of up to 64 non-empty strings" });
+    }
+    const result = service.saveWithDedupe({
+      type,
+      title: body.title.trim(),
+      content: body.content.trim(),
+      importance: body.importance,
+      tags: tags.map((tag) => tag.trim()),
+      source: "settings-page"
+    });
+    if (result.action === "denied") {
+      return send(res, 422, { ok: false, error: "write-rejected", reason: result.reason });
+    }
+    return send(res, result.action === "created" ? 201 : 200, {
+      ok: true,
+      data: {
+        action: result.action,
+        memory: memoryFull(service, result.memory.id)
+      }
+    });
+  }
+  if (path === "/memory/update") {
+    const id = String(body.id ?? "").trim();
+    if (!id) return send(res, 400, { ok: false, error: "id is required" });
+    const existing = service.getById(id);
+    if (!existing) return send(res, 404, { ok: false, error: "memory not found" });
+    const expected = String(body.expected_updated_at ?? "").trim();
+    if (!expected) return send(res, 400, { ok: false, error: "expected_updated_at is required" });
+    if (existing.updated_at !== expected) {
+      return send(res, 409, { ok: false, error: "memory changed since it was opened", data: { memory: memoryFull(service, id) } });
+    }
+    const patch = memoryPatch(body);
+    const hasArchived = body.archived !== undefined;
+    if (!Object.keys(patch).length && !hasArchived) {
+      return send(res, 400, { ok: false, error: "no editable fields" });
+    }
+    if (hasArchived && typeof body.archived !== "boolean") {
+      return send(res, 400, { ok: false, error: "archived must be boolean" });
+    }
+    let updated = existing;
+    if (Object.keys(patch).length) {
+      updated = service.compareAndUpdate(id, expected, patch, { actor: "settings-page" });
+      if (!updated) {
+        return send(res, 409, { ok: false, error: "memory changed since it was opened", data: { memory: memoryFull(service, id) } });
+      }
+    }
+    if (hasArchived) updated = service.setArchived(id, body.archived);
+    return send(res, 200, { ok: true, data: { memory: memoryFull(service, id) } });
+  }
+  if (path === "/memory/archive") {
+    const id = String(body.id ?? "").trim();
+    if (!id) return send(res, 400, { ok: false, error: "id is required" });
+    if (typeof body.archived !== "boolean") return send(res, 400, { ok: false, error: "archived must be boolean" });
+    const existing = service.getById(id);
+    if (!existing) return send(res, 404, { ok: false, error: "memory not found" });
+    const expected = String(body.expected_updated_at ?? "").trim();
+    if (expected && existing.updated_at !== expected) {
+      return send(res, 409, { ok: false, error: "memory changed since it was opened", data: { memory: memoryFull(service, id) } });
+    }
+    service.setArchived(id, body.archived);
+    return send(res, 200, { ok: true, data: { memory: memoryFull(service, id) } });
+  }
+  if (path === "/memory/delete") {
+    const id = String(body.id ?? "").trim();
+    if (!id) return send(res, 400, { ok: false, error: "id is required" });
+    if (body.confirm !== "DELETE") return send(res, 400, { ok: false, error: "confirm must be DELETE" });
+    const existing = service.getById(id);
+    if (!existing) return send(res, 404, { ok: false, error: "memory not found" });
+    service.remove(id);
+    return send(res, 200, { ok: true, data: { deleted: id } });
+  }
+  if (path === "/backup") {
+    const backup = createBackup({ store: deps.store, memoryDir: requireMemoryDir(deps) });
+    const { directory, ...safe } = backup;
+    return send(res, 201, { ok: true, data: safe });
+  }
+  if (path === "/restore/check") {
+    return send(res, 200, {
+      ok: true,
+      data: preflightBackup(requireMemoryDir(deps), String(body.backup ?? ""))
+    });
+  }
+  if (path === "/restore") {
+    if (body.confirm !== "RESTORE") {
+      return send(res, 400, { ok: false, error: "confirm must be RESTORE" });
+    }
+    const staged = stageRestore({
+      memoryDir: requireMemoryDir(deps),
+      name: String(body.backup ?? ""),
+      sha256: body.sha256
+    });
+    return send(res, 200, {
+      ok: true,
+      data: {
+        backup: staged.backup,
+        sha256: staged.sha256,
+        memories: staged.memories,
+        restart_required: true
+      }
+    });
+  }
   if (path === "/preferences") {
     const action = String(body.action ?? "");
     const actor = "settings-page";

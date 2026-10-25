@@ -22,6 +22,7 @@ import { createStandaloneApi } from "./api-standalone.js";
 import { createMaintenance } from "./maintenance.js";
 import { createSettings } from "./settings.js";
 import { mountAdminApi } from "./admin-api.js";
+import { applyStagedRestore } from "./backup.js";
 import { createCommandManager } from "./commands.js";
 import { createExecutionRecorder } from "./pipeline-runner.js";
 import { registerMoRunCommand } from "./pipeline-command.js";
@@ -236,6 +237,16 @@ export const apply = (ctx, config) => {
     ? join(homedir(), rawCfg.memoryDir.slice(1))
     : rawCfg.memoryDir;
   mkdirSync(memoryDir, { recursive: true });
+
+  // A staged restore is applied before the SQLite handle is opened. The helper
+  // preserves the current database file set in backups/pre-restore-* and only
+  // removes the live files after the verified replacement is ready.
+  const stagedRestore = applyStagedRestore(memoryDir, { logger: ctx.logger });
+  if (stagedRestore?.applied) {
+    ctx.logger?.info?.(`[dsh-mneme] applied staged restore ${stagedRestore.backup}`);
+  } else if (stagedRestore?.error) {
+    ctx.logger?.warn?.(`[dsh-mneme] staged restore skipped: ${stagedRestore.error}`);
+  }
 
   // #218 末楼的实际事故：profile 被清理，落在其中的记忆库连带丢失。命中
   // profile 作用域时给一条可操作的告警（只提示、不搬库、不加配置键），启发
@@ -660,7 +671,7 @@ export const apply = (ctx, config) => {
     // smaller than the token API. No API key, memory body or SQLite path is
     // returned. Kept separate from the token-gated panel routes so an ordinary
     // user does not need to copy a token into the browser.
-    mountAdminApi(ctx, { service, settings, store, config: cfg, embedder, vectorIndex, reranker });
+    mountAdminApi(ctx, { service, settings, store, config: cfg, embedder, vectorIndex, reranker, memoryDir });
   }
 
   // M.O. 自动沉淀（v0.9.3）：项目里重复走的那套动作，自动变成 memoryDir 里的一条

@@ -827,11 +827,38 @@ export function createStore(path) {
   // the WAL transition (and every later write) blocks and retries instead of
   // failing outright, so concurrent init converges to a stable 447/447.
   db.exec("PRAGMA busy_timeout = 5000;");
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec(SCHEMA);
+  // busy_timeout does not reliably defer the exclusive journal-mode transition
+  // on a brand-new database. Two workers can both observe the fresh file and
+  // one gets SQLITE_BUSY immediately. Retry the idempotent init steps with a
+  // bounded backoff so a real concurrent first boot converges instead of
+  // surfacing a recoverable "database is locked".
+  function initSleep(ms) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  }
+  function isBusy(error) {
+    const text = String(error?.code ?? "") + " " + String(error?.message ?? error);
+    return /SQLITE_BUSY|SQLITE_LOCKED|database is locked|database table is locked/i.test(text);
+  }
+  function initRetry(label, fn, attempts = 6) {
+    let last;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try { return fn(); }
+      catch (error) {
+        if (!isBusy(error)) throw error;
+        last = error;
+        if (attempt + 1 < attempts) initSleep(Math.min(500, 50 * 2 ** attempt));
+      }
+    }
+    const wrapped = new Error(`${label} failed after ${attempts} attempts: ${String(last?.message ?? last)}`);
+    wrapped.code = last?.code;
+    wrapped.cause = last;
+    throw wrapped;
+  }
+  initRetry("journal_mode=WAL", () => db.exec("PRAGMA journal_mode = WAL;"));
+  initRetry("schema", () => db.exec(SCHEMA));
   // Legacy entity names become unconfirmed labels; QQ group numbers become
   // typed external identifiers. No cross-record merge happens here.
-  seedIdentitySchema(db);
+  initRetry("identity schema", () => seedIdentitySchema(db));
 
   // Schema migrations for legacy databases (idempotent). Each ADD COLUMN is
   // also race-safe: two concurrently-opening processes can both pass the
@@ -842,7 +869,7 @@ export function createStore(path) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
     if (!cols.includes(column)) {
       try {
-        db.exec(ddl);
+        initRetry(`ALTER ${table}.${column}`, () => db.exec(ddl));
       } catch (e) {
         if (!/duplicate column name/i.test(String(e?.message ?? e))) throw e;
       }
@@ -906,7 +933,7 @@ export function createStore(path) {
   // 列序是 content_hash 打头：哈希几乎唯一，等值 seek 就已收窄到候选行，type 只当同
   // 一次 seek 里的第二列过滤；反过来（type 打头）下面的存量回填就得全表扫——每次打开
   // 都要把全部正文读一遍。
-  db.exec("CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(content_hash, type)");
+  initRetry("index memories_content_hash", () => db.exec("CREATE INDEX IF NOT EXISTS idx_memories_content_hash ON memories(content_hash, type)"));
   // 存量回填：老库（含归档区）的行都没有值，而「归档行纳入去重候选集」这条口径正是
   // 要靠既有归档行出数据。只算 NULL 行、幂等；改口径不是补 NULL 能修好的，要整列重算
   // （见 content-hash.js 的文件头）。空标题空正文的行算不出锚，跳过不写——否则每次
@@ -949,7 +976,7 @@ export function createStore(path) {
   // metadata 里做 JSON 匹配。列可空且不带 DEFAULT（存量行零重写）。索引建在加列
   // 之后：老库打开时列还不存在（SCHEMA 的 CREATE TABLE 只对新建库生效）。
   addColumn("llm_audit_logs", "session_key", "ALTER TABLE llm_audit_logs ADD COLUMN session_key TEXT");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_llm_audit_session ON llm_audit_logs(session_key);");
+  initRetry("index llm_audit_session", () => db.exec("CREATE INDEX IF NOT EXISTS idx_llm_audit_session ON llm_audit_logs(session_key);"));
 
   // Audit peer F: a legacy DB may hold a non-integer generation/applied_generation
   // (pre-v0.3.9 the JS gate truncated with Math.trunc and SQLite's CHECK only

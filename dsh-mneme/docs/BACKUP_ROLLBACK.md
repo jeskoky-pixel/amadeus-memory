@@ -12,6 +12,27 @@ Amadeus Memory 沿用 Mneme 的单一存储：
 
 默认 `memoryDir` 是 `~/.dsh/memory`（可在 Plugin Manager 的 Config 中修改）。向量索引、权重、身份/别名/合并、受信 provenance 都在同一个 `memory.db` 中，不另建第二套偏好数据库。
 
+> 产品化/QA 环境必须使用显式、隔离的 `memoryDir`。不要把测试或预览指向用户真实的 `~/.dsh/memory`，也不要用默认值跑 smoke。
+
+## 设置页内的安全备份与恢复
+
+原生 **Amadeus 记忆** 页提供“备份与恢复”卡：
+
+1. **创建备份**：对当前打开的 SQLite 使用 `VACUUM INTO` 生成一致性快照，写入 `<memoryDir>/backups/amadeus-memory-<UTC>.db`。备份不会复制 `-wal/-shm`，也不会停止服务。
+2. **校验**：只读打开备份，执行 SQLite `PRAGMA quick_check`，检查 `memories` 表并计算 SHA-256；失败会明确报错，不触碰当前数据库。
+3. **暂存恢复**：必须勾选重启确认，并输入/确认目标备份。请求只写一个恢复标记，**运行中的数据库不会被覆盖**。
+4. **重启应用**：DSH 下次启动时，在 `createStore()` 打开数据库之前：
+   - 重新校验备份存在、SQLite 头部、`quick_check`、`memories` 表和 SHA-256；
+   - 先把当前 `memory.db`、`-wal`、`-shm` 复制到 `<memoryDir>/backups/pre-restore-<UTC>/`；
+   - 再替换 `memory.db`，成功后删除恢复标记；
+   - 任一步失败则恢复原文件集，保留现场并把 marker 改名为 `.failed-*`，不静默启动空库。
+5. **回滚恢复**：到 `backups/pre-restore-*` 取现场；不要删除它。再次恢复仍走同样的“先备份、再替换”路径。
+
+DELETE 等高风险动作在 UI 需要二次确认；恢复需要“我了解需要重启并确认恢复”。**恢复默认参数只 unset 配置字段，不删除记忆；重置偏好只清空权重表，不删除记忆。**
+
+备份 API 仅通过 DSH owner 同源设置代理暴露；不开放任意文件路径、不返回密钥或记忆正文，不允许把 `backups/` 之外的路径作为恢复源。备份文件包含 Memory SQLite 数据（以及 Settings 中的向量配置/密钥），应视同敏感数据保存，不要提交到 Git 或公开目录。
+
+
 另有浏览器 localStorage 的 `dsh-mneme-api-token`（若你使用原面板的 token 模式），它不是数据备份；升级不需要重填已经有效的 Embedding 密钥。
 
 ## 升级前备份

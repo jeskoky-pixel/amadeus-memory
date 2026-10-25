@@ -104,6 +104,11 @@ test("two genuinely overlapping submissions replay one request_id without a seco
         resolveResult = resolve;
         rejectResult = reject;
       });
+      // A worker may fail during fresh-DB initialization before the test ever
+      // awaits `result` (readiness rejects first). Mark both branches as
+      // observed; the retry loop still sees the rejection via Promise.all.
+      ready.catch(() => {});
+      result.catch(() => {});
       const fail = (error) => {
         if (!readySettled) {
           readySettled = true;
@@ -148,8 +153,14 @@ test("two genuinely overlapping submissions replay one request_id without a seco
         check.close();
       }
     } finally {
-      await a.worker.terminate();
-      await b.worker.terminate();
+      // terminate() can exit non-zero on some Node versions. That exit is
+      // cleanup, not a second product failure; detach late listeners so a
+      // bundled runner does not turn cleanup into an unhandled rejection.
+      for (const worker of [a.worker, b.worker]) {
+        worker.removeAllListeners("error");
+        worker.removeAllListeners("exit");
+        await worker.terminate();
+      }
     }
   };
   try {

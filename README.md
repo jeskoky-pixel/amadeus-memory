@@ -1,6 +1,6 @@
 # Amadeus Memory Enhancer
 
-[![tests](https://img.shields.io/badge/tests-2378%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/1)
+[![tests](https://img.shields.io/badge/tests-489%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/1)
 
 This branch packages a separately installable Mneme bundle in [`dsh-mneme/`](dsh-mneme/). It extends the existing SQLite memory store, retrieval, graph and Desktop panel with stable typed identities, reviewed aliases and canonical links, Tag/entity ranking preferences, and a controlled Life experience intake. The upstream import and license are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 
@@ -20,10 +20,13 @@ The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack
 
 ```powershell
 cd dsh-mneme
-npm test        # 运行 2378 个测试
+npm test        # 运行 489 个测试
+npm run test:all              # full suite; 32 upstream/environment failures, not green
+npm run test:upstream-release # 21 upstream release-only failures, expected non-green
+npm run test:compat-windows   # Windows symlink/spawn capability probe
 ```
 
-The full suite also contains upstream release/workflow guards that are not applicable to this private productization branch; the RE-WORK report records those remaining gates honestly. The 2378 figure is the suite total; 32 environment/upstream-release gates remain red in this sandbox.
+`npm test` is the green product gate (489 tests): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) is **not** green on this Windows sandbox because upstream release-only fixtures/workflows and some symlink/spawn capabilities are unavailable; use `npm run test:upstream-release` and `npm run test:compat-windows` for those separate, explicitly non-green checks.
 
 ## Documentation
 
@@ -31,6 +34,9 @@ The full suite also contains upstream release/workflow guards that are not appli
 - [User guide (Chinese)](dsh-mneme/docs/USER_GUIDE.zh.md)
 - [Backup, upgrade and rollback](dsh-mneme/docs/BACKUP_ROLLBACK.md)
 - [Release notes and package identity](dsh-mneme/docs/RELEASE_NOTES.md)
+- [Measured performance and token cost](dsh-mneme/docs/PERFORMANCE.md)
+- [QA memoryDir guard](dsh-mneme/docs/QA_GUARD.md)
+- [Windows capability report](docs/WINDOWS_COMPATIBILITY.md)
 - [Enhancement design and migration details](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)
 - [Initial and focused quality acceptance](docs/verification/MEMORY_ENHANCER_ACCEPTANCE.md)
 - [Real isolated DSH Desktop acceptance](docs/verification/REAL_DSH_ACCEPTANCE_2026-10-25.md)

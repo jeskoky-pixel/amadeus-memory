@@ -28,8 +28,10 @@ node scripts/check-sync.js
 node --check lib/client.js
 node test/memory-productization.test.js
 node test/memory-admin-api.test.js
+node test/memory-management-api.test.js
+node test/backup.test.js
 node test/tools.test.js
-npm pack --ignore-scripts --pack-destination ../dist
+npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 ```
 
 产物：`dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz`。SHA-256 记录在 `docs/RELEASE_NOTES.md` 与交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
@@ -57,7 +59,9 @@ npm pack --ignore-scripts --pack-destination ../dist
 - **Embedding Provider / 本地或 Ollama 模型**：沿用既有 feature flags/Config，不建立第二套配置。
 - **OpenAI 兼容 Embedding 的 Base URL / 模型 / 密钥**：沿用既有 `vector-config` 设置；页面只显示密钥是否已配置与掩码，空输入或掩码输入表示保留现有密钥。
 - 页面的 **连通性测试** 只在用户点击时发起请求；远端 Provider 会产生一次真实 API 请求，页面有明确提示。
-- 页面不读取或显示记忆正文；完整图谱、别名、合并、审计仍由原 Memory 面板承担。
+- 独立页的 **记忆管理** 卡通过 owner 鉴权接口完成搜索、新建、编辑、归档和带确认的删除；编辑使用 `updated_at` 乐观并发检查，冲突时不会覆盖他人修改。
+- 独立页的 **备份与恢复** 卡生成一致性 SQLite 快照、校验 `quick_check`/表/checksum，并把恢复延后到下次启动；运行中的数据库不会被覆盖，恢复前自动保留 `pre-restore-*` 现场。
+- 记忆正文只在已认证 owner 打开列表/编辑器时返回给当前设置页；不会写入日志、备份元数据或公开端点。完整图谱、别名、合并、审计仍由原 Memory 面板承担。
 
 ## 升级与回滚
 
@@ -80,6 +84,9 @@ npm pack --ignore-scripts --pack-destination ../dist
 
 - [ ] Plugin Manager 显示 `@modusensus/dsh-mneme@0.9.5-amadeus.1`，启用成功。
 - [ ] 系统设置左侧出现 **Amadeus 记忆**，页面加载状态、记忆数、数据库和向量索引。
+- [ ] 记忆管理：搜索、新建、编辑、归档、取消归档、删除二次确认；并发编辑冲突会提示而不覆盖。
+- [ ] 备份：创建后列表显示 SHA-256；校验通过；暂存恢复需要确认，重启后应用且保留 `pre-restore-*` 现场。
+- [ ] 取消/恢复默认不会删除记忆；确认配置冲突、加载/错误/禁用状态和窄窗口布局。
 - [ ] 修改一个 Tag 权重和实体权重，保存后刷新页面/重启仍保持；恢复默认只清权重，不删记忆。
 - [ ] 修改一个 feature 开关，页面提示重载；重载后运行时生效。
 - [ ] 修改一个 Config Forms 参数并保存，Plugin Manager 与独立页显示一致。

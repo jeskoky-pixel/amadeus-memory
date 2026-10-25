@@ -294,6 +294,81 @@ window.__ModuleLoader__.load({
         "memory.am.section.overview": "运行概览",
         "memory.am.section.core": "自动记忆与整理",
         "memory.am.section.config": "注入与记忆参数",
+        "memory.am.section.memories": "记忆管理",
+        "memory.am.section.backup": "备份与恢复",
+        "memory.am.default": "默认",
+        "memory.am.range": "范围",
+        "memory.am.unit.items": "条",
+        "memory.am.unit.chars": "字符",
+        "memory.am.unit.ms": "毫秒",
+        "memory.am.unit.minutes": "分钟",
+        "memory.am.unit.turns": "轮",
+        "memory.am.unit.score": "分数",
+        "memory.am.memory.search": "搜索",
+        "memory.am.memory.searchPlaceholder": "标题或正文…",
+        "memory.am.memory.archived": "显示归档",
+        "memory.am.memory.new": "新建记忆",
+        "memory.am.memory.refresh": "刷新",
+        "memory.am.memory.empty": "没有匹配的记忆",
+        "memory.am.memory.edit": "编辑",
+        "memory.am.memory.archive": "归档",
+        "memory.am.memory.unarchive": "取消归档",
+        "memory.am.memory.delete": "删除",
+        "memory.am.memory.deleteConfirm": "确认永久删除这条记忆？",
+        "memory.am.memory.deleteHint": "删除不可撤销；建议先创建备份。",
+        "memory.am.memory.confirmDelete": "确认删除",
+        "memory.am.memory.cancel": "取消",
+        "memory.am.memory.save": "保存记忆",
+        "memory.am.memory.saving": "保存中…",
+        "memory.am.memory.type": "类型",
+        "memory.am.memory.typeImmutable": "已有记忆的类型不可修改",
+        "memory.am.memory.title": "标题",
+        "memory.am.memory.content": "正文",
+        "memory.am.memory.importance": "重要度（1–5）",
+        "memory.am.memory.tags": "标签（英文逗号分隔）",
+        "memory.am.memory.tagsHint": "普通标签可手工编辑；事件标签只能由受信 intake 生成。",
+        "memory.am.memory.tagsPlaceholder": "项目, 工作",
+        "memory.am.memory.type.preference": "偏好",
+        "memory.am.memory.type.project": "项目",
+        "memory.am.memory.type.decision": "决策",
+        "memory.am.memory.type.history": "历史",
+        "memory.am.memory.type.summary": "摘要",
+        "memory.am.memory.type.pattern": "模式",
+        "memory.am.memory.type.rejected_solution": "被拒方案",
+        "memory.am.memory.type.pitfall": "教训",
+        "memory.am.memory.type.constraint": "约束",
+        "memory.am.memory.titleRequired": "标题不能为空",
+        "memory.am.memory.contentRequired": "正文不能为空",
+        "memory.am.memory.saved": "记忆已保存",
+        "memory.am.memory.created": "记忆已创建",
+        "memory.am.memory.merged": "已并入同标题记忆",
+        "memory.am.memory.autoArchived": "已创建，但质量过滤将其归档；打开“显示归档”后可恢复。",
+        "memory.am.memory.archivedDone": "已归档",
+        "memory.am.memory.unarchivedDone": "已取消归档",
+        "memory.am.memory.deleted": "已删除",
+        "memory.am.memory.stale": "这条记忆已被其他页面修改；请重新打开后再保存。",
+        "memory.am.memory.loadError": "加载记忆失败",
+        "memory.am.memory.prev": "上一页",
+        "memory.am.memory.next": "下一页",
+        "memory.am.restoreDefaultsHint": "只重置参数，不会删除记忆。",
+        "memory.am.backup.create": "创建备份",
+        "memory.am.backup.creating": "备份中…",
+        "memory.am.backup.refresh": "刷新备份",
+        "memory.am.backup.empty": "还没有备份",
+        "memory.am.backup.hint": "备份是 SQLite 一致性快照，保存在 memoryDir/backups；恢复只在重启后应用。",
+        "memory.am.backup.check": "校验",
+        "memory.am.backup.checked": "校验通过",
+        "memory.am.backup.restore": "暂存恢复",
+        "memory.am.backup.restoreTitle": "恢复备份",
+        "memory.am.backup.restoreHint": "恢复会在下次 DSH 启动时替换当前数据库，并先自动保留一份 pre-restore 现场；运行中不会覆盖。",
+        "memory.am.backup.ack": "我了解需要重启并确认恢复",
+        "memory.am.backup.stage": "暂存并在重启后恢复",
+        "memory.am.backup.staged": "已暂存；重启 DSH 后应用。",
+        "memory.am.backup.failed": "备份操作失败",
+        "memory.am.backup.restart": "重启 DSH 后生效",
+        "memory.am.backup.sha": "SHA-256",
+        "memory.am.backup.memories": "条记忆",
+        "memory.am.backup.createdAt": "创建时间",
         "memory.am.section.embedding": "向量检索与 Embedding",
         "memory.am.section.preferences": "Tag 与实体偏好",
         "memory.am.section.advanced": "高级与诊断",
@@ -1173,6 +1248,81 @@ window.__ModuleLoader__.load({
         "memory.am.section.overview": "Overview",
         "memory.am.section.core": "Automatic memory & consolidation",
         "memory.am.section.config": "Injection & memory parameters",
+        "memory.am.section.memories": "Memory management",
+        "memory.am.section.backup": "Backup & restore",
+        "memory.am.default": "Default",
+        "memory.am.range": "Range",
+        "memory.am.unit.items": "items",
+        "memory.am.unit.chars": "chars",
+        "memory.am.unit.ms": "ms",
+        "memory.am.unit.minutes": "minutes",
+        "memory.am.unit.turns": "turns",
+        "memory.am.unit.score": "score",
+        "memory.am.memory.search": "Search",
+        "memory.am.memory.searchPlaceholder": "Title or body…",
+        "memory.am.memory.archived": "Show archived",
+        "memory.am.memory.new": "New memory",
+        "memory.am.memory.refresh": "Refresh",
+        "memory.am.memory.empty": "No matching memories",
+        "memory.am.memory.edit": "Edit",
+        "memory.am.memory.archive": "Archive",
+        "memory.am.memory.unarchive": "Unarchive",
+        "memory.am.memory.delete": "Delete",
+        "memory.am.memory.deleteConfirm": "Permanently delete this memory?",
+        "memory.am.memory.deleteHint": "Deletion cannot be undone; create a backup first.",
+        "memory.am.memory.confirmDelete": "Delete permanently",
+        "memory.am.memory.cancel": "Cancel",
+        "memory.am.memory.save": "Save memory",
+        "memory.am.memory.saving": "Saving…",
+        "memory.am.memory.type": "Type",
+        "memory.am.memory.typeImmutable": "The type of an existing memory is immutable",
+        "memory.am.memory.title": "Title",
+        "memory.am.memory.content": "Content",
+        "memory.am.memory.importance": "Importance (1–5)",
+        "memory.am.memory.tags": "Tags (comma-separated)",
+        "memory.am.memory.tagsHint": "Ordinary tags are editable; event tags can only be minted by trusted intake.",
+        "memory.am.memory.tagsPlaceholder": "project, work",
+        "memory.am.memory.type.preference": "Preference",
+        "memory.am.memory.type.project": "Project",
+        "memory.am.memory.type.decision": "Decision",
+        "memory.am.memory.type.history": "History",
+        "memory.am.memory.type.summary": "Summary",
+        "memory.am.memory.type.pattern": "Pattern",
+        "memory.am.memory.type.rejected_solution": "Rejected solution",
+        "memory.am.memory.type.pitfall": "Pitfall",
+        "memory.am.memory.type.constraint": "Constraint",
+        "memory.am.memory.titleRequired": "Title is required",
+        "memory.am.memory.contentRequired": "Content is required",
+        "memory.am.memory.saved": "Memory saved",
+        "memory.am.memory.created": "Memory created",
+        "memory.am.memory.merged": "Merged into the existing title",
+        "memory.am.memory.autoArchived": "Created, but the quality filter archived it; enable “Show archived” to restore it.",
+        "memory.am.memory.archivedDone": "Archived",
+        "memory.am.memory.unarchivedDone": "Unarchived",
+        "memory.am.memory.deleted": "Deleted",
+        "memory.am.memory.stale": "This memory changed elsewhere; reopen it before saving.",
+        "memory.am.memory.loadError": "Failed to load memories",
+        "memory.am.memory.prev": "Previous",
+        "memory.am.memory.next": "Next",
+        "memory.am.restoreDefaultsHint": "Resets parameters only; memories are never deleted.",
+        "memory.am.backup.create": "Create backup",
+        "memory.am.backup.creating": "Backing up…",
+        "memory.am.backup.refresh": "Refresh backups",
+        "memory.am.backup.empty": "No backups yet",
+        "memory.am.backup.hint": "Backups are consistent SQLite snapshots under memoryDir/backups; restore applies only on restart.",
+        "memory.am.backup.check": "Verify",
+        "memory.am.backup.checked": "Verified",
+        "memory.am.backup.restore": "Stage restore",
+        "memory.am.backup.restoreTitle": "Restore backup",
+        "memory.am.backup.restoreHint": "Restore replaces the live database at the next DSH start and first preserves a pre-restore copy; it never overwrites a running database.",
+        "memory.am.backup.ack": "I understand a restart is required",
+        "memory.am.backup.stage": "Stage and restore on restart",
+        "memory.am.backup.staged": "Staged; restart DSH to apply.",
+        "memory.am.backup.failed": "Backup operation failed",
+        "memory.am.backup.restart": "Takes effect after DSH restart",
+        "memory.am.backup.sha": "SHA-256",
+        "memory.am.backup.memories": "memories",
+        "memory.am.backup.createdAt": "Created",
         "memory.am.section.embedding": "Vector retrieval & Embedding",
         "memory.am.section.preferences": "Tag & entity preferences",
         "memory.am.section.advanced": "Advanced & diagnostics",
@@ -2237,6 +2387,8 @@ window.__ModuleLoader__.load({
       // --- settings: quiet stacked sections, one concern per section ---
       ".mneme-set{flex:1;min-height:0;overflow-y:auto;padding:8px 24px 48px;box-sizing:border-box}",
       ".mneme-set-inner{max-width:720px;margin:0 auto}",
+      ".mneme-btn:focus-visible,.mneme-set-input:focus-visible,.mneme-switch:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}",
+      "@media (max-width:560px){.mneme-set{padding:8px 12px 32px}.mneme-set-inner{max-width:100%}.mneme-set-row{flex-wrap:wrap}.mneme-featnum{flex-wrap:wrap}.mneme-set-input{max-width:100%}.mneme-btn{max-width:100%}}",
       // 设置页各节一律用 boxed 卡（.mneme-set-card）+ 分组标题（.mneme-set-grouphead）：
       // 旧的「无框 set-sec + 有框 set-card」混排是版面杂乱的一半来源
       ".mneme-set-title{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary);margin-bottom:4px}",
@@ -4405,22 +4557,28 @@ window.__ModuleLoader__.load({
 
     const AM_CONFIG_FIELDS = [
       { key: "language", type: "enum", options: ["zh", "en"], default: "zh" },
-      { key: "dreamThresholdCount", type: "integer", min: 1, max: 1000, default: 10 },
-      { key: "dreamThresholdChars", type: "integer", min: 100, max: 100000, default: 5000 },
-      { key: "dreamDelayMs", type: "integer", min: 0, max: 60000, default: 2000 },
-      { key: "sleepIdleMinutes", type: "integer", min: 1, max: 60, default: 5 },
-      { key: "maxInjectedItems", type: "integer", min: 1, max: 20, default: 5 },
-      { key: "importanceThreshold", type: "integer", min: 1, max: 5, default: 3 },
-      { key: "injectContentMaxChars", type: "integer", min: 60, max: 4000, default: 300 },
-      { key: "injectRotationTurns", type: "integer", min: 0, max: 20, default: 0 },
-      { key: "vectorSearchTopK", type: "integer", min: 1, max: 100, default: 20 },
-      { key: "vectorSearchThreshold", type: "number", min: 0, max: 1, step: 0.01, default: 0.65 },
-      { key: "hybridSearchVectorWeight", type: "number", min: 0, max: 1, step: 0.05, default: 0.6 },
+      { key: "dreamThresholdCount", type: "integer", min: 1, max: 1000, default: 10, unit: "items" },
+      { key: "dreamThresholdChars", type: "integer", min: 100, max: 100000, default: 5000, unit: "chars" },
+      { key: "dreamDelayMs", type: "integer", min: 0, max: 60000, default: 2000, unit: "ms" },
+      { key: "sleepIdleMinutes", type: "integer", min: 1, max: 60, default: 5, unit: "minutes" },
+      { key: "maxInjectedItems", type: "integer", min: 1, max: 20, default: 5, unit: "items" },
+      { key: "importanceThreshold", type: "integer", min: 1, max: 5, default: 3, unit: "score" },
+      { key: "injectContentMaxChars", type: "integer", min: 60, max: 4000, default: 300, unit: "chars" },
+      { key: "injectRotationTurns", type: "integer", min: 0, max: 20, default: 0, unit: "turns" },
+      { key: "vectorSearchTopK", type: "integer", min: 1, max: 100, default: 20, unit: "items" },
+      { key: "vectorSearchThreshold", type: "number", min: 0, max: 1, step: 0.01, default: 0.65, unit: "score" },
+      { key: "hybridSearchVectorWeight", type: "number", min: 0, max: 1, step: 0.05, default: 0.6, unit: "score" },
       { key: "autoReindexOnBoot", type: "boolean", default: true }
     ];
     const AM_FEATURE_KEYS = [
       "autoInject", "autoSummarize", "autoDream", "sleepModeEnabled",
       "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled"
+    ];
+    // Keep this list aligned with store.js TYPES minus document (document rows
+    // must be minted by registerDocument, not by the ordinary editor).
+    const AM_MEMORY_TYPES = [
+      "preference", "project", "decision", "history", "summary", "pattern",
+      "rejected_solution", "pitfall", "constraint"
     ];
 
     function configValuesFromSnapshot(snapshot, fields = AM_CONFIG_FIELDS) {
@@ -4505,6 +4663,21 @@ window.__ModuleLoader__.load({
       const formSnapRef = useRef(null);
       const localSaveRef = useRef(false);
       const localAcceptedRef = useRef(null);
+      const [memQuery, setMemQuery] = useState("");
+      const [memArchived, setMemArchived] = useState(false);
+      const [memItems, setMemItems] = useState([]);
+      const [memOffset, setMemOffset] = useState(0);
+      const [memBusy, setMemBusy] = useState("");
+      const [memError, setMemError] = useState("");
+      const [memNotice, setMemNotice] = useState("");
+      const [memEditor, setMemEditor] = useState(null);
+      const [memDelete, setMemDelete] = useState(null);
+      const [backups, setBackups] = useState([]);
+      const [backupBusy, setBackupBusy] = useState("");
+      const [backupError, setBackupError] = useState("");
+      const [backupNotice, setBackupNotice] = useState("");
+      const [restoreTarget, setRestoreTarget] = useState(null);
+      const [restoreAck, setRestoreAck] = useState(false);
 
       const adminJson = useCallback(async (path, opts = {}) => {
         const res = await adminFetch(path, opts);
@@ -4580,6 +4753,177 @@ window.__ModuleLoader__.load({
           formRef.current = null;
         };
       }, [ctx]);
+
+      const loadMemories = async (q = memQuery, archived = memArchived, offset = 0) => {
+        setMemBusy("list");
+        setMemError("");
+        try {
+          const data = await adminJson(
+            `/memories?q=${encodeURIComponent(q)}&archived=${archived ? 1 : 0}&limit=20&offset=${Math.max(0, offset)}`
+          );
+          setMemItems(data.items || []);
+          setMemOffset(Math.max(0, offset));
+        } catch (e) {
+          setMemError(`${t("memory.am.memory.loadError")}: ${String(e.message || e)}`);
+        } finally { setMemBusy(""); }
+      };
+
+      const loadBackups = async () => {
+        setBackupBusy("list");
+        setBackupError("");
+        try {
+          const data = await adminJson("/backups");
+          setBackups(data.items || []);
+        } catch (e) {
+          setBackupError(`${t("memory.am.backup.failed")}: ${String(e.message || e)}`);
+        } finally { setBackupBusy(""); }
+      };
+
+      const openMemoryEditor = async (id = "") => {
+        setMemError("");
+        setMemNotice("");
+        if (!id) {
+          setMemEditor({ id: "", type: "project", title: "", content: "", importance: 3, tags: "", updated_at: "" });
+          return;
+        }
+        setMemBusy("open");
+        try {
+          const data = await adminJson(`/memory?id=${encodeURIComponent(id)}`);
+          setMemEditor({
+            id: data.id, type: data.type, title: data.title, content: data.content,
+            importance: data.importance, tags: (data.tags || []).join(", "),
+            updated_at: data.updated_at
+          });
+        } catch (e) {
+          setMemError(String(e.message || e));
+        } finally { setMemBusy(""); }
+      };
+
+      const saveMemory = async () => {
+        if (!memEditor) return;
+        if (!String(memEditor.title || "").trim()) { setMemError(t("memory.am.memory.titleRequired")); return; }
+        if (!String(memEditor.content || "").trim()) { setMemError(t("memory.am.memory.contentRequired")); return; }
+        setMemBusy("save");
+        setMemError("");
+        try {
+          const tags = String(memEditor.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+          let payload;
+          if (memEditor.id) {
+            payload = await adminJson("/memory/update", {
+              method: "POST",
+              body: JSON.stringify({
+                id: memEditor.id,
+                expected_updated_at: memEditor.updated_at,
+                type: memEditor.type,
+                title: memEditor.title,
+                content: memEditor.content,
+                importance: Number(memEditor.importance),
+                tags
+              })
+            });
+            setMemNotice(t("memory.am.memory.saved"));
+          } else {
+            payload = await adminJson("/memory", {
+              method: "POST",
+              body: JSON.stringify({
+                type: memEditor.type, title: memEditor.title, content: memEditor.content,
+                importance: Number(memEditor.importance), tags
+              })
+            });
+            setMemNotice(payload.memory?.archived
+              ? t("memory.am.memory.autoArchived")
+              : payload.action === "merged" ? t("memory.am.memory.merged") : t("memory.am.memory.created"));
+          }
+          setMemEditor(null);
+          await loadMemories(memQuery, memArchived, memEditor.id ? memOffset : 0);
+          await load();
+        } catch (e) {
+          setMemError(e.message === "memory changed since it was opened"
+            ? t("memory.am.memory.stale") : String(e.message || e));
+        } finally { setMemBusy(""); }
+      };
+
+      const setMemoryArchived = async (item, archived) => {
+        setMemBusy(archived ? "archive" : "unarchive");
+        setMemError("");
+        try {
+          await adminJson("/memory/archive", {
+            method: "POST",
+            body: JSON.stringify({ id: item.id, archived, expected_updated_at: item.updated_at })
+          });
+          setMemNotice(archived ? t("memory.am.memory.archivedDone") : t("memory.am.memory.unarchivedDone"));
+          await loadMemories(memQuery, memArchived, memOffset);
+          await load();
+        } catch (e) {
+          setMemError(String(e.message || e));
+        } finally { setMemBusy(""); }
+      };
+
+      const deleteMemory = async () => {
+        if (!memDelete) return;
+        setMemBusy("delete");
+        setMemError("");
+        try {
+          await adminJson("/memory/delete", {
+            method: "POST",
+            body: JSON.stringify({ id: memDelete.id, confirm: "DELETE" })
+          });
+          setMemDelete(null);
+          setMemNotice(t("memory.am.memory.deleted"));
+          await loadMemories(memQuery, memArchived, memOffset);
+          await load();
+        } catch (e) {
+          setMemError(String(e.message || e));
+        } finally { setMemBusy(""); }
+      };
+
+      const createMemoryBackup = async () => {
+        setBackupBusy("create");
+        setBackupError("");
+        setBackupNotice("");
+        try {
+          const data = await adminJson("/backup", { method: "POST", body: "{}" });
+          setBackupNotice(`${t("memory.am.backup.createdAt")}: ${data.name} · ${data.memories} ${t("memory.am.backup.memories")}`);
+          await loadBackups();
+        } catch (e) {
+          setBackupError(`${t("memory.am.backup.failed")}: ${String(e.message || e)}`);
+        } finally { setBackupBusy(""); }
+      };
+
+      const verifyBackup = async (item) => {
+        setBackupBusy("check");
+        setBackupError("");
+        try {
+          const data = await adminJson("/restore/check", {
+            method: "POST", body: JSON.stringify({ backup: item.name })
+          });
+          setBackupNotice(`${t("memory.am.backup.checked")}: ${data.name} · ${data.memories} ${t("memory.am.backup.memories")}`);
+        } catch (e) {
+          setBackupError(`${t("memory.am.backup.failed")}: ${String(e.message || e)}`);
+        } finally { setBackupBusy(""); }
+      };
+
+      const stageBackupRestore = async () => {
+        if (!restoreTarget || !restoreAck) return;
+        setBackupBusy("restore");
+        setBackupError("");
+        try {
+          await adminJson("/restore", {
+            method: "POST",
+            body: JSON.stringify({ backup: restoreTarget.name, sha256: restoreTarget.sha256, confirm: "RESTORE" })
+          });
+          setRestoreTarget(null);
+          setRestoreAck(false);
+          setBackupNotice(`${t("memory.am.backup.staged")} ${t("memory.am.backup.restart")}`);
+        } catch (e) {
+          setBackupError(`${t("memory.am.backup.failed")}: ${String(e.message || e)}`);
+        } finally { setBackupBusy(""); }
+      };
+
+      useEffect(() => {
+        void loadMemories("", false, 0);
+        void loadBackups();
+      }, []);
 
       const refreshFeature = async (key, value) => {
         setBusy(key);
@@ -4819,11 +5163,18 @@ window.__ModuleLoader__.load({
       const configField = (field) => {
         const value = formValues ? formValues[field.key] : field.default;
         const invalid = !!fieldError(field);
+        const unit = field.unit ? t(`memory.am.unit.${field.unit}`) : "";
+        const meta = field.type === "boolean"
+          ? `${t("memory.am.default")}: ${field.default ? t("memory.am.enabled") : t("memory.am.disabled")}`
+          : field.type === "enum"
+            ? `${t("memory.am.default")}: ${field.default === "zh" ? t("memory.am.languageZh") : t("memory.am.languageEn")}`
+            : `${t("memory.am.default")}: ${field.default} ${unit} · ${t("memory.am.range")}: ${field.min}–${field.max} ${unit}`.trim();
         if (field.type === "boolean") {
           return h("div", { className: "mneme-featrow", key: field.key },
             h("div", { className: "mneme-featmain" },
               h("div", { className: "mneme-featname" }, t(`memory.am.field.${field.key}`)),
-              h("div", { className: "mneme-feathint" }, t(`memory.am.fieldHint.${field.key}`))),
+              h("div", { className: "mneme-feathint" }, t(`memory.am.fieldHint.${field.key}`)),
+              h("div", { className: "mneme-set-hint" }, meta)),
             h("button", {
               type: "button", className: value ? "mneme-switch mneme-on" : "mneme-switch",
               role: "switch", "aria-checked": String(!!value), disabled: !!busy,
@@ -4833,16 +5184,17 @@ window.__ModuleLoader__.load({
         return h("label", { className: "mneme-featnum", key: field.key },
           h("span", { className: "mneme-featmain" },
             h("span", { className: "mneme-featname" }, t(`memory.am.field.${field.key}`)),
-            h("span", { className: "mneme-feathint" }, t(`memory.am.fieldHint.${field.key}`))),
+            h("span", { className: "mneme-feathint" }, t(`memory.am.fieldHint.${field.key}`)),
+            h("span", { className: "mneme-set-hint" }, meta)),
           field.type === "enum"
             ? h("select", {
-                className: "mneme-set-input", style: { width: 130, marginBottom: 0 },
+                className: "mneme-set-input", style: { width: 130, maxWidth: "100%", marginBottom: 0 },
                 value, disabled: !!busy,
                 onChange: (e) => setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
               }, field.options.map((option) => h("option", { key: option, value: option },
                 option === "zh" ? t("memory.am.languageZh") : t("memory.am.languageEn"))))
             : h("input", {
-                className: "mneme-set-input", style: { width: 130, marginBottom: 0 },
+                className: "mneme-set-input", style: { width: 130, maxWidth: "100%", marginBottom: 0 },
                 type: "number", min: field.min, max: field.max, step: field.step || 1,
                 value: value ?? "", disabled: !!busy,
                 "aria-invalid": invalid ? "true" : "false",
@@ -4851,6 +5203,145 @@ window.__ModuleLoader__.load({
           invalid && h("span", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, t("memory.am.invalid"))
         );
       };
+
+      const memoryTypeLabel = (type) => t(`memory.am.memory.type.${type}`);
+
+      const memoryManagementCard = () => h("div", { className: "mneme-set-card" },
+        h("div", { className: "mneme-set-hint", style: { marginBottom: 10 } }, t("memory.am.memory.tagsHint")),
+        memError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)", marginBottom: 8 } }, memError),
+        memNotice && h("div", { className: "mneme-saved", style: { marginBottom: 8 } }, memNotice),
+        memEditor ? h("div", null,
+          h("div", { className: "mneme-set-row", style: { flexWrap: "wrap", gap: 8, border: "none", padding: 0 } },
+            h("label", { style: { flex: "1 1 180px", minWidth: 0 } },
+              h("span", { className: "mneme-set-hint" }, t("memory.am.memory.type")),
+              h("select", {
+                className: "mneme-set-input", "aria-label": t("memory.am.memory.type"),
+                value: memEditor.type, disabled: !!memBusy || !!memEditor.id,
+                title: memEditor.id ? t("memory.am.memory.typeImmutable") : undefined,
+                onChange: (e) => setMemEditor({ ...memEditor, type: e.target.value })
+              }, AM_MEMORY_TYPES.map((type) => h("option", { key: type, value: type }, memoryTypeLabel(type))))),
+            h("label", { style: { flex: "1 1 100px", minWidth: 0 } },
+              h("span", { className: "mneme-set-hint" }, t("memory.am.memory.importance")),
+              h("input", {
+                className: "mneme-set-input", type: "number", min: 1, max: 5, step: 1,
+                "aria-label": t("memory.am.memory.importance"),
+                value: memEditor.importance, disabled: !!memBusy,
+                onChange: (e) => setMemEditor({ ...memEditor, importance: e.target.value })
+              }))),
+          h("label", null,
+            h("span", { className: "mneme-set-hint" }, t("memory.am.memory.title")),
+            h("input", {
+              className: "mneme-set-input", "aria-label": t("memory.am.memory.title"),
+              value: memEditor.title, disabled: !!memBusy,
+              onChange: (e) => setMemEditor({ ...memEditor, title: e.target.value })
+            })),
+          h("label", null,
+            h("span", { className: "mneme-set-hint" }, t("memory.am.memory.content")),
+            h("textarea", {
+              className: "mneme-set-input mneme-set-input--area",
+              "aria-label": t("memory.am.memory.content"),
+              value: memEditor.content, disabled: !!memBusy,
+              onChange: (e) => setMemEditor({ ...memEditor, content: e.target.value })
+            })),
+          h("label", null,
+            h("span", { className: "mneme-set-hint" }, t("memory.am.memory.tags")),
+            h("input", {
+              className: "mneme-set-input", "aria-label": t("memory.am.memory.tags"),
+              value: memEditor.tags, disabled: !!memBusy,
+              placeholder: t("memory.am.memory.tagsPlaceholder"),
+              onChange: (e) => setMemEditor({ ...memEditor, tags: e.target.value })
+            })),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+            h("button", {
+              className: "mneme-btn", onClick: saveMemory, disabled: !!memBusy,
+              "aria-label": t("memory.am.memory.save")
+            }, memBusy === "save" ? t("memory.am.memory.saving") : t("memory.am.memory.save")),
+            h("button", {
+              className: "mneme-btn", onClick: () => { setMemEditor(null); setMemError(""); }, disabled: !!memBusy
+            }, t("memory.am.memory.cancel"))))
+          : h("div", null,
+            h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+              h("input", {
+                className: "mneme-set-input", style: { flex: "1 1 180px", minWidth: 0, marginBottom: 0 },
+                placeholder: t("memory.am.memory.searchPlaceholder"),
+                "aria-label": t("memory.am.memory.search"),
+                value: memQuery, disabled: !!memBusy,
+                onChange: (e) => setMemQuery(e.target.value),
+                onKeyDown: (e) => { if (e.key === "Enter") loadMemories(memQuery, memArchived, 0); }
+              }),
+              h("button", { className: "mneme-btn", onClick: () => loadMemories(memQuery, memArchived, 0), disabled: !!memBusy },
+                t("memory.am.memory.search")),
+              h("label", { className: "mneme-set-hint", style: { display: "inline-flex", alignItems: "center", gap: 6 } },
+                h("input", {
+                  type: "checkbox", checked: memArchived,
+                  onChange: (e) => { const next = e.target.checked; setMemArchived(next); loadMemories(memQuery, next, 0); }
+                }), t("memory.am.memory.archived")),
+              h("button", { className: "mneme-btn", onClick: () => openMemoryEditor(), disabled: !!memBusy },
+                t("memory.am.memory.new"))),
+            memBusy === "list" && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+            !memBusy && memItems.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.am.memory.empty")),
+            memItems.map((item) => h("div", { className: "mneme-set-row", key: item.id, style: { flexWrap: "wrap" } },
+              h("div", { style: { flex: "1 1 240px", minWidth: 0, overflowWrap: "anywhere" } },
+                h("div", { className: "mneme-set-ruletext" }, item.title),
+                h("div", { className: "mneme-set-hint" },
+                  `${memoryTypeLabel(item.type)} · ${t("memory.am.memory.importance")}: ${item.importance} · ${item.archived ? t("memory.am.memory.archive") : ""} · ${item.updated_at || "—"}`),
+                h("div", { className: "mneme-set-hint", style: { marginTop: 4 } }, item.excerpt || "")),
+              h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+                h("button", { className: "mneme-btn", onClick: () => openMemoryEditor(item.id), disabled: !!memBusy },
+                  t("memory.am.memory.edit")),
+                h("button", { className: "mneme-btn", onClick: () => setMemoryArchived(item, !item.archived), disabled: !!memBusy },
+                  item.archived ? t("memory.am.memory.unarchive") : t("memory.am.memory.archive")),
+                h("button", { className: "mneme-btn mneme-btndanger", onClick: () => setMemDelete(item), disabled: !!memBusy },
+                  t("memory.am.memory.delete"))))),
+            h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8 } },
+              h("button", { className: "mneme-btn", onClick: () => loadMemories(memQuery, memArchived, Math.max(0, memOffset - 20)), disabled: !!memBusy || memOffset === 0 },
+                t("memory.am.memory.prev")),
+              h("button", { className: "mneme-btn", onClick: () => loadMemories(memQuery, memArchived, memOffset + 20), disabled: !!memBusy || memItems.length < 20 },
+                t("memory.am.memory.next")))),
+        memDelete && h("div", { className: "mneme-set-row", style: { flexWrap: "wrap", borderColor: "var(--mneme-danger)" } },
+          h("div", { style: { flex: "1 1 240px", minWidth: 0 } },
+            h("div", { className: "mneme-set-ruletext" }, memDelete.title),
+            h("div", { className: "mneme-set-hint" }, t("memory.am.memory.deleteConfirm")),
+            h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, t("memory.am.memory.deleteHint"))),
+          h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+            h("button", { className: "mneme-btn mneme-btndangerconfirm", onClick: deleteMemory, disabled: !!memBusy },
+              t("memory.am.memory.confirmDelete")),
+            h("button", { className: "mneme-btn", onClick: () => setMemDelete(null), disabled: !!memBusy },
+              t("memory.am.memory.cancel")))));
+
+      const backupCard = () => h("div", { className: "mneme-set-card" },
+        h("div", { className: "mneme-set-hint", style: { marginBottom: 10 } }, t("memory.am.backup.hint")),
+        backupError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)", marginBottom: 8 } }, backupError),
+        backupNotice && h("div", { className: "mneme-saved", style: { marginBottom: 8 } }, backupNotice),
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+          h("button", { className: "mneme-btn", onClick: createMemoryBackup, disabled: !!backupBusy },
+            backupBusy === "create" ? t("memory.am.backup.creating") : t("memory.am.backup.create")),
+          h("button", { className: "mneme-btn", onClick: loadBackups, disabled: !!backupBusy }, t("memory.am.backup.refresh"))),
+        backups.length === 0 && h("div", { className: "mneme-set-hint", style: { marginTop: 10 } }, t("memory.am.backup.empty")),
+        backups.map((item) => h("div", { className: "mneme-set-row", key: item.name, style: { flexWrap: "wrap" } },
+          h("div", { style: { flex: "1 1 240px", minWidth: 0, overflowWrap: "anywhere" } },
+            h("div", { className: "mneme-set-ruletext" }, item.name),
+            h("div", { className: "mneme-set-hint" },
+              `${Math.max(1, Math.round(item.bytes / 1024))} KiB · ${item.modified_at} · ${t("memory.am.backup.sha")} ${item.sha256.slice(0, 12)}…`)),
+          h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+            h("button", { className: "mneme-btn", onClick: () => verifyBackup(item), disabled: !!backupBusy }, t("memory.am.backup.check")),
+            h("button", {
+              className: "mneme-btn mneme-btndanger", disabled: !!backupBusy,
+              onClick: () => { setRestoreTarget(item); setRestoreAck(false); setBackupError(""); }
+            }, t("memory.am.backup.restore"))))),
+        restoreTarget && h("div", { className: "mneme-set-row", style: { flexWrap: "wrap", borderColor: "var(--mneme-danger)" } },
+          h("div", { style: { flex: "1 1 260px", minWidth: 0 } },
+            h("div", { className: "mneme-set-ruletext" }, `${t("memory.am.backup.restoreTitle")}: ${restoreTarget.name}`),
+            h("div", { className: "mneme-set-hint" }, t("memory.am.backup.restoreHint")),
+            h("label", { className: "mneme-set-hint", style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6 } },
+              h("input", { type: "checkbox", checked: restoreAck, onChange: (e) => setRestoreAck(e.target.checked) }),
+              t("memory.am.backup.ack"))),
+          h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+            h("button", { className: "mneme-btn mneme-btndangerconfirm", onClick: stageBackupRestore, disabled: !!backupBusy || !restoreAck },
+              t("memory.am.backup.stage")),
+            h("button", { className: "mneme-btn", onClick: () => { setRestoreTarget(null); setRestoreAck(false); }, disabled: !!backupBusy },
+              t("memory.am.memory.cancel")))));
+
 
       if (loading && !overview) {
         return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
@@ -4896,6 +5387,12 @@ window.__ModuleLoader__.load({
           h("button", { className: "mneme-btn", onClick: load, disabled: loading }, t("memory.am.refresh")),
           h("button", { className: "mneme-btn", onClick: () => openLibraryAboveSettings() }, t("memory.am.openPanel"))),
 
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.memories")),
+        memoryManagementCard(),
+
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.backup")),
+        backupCard(),
+
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.core")),
         h("div", { className: "mneme-set-card" }, AM_FEATURE_KEYS.map(featureRow)),
         h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.featureHint")),
@@ -4912,7 +5409,8 @@ window.__ModuleLoader__.load({
                   h("button", { className: "mneme-btn", onClick: saveConfig, disabled: !!busy || !dirty || invalidFields.length > 0 || formConflict || !formSnapshot || formSnapshot.status !== "ready" }, t("memory.am.save")),
                   h("button", { className: "mneme-btn", onClick: cancelConfig, disabled: !!busy || !dirty }, t("memory.am.cancel")),
                   h("button", { className: "mneme-btn", onClick: restoreConfig, disabled: !!busy || !formSnapshot || formSnapshot.status !== "ready" }, t("memory.am.restoreDefaults"))),
-                h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.savedRestart")))
+                h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.restoreDefaultsHint")),
+                h("div", { className: "mneme-set-hint", style: { marginTop: 4 } }, t("memory.am.savedRestart")))
         ),
 
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.embedding")),
