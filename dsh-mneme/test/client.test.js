@@ -10,6 +10,21 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const clientSource = readFileSync(join(root, "lib/client.js"), "utf8");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
+test("native Memory settings exposes Scene, Recent and Core switches through owner API", () => {
+  const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"];
+  const list = clientSource.match(/const AM_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
+  for (const key of keys) assert.ok(list.includes(`"${key}"`), `${key} belongs in the native settings card`);
+  assert.match(clientSource, /adminJson\("\/features",\s*\{\s*method: "POST"/);
+});
+
+test("native memory editor only calls Core API for changed protection or note", () => {
+  const editor = clientSource.slice(clientSource.indexOf("const saveMemory = async () =>"), clientSource.indexOf("const setMemoryArchived = async"));
+  assert.match(editor, /if \(memEditor\.id && !fieldsChanged && !protectionChanged && !noteChanged\)/);
+  assert.match(editor, /if \(wantProtected && protectionChanged\)/);
+  assert.match(editor, /else if \(!wantProtected && protectionChanged\)/);
+  assert.match(editor, /if \(wantProtected && !protectionChanged && noteChanged\)/);
+});
+
 // The Web client bundle registers itself via __ModuleLoader__.load. DSH
 // resolves the bundle by plugin package name, so the registered id must match
 // package.json `name` exactly (a mismatch surfaces as "loaded without
@@ -2380,4 +2395,25 @@ test("profile extraction ships its button, distinct outcomes and correct save wi
     "the profile saver must verify the response status before reporting success");
   // 没配模型是一句可行动的话（先去选模型），不能和「模型没按格式回」共用一条文案。
   assert.ok(clientSource.includes('"no-route" ? "noroute"'), "no-route must map to its own panel outcome, not the generic failure");
+});
+
+test("GUI exposes scene/recent status and Core provenance without bypassing owner admin", () => {
+  for (const key of [
+    "memory.am.scene.title",
+    "memory.am.scene.hostUnavailable",
+    "memory.am.scene.unknownPolicy",
+    "memory.am.scene.grants",
+    "memory.am.scene.legacyNote",
+    "memory.am.recent.title",
+    "memory.am.recent.clear"
+  ]) {
+    const occurrences = clientSource.split(`"${key}"`).length - 1;
+    assert.ok(occurrences >= 2, `i18n key ${key} must exist in both zh and en`);
+  }
+  assert.ok(clientSource.includes('adminJson("/scene")') && clientSource.includes('adminJson("/recent")'));
+  assert.ok(clientSource.includes('adminJson("/recent/clear"'), "recent clear must use the owner admin route");
+  assert.ok(clientSource.includes("scene_scope") && clientSource.includes("protected_at"),
+    "Core editor must display scene and protected time");
+  assert.ok(clientSource.includes('t("memory.am.scene.legacyNote")'),
+    "unscoped legacy promotion must be explained");
 });

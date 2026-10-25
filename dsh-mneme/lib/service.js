@@ -17,6 +17,8 @@ import { createIdentityService } from "./identity.js";
 import { createPreferenceService } from "./preferences.js";
 import { createIntakeService } from "./intake.js";
 import { normalizeEventTag, stripEventTags, eventTagForKind, isEventTag } from "./trusted-events.js";
+import { currentScene, sceneFilterRows, sceneIdOf, isAdminPrivateScene, scenePolicy } from "./scene.js";
+import { INTERNAL_AUTHORITY } from "./internal-authority.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
 // 原先不收——本机活跃库实测 378/1820（20.8%）因此永不可自动注入，而它们在同一库
@@ -301,7 +303,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
           embedder
             .embedSingle(text)
             .then((vec) => {
-              if (Array.isArray(vec) && vec.length) {
+              const current = store.getById(memory.id);
+              if (Array.isArray(vec) && vec.length && current?.title === memory.title && current?.content === memory.content) {
                 store.setEmbedding(memory.id, vec);
               }
             })
@@ -352,7 +355,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
         embedder
           .embedSingle(text)
           .then((vec) => {
-            if (Array.isArray(vec) && vec.length) {
+            const current = store.getById(memory.id);
+            if (Array.isArray(vec) && vec.length && current?.title === memory.title && current?.content === memory.content) {
               store.setEmbedding(memory.id, vec);
             }
           })
@@ -529,7 +533,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       }
     }
     const ranked = Array.from(merged.values()).sort((a, b) => b._score - a._score);
-    const gated = gateByScope(ranked, scope);
+    const gated = sceneFilterRows(gateByScope(ranked, scope));
     let visible = scorer.active
       ? preferences.rerankRows(gated, { scorer, scoreKey: "_score", lim })
       : gated.slice(0, lim);
@@ -564,7 +568,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 当前有效记忆（v0.3.0，store.js 已实现）。
     const rows = store.findMemoriesByAttr(key, value ?? "");
     // 同 searchByEntity：先过闸再截 topK，且闸门在 touchRecalled 之前。
-    const visible = gateByScope(rows, scope).slice(0, topK);
+    const visible = sceneFilterRows(gateByScope(rows, scope)).slice(0, topK);
     touchRecalled(visible);
     return visible;
   }
@@ -1084,6 +1088,10 @@ export function createService({ store, mirror, config, onWrite, logger, document
     if (occurredBounds.from || occurredBounds.to) {
       merged = merged.filter((m) => inOccurredBounds(m, occurredBounds));
     }
+    // Scene isolation is a data-access gate, after graph/entity recall has
+    // merged and before rerank/receipt/cache. It is fail-closed in strict mode
+    // when the trusted output scene is missing.
+    merged = sceneFilterRows(merged);
     // Signal transparency (#2): decorate each returned row with its per-source
     // scores and the final fused score. Purely additive — never changes rank.
     if (config?.signalTransparency === true) {
@@ -1483,6 +1491,23 @@ export function createService({ store, mirror, config, onWrite, logger, document
     if (memory?.type === "document") {
       throw new Error("type 'document' is minted only via registerDocument (summary + doc_path + evidence)");
     }
+    // Scene provenance is minted only from the trusted context (or an internal
+    // caller such as core creation), never from model tool arguments.
+    const trustedScene = currentScene();
+    if (memory?.[INTERNAL_AUTHORITY] === true) {
+      if (trustedScene?.platform === "qq") memory = { ...memory, scene_scope: trustedScene.sceneId };
+    } else if (memory && ("scene_scope" in memory || "protected" in memory || "protected_by" in memory || "core_note" in memory)) {
+      // Ordinary API/tool callers may not assert scene ownership or protection.
+      memory = { ...memory };
+      delete memory.scene_scope;
+      delete memory.protected;
+      delete memory.protected_at;
+      delete memory.protected_by;
+      delete memory.core_note;
+      if (trustedScene?.platform === "qq") memory.scene_scope = trustedScene.sceneId;
+    } else if (trustedScene?.platform === "qq") {
+      memory = { ...memory, scene_scope: trustedScene.sceneId };
+    }
     // Event claims are authority-bearing provenance, not free-form labels.
     // Every ordinary write loses all event:* spellings; the private trusted
     // writer adds back only the tag derived from its validated kind.
@@ -1527,7 +1552,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const scopeMatches = (m) =>
       scopeKeyOf(m.agent_scope) === scopeKeyOf(memory.agent_scope) &&
       scopeKeyOf(m.workspace_scope) === scopeKeyOf(memory.workspace_scope) &&
-      scopeKeyOf(m.sensitivity) === scopeKeyOf(memory.sensitivity);
+      scopeKeyOf(m.sensitivity) === scopeKeyOf(memory.sensitivity) &&
+      (m.scene_scope ?? null) === (memory.scene_scope ?? null);
     // Issue #127：写入端语义去重命中时，调用方用 _mergeInto 指定并入目标——复用
     // 下面这段并入逻辑（appendContent + content_history + 质量处置），不另写第二份
     // 实现。目标已被并发删除时回落到常规匹配。显式目标同样过 scope 门：跨作用域
@@ -1548,6 +1574,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
             ?? candidates.find((m) => scopeMatches(m) && m.title.trim() === String(memory.title).trim()))
         : candidates.find((m) => scopeMatches(m) && m.title.trim() === String(memory.title).trim());
     if (existing) {
+      if (existing.protected && memory[INTERNAL_AUTHORITY] !== true) {
+        return { action: "protected", memory: existing };
+      }
       const newContent = String(memory.content ?? "");
       if (!newContent.trim()) {
         // Nothing to merge: the row stays untouched.
@@ -1673,6 +1702,11 @@ export function createService({ store, mirror, config, onWrite, logger, document
       scope_decided_at: memory.scope_decided_at,
       sensitivity: memory.sensitivity,
       occurred_at: memory.occurred_at,
+      scene_scope: memory.scene_scope,
+      protected: memory.protected,
+      protected_at: memory.protected_at,
+      protected_by: memory.protected_by,
+      core_note: memory.core_note,
       ...(quality ? { quality_score: quality.score } : {})
     });
     const result = applyQualityDisposition(created, quality, qf);
@@ -1976,6 +2010,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 观察档（enabled 开、enforce 关）在这里留一条审计行说清「本应被拦下几条」，
     // 但不改 candidates；拦截档才真的摘掉。审计写失败只 warn，注入照常完成。
     candidates = scopeStateGate.gateInjection(candidates).rows;
+    candidates = sceneFilterRows(candidates);
     // #249 第一批：B1 pin 池。取在相关性排序之后、轮换之前——取谁按此刻的候选
     // 次序（即相关性次序），取到后从候选中摘除，于是下面的轮换重排碰不到它们
     // （验收：pin 不参与跨轮轮换）。独立预算的两层意义：pin 既不占 maxItems
@@ -2606,6 +2641,11 @@ export function createService({ store, mirror, config, onWrite, logger, document
   // 处置）共用的写路径：mirror 同步、写通知、嵌入调度全部同源，不能各写一份。
   function updateMemory(id, p, ctx = {}) {
     const old = store.getById(id);
+    if (old?.scene_scope && scenePolicy().enabled && sceneFilterRows([old]).length === 0) {
+      const error = new Error("SCENE_DENIED");
+      error.code = "SCENE_DENIED";
+      throw error;
+    }
     // #230 写入权分离（与 saveWithDedupe 同款守卫）：document 行只能经
     // registerDocument 铸造。既有 document 行的摘要修复（memory_update 改
     // content/title——设计定案的更新通道）照常放行，type 不许改入 document。
@@ -2850,6 +2890,60 @@ export function createService({ store, mirror, config, onWrite, logger, document
     setVectorIndex(vi) { vectorIndex = vi; },
     setReranker(rn) { reranker = rn; },
     setRecallRecorder(fn) { recallRecorder = fn; },
+    /** Create a durable protected core row only from a trusted admin-private scene. */
+    createCore({ title, content, type = "history", importance = 5, core_note = null } = {}) {
+      if (config?.coreMemoryEnabled !== true) throw new Error("CORE_DISABLED");
+      const scene = currentScene();
+      if (!isAdminPrivateScene(scene)) throw new Error("CORE_ADMIN_PRIVATE_REQUIRED");
+      if (!String(title ?? "").trim() || !String(content ?? "").trim()) throw new Error("CORE_CONTENT_REQUIRED");
+      const result = saveWithDedupe({
+        type,
+        title: String(title).trim(),
+        content: String(content).trim(),
+        importance: Math.min(5, Math.max(1, Number(importance) || 5)),
+        source: "core",
+        scene_scope: scene.sceneId,
+        protected: true,
+        protected_by: scene.sceneId,
+        core_note: core_note != null ? String(core_note) : null,
+        _forceNew: true,
+        [INTERNAL_AUTHORITY]: true
+      });
+      return result.memory;
+    },
+    /** Owner/admin operation; requires a trusted admin-private scene. */
+    setCoreProtected(id, protectedFlag) {
+      if (config?.coreMemoryEnabled !== true) throw new Error("CORE_DISABLED");
+      const scene = currentScene();
+      if (!isAdminPrivateScene(scene)) throw new Error("CORE_ADMIN_PRIVATE_REQUIRED");
+      const row = store.getById(id);
+      if (!row) return undefined;
+      if (row.scene_scope && row.scene_scope !== scene.sceneId) throw new Error("CORE_SCENE_DENIED");
+      return store.setProtected(id, protectedFlag, { by: scene.sceneId });
+    },
+    updateCoreNote(id, note) {
+      if (config?.coreMemoryEnabled !== true) throw new Error("CORE_DISABLED");
+      const scene = currentScene();
+      if (!isAdminPrivateScene(scene)) throw new Error("CORE_ADMIN_PRIVATE_REQUIRED");
+      const row = store.getById(id);
+      if (!row) return undefined;
+      if (row.scene_scope && row.scene_scope !== scene.sceneId) throw new Error("CORE_SCENE_DENIED");
+      return store.setProtected(id, true, { by: row.protected_by ?? scene.sceneId, note: note == null ? null : String(note) });
+    },
+    listCore({ includeArchived = true } = {}) {
+      const rows = store.list({ includeArchived, includeForgotten: false, limit: 5000 })
+        .filter((row) => row.protected === true);
+      return sceneFilterRows(rows);
+    },
+    removeCore(id) {
+      if (config?.coreMemoryEnabled !== true) throw new Error("CORE_DISABLED");
+      const scene = currentScene();
+      if (!isAdminPrivateScene(scene)) throw new Error("CORE_ADMIN_PRIVATE_REQUIRED");
+      const row = store.getById(id);
+      if (!row) return false;
+      if (row.scene_scope && row.scene_scope !== scene.sceneId) throw new Error("CORE_SCENE_DENIED");
+      return store.remove(id, { force: true });
+    },
     searchMemories,
     // recallStats（#217）实现在 src/recall-stats.js：service.js 过 2000 行参考线，
     // 新内聚块独立成模块（AGENTS.md 尺寸约定）；这里只留 barrel 出口，调用方
@@ -2868,6 +2962,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // passthrough 形状与 embeddedCount 同款，api 层不直接摸 store。
     embeddingModelBreakdown: () => store.embeddingModelBreakdown(),
     embeddingDimensionBreakdown: () => store.embeddingDimensionBreakdown(),
+    hasSceneScopedRows: () => store.hasSceneScopedRows(),
     list: (o) => store.list(o),
     all: () => store.all(),
     count: (type, opts) => store.count(type, opts),

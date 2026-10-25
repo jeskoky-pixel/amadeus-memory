@@ -6,11 +6,17 @@ import { createSettings } from "../src/settings.js";
 import { createStandaloneApi } from "../src/api-standalone.js";
 import { PACKAGE_VERSION } from "../src/version-check.js";
 import { Config, applyLightModePreset } from "../src/config.js";
+import { rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createServeRuntime } from "../src/serve.js";
+import { assertIsolatedMemoryDir } from "../src/qa-guard.js";
 
 // Real HTTP server on an OS-assigned port (port: 0), driven with fetch.
-async function setup({ config = {}, embedder = null, embedTimeoutMs } = {}) {
+async function setup({ config = {}, embedder = null, embedTimeoutMs, seedScoped = false } = {}) {
   const store = createStore(":memory:");
   const service = createService({ store, mirror: null, config });
+  if (seedScoped) store.save({ type: "history", title: "tagged", content: "private tagged body", scene_scope: "qq:group:stored" });
   const settings = createSettings(store.db);
   const api = createStandaloneApi({ service, store, config, settings, logger: null, port: 0, embedder, embedTimeoutMs });
   await api.ready;
@@ -51,6 +57,59 @@ test("GET /health is open without a token; every other route 401s", async () => 
     assert.equal(bad.status, 401, "wrong token rejected");
   } finally {
     close();
+  }
+});
+
+test("strict QQ scene mode denies every standalone data route before auth/data details", async () => {
+  const { base, auth, close } = await setup({ config: { sceneIsolationEnabled: true, sceneStrictQQ: true } });
+  try {
+    const health = await fetch(`${base}/health`);
+    assert.equal(health.status, 200);
+    for (const path of ["/status", "/memories", "/memories/secret-id", "/search?q=secret", "/context", "/profile", "/rules"]) {
+      const res = await fetch(`${base}${path}`, { headers: auth });
+      assert.equal(res.status, 403, `${path} must be denied by scene policy, not merely token auth`);
+      assert.deepEqual(await res.json(), { error: "scene-isolation-active" });
+    }
+    const write = await fetch(`${base}/memories`, {
+      method: "POST", headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ title: "secret", content: "secret body" })
+    });
+    assert.equal(write.status, 403);
+    assert.equal((await write.json()).error, "scene-isolation-active");
+  } finally {
+    close();
+  }
+});
+
+test("daemon serve runtime initializes scene policy with no Host grants", () => {
+  const src = readFileSync(new URL("../src/serve.js", import.meta.url), "utf8");
+  assert.match(src, /configureScene\(\{[\s\S]*?enabled: cfg\.sceneIsolationEnabled === true/);
+  assert.match(src, /strictQQ: cfg\.sceneStrictQQ === true/);
+  assert.match(src, /hostContract: false/);
+  assert.match(src, /sceneIsolationEnabled = false, sceneStrictQQ = false/);
+});
+
+test("daemon default flags still deny a DB that already has tagged scene rows", async () => {
+  const lexical = join(tmpdir(), `mneme-serve-scene-${process.pid}-${Date.now()}`);
+  const dir = assertIsolatedMemoryDir(lexical, { qaRoot: tmpdir() });
+  let runtime;
+  try {
+    const seedStore = createStore(join(dir, "memory.db"));
+    seedStore.save({ type: "history", title: "tagged", content: "private tagged body", scene_scope: "qq:group:stored" });
+    seedStore.close();
+    runtime = await createServeRuntime({ memoryDir: dir, embed: "off", port: 0, strictPort: false });
+    await runtime.api.ready;
+    const base = `http://127.0.0.1:${runtime.api.port}`;
+    const auth = { authorization: `Bearer ${runtime.api.token}` };
+    assert.equal((await fetch(`${base}/health`)).status, 200);
+    for (const path of ["/memories", "/memories/x", "/search?q=private", "/context"]) {
+      const res = await fetch(`${base}${path}`, { headers: auth });
+      assert.equal(res.status, 403, `${path} must fail closed from stored tagged rows`);
+      assert.deepEqual(await res.json(), { error: "scene-isolation-active" });
+    }
+  } finally {
+    if (runtime) await runtime.dispose();
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

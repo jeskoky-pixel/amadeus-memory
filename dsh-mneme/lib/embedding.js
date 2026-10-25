@@ -194,6 +194,12 @@ export function createEmbedder({ store, settings, logger, vectorIndex }) {
     }
     const vector = detailed.vector;
     const model = modelHashOf(cfg.model);
+    const current = store.getById(id);
+    if (!current || current.title !== title || current.content !== content) {
+      const entry = { status: "skipped", id, at, reason: "memory-changed-during-embedding" };
+      ledger.record(entry);
+      return entry;
+    }
     store.setEmbedding(id, vector, model);
     _dimension = vector.length;
     // Bug3: record which model produced the current vectors so the index can

@@ -343,6 +343,28 @@ window.__ModuleLoader__.load({
         "memory.am.memory.created": "记忆已创建",
         "memory.am.memory.merged": "已并入同标题记忆",
         "memory.am.memory.autoArchived": "已创建，但质量过滤将其归档；打开“显示归档”后可恢复。",
+        "memory.am.memory.core": "核心记忆（受保护）",
+        "memory.am.memory.coreHint": "受保护记忆不会被自动归档、遗忘、合并或删除；解除保护后才能删除。",
+        "memory.am.memory.coreNote": "第一人称短记（可选）",
+        "memory.am.memory.coreBadge": "核心",
+        "memory.am.memory.coreSaved": "核心保护状态已更新",
+        "memory.am.scene.title": "场景与近期上下文",
+        "memory.am.scene.isolation": "场景隔离",
+        "memory.am.scene.strict": "严格 QQ 模式",
+        "memory.am.scene.hostUnavailable": "可信 Host 不可用：跨场景共享保持关闭（安全降级）",
+        "memory.am.scene.current": "当前场景",
+        "memory.am.scene.unknownPolicy": "无来源旧记忆：不视为公共；有场景标记的记忆默认隐藏",
+        "memory.am.scene.legacyNote": "未标记来源的旧记忆提升为核心后仍保持未标记；在原有模式下可能被其他会话读取，不能视为私密记忆",
+        "memory.am.scene.grants": "已授权读取关系",
+        "memory.am.scene.noGrants": "没有跨场景授权",
+        "memory.am.scene.degraded": "图谱/身份/偏好读取与后台派生已安全降级",
+        "memory.am.recent.title": "近期上下文",
+        "memory.am.recent.enabled": "已启用",
+        "memory.am.recent.disabled": "未启用",
+        "memory.am.recent.ttl": "保留时长（分钟）",
+        "memory.am.recent.count": "缓冲事件数",
+        "memory.am.recent.clear": "清空近期缓冲",
+        "memory.am.recent.cleared": "近期缓冲已清空",
         "memory.am.memory.archivedDone": "已归档",
         "memory.am.memory.unarchivedDone": "已取消归档",
         "memory.am.memory.deleted": "已删除",
@@ -742,6 +764,15 @@ window.__ModuleLoader__.load({
         "memory.features.group.enhance": "它什么时候写进去",
         "memory.features.group.dream": "它怎么用回来",
         "memory.features.group.scope": "不同会话之间",
+        "memory.features.group.scene": "场景、近期与核心记忆",
+        "memory.features.sceneIsolationEnabled": "按 QQ 场景隔离记忆",
+        "memory.features.sceneIsolationEnabled.hint": "开：来自可信 Host 的场景记忆只在该场景可见；关：保持原有行为。需要 Host 提供可信场景身份",
+        "memory.features.sceneStrictQQ": "严格 QQ 场景模式",
+        "memory.features.sceneStrictQQ.hint": "开：跨场景普通记忆、图谱和普通 HTTP 内容接口全部拒绝；自动维护暂停。默认关",
+        "memory.features.recentContextEnabled": "近期上下文（10 分钟）",
+        "memory.features.recentContextEnabled.hint": "开：在内存中保留有限近期事件，仅在授权方向注入；不调用嵌入/模型，不写长期记忆",
+        "memory.features.coreMemoryEnabled": "核心记忆（受保护）",
+        "memory.features.coreMemoryEnabled.hint": "开：允许授权管理员私聊保存受保护核心记忆；保护不等于重要度，普通维护不能删除或覆盖",
         "memory.features.group.advanced": "高级",
         // 「全部设置」= 第一层折叠（issue #427 建议 1），常显只留 basic + scope
         // 两组；「高级」是它内部的第二层（进阶 7 项）。
@@ -1297,6 +1328,28 @@ window.__ModuleLoader__.load({
         "memory.am.memory.created": "Memory created",
         "memory.am.memory.merged": "Merged into the existing title",
         "memory.am.memory.autoArchived": "Created, but the quality filter archived it; enable “Show archived” to restore it.",
+        "memory.am.memory.core": "Core memory (protected)",
+        "memory.am.memory.coreHint": "Protected memories are never auto-archived, forgotten, merged or deleted; unprotect before deleting.",
+        "memory.am.memory.coreNote": "Optional first-person note",
+        "memory.am.memory.coreBadge": "Core",
+        "memory.am.memory.coreSaved": "Core protection updated",
+        "memory.am.scene.title": "Scene and recent context",
+        "memory.am.scene.isolation": "Scene isolation",
+        "memory.am.scene.strict": "Strict QQ mode",
+        "memory.am.scene.hostUnavailable": "Trusted Host unavailable: cross-scene sharing stays disabled (safe downgrade)",
+        "memory.am.scene.current": "Current scene",
+        "memory.am.scene.unknownPolicy": "Unknown-provenance memories are not public; scene-tagged memories are hidden by default",
+        "memory.am.scene.legacyNote": "An unscoped legacy memory stays unscoped when promoted to Core. Legacy access may expose it to other sessions; do not treat it as private.",
+        "memory.am.scene.grants": "Authorized read relationships",
+        "memory.am.scene.noGrants": "No cross-scene grants",
+        "memory.am.scene.degraded": "Graph/identity/preference reads and background derivation are safely degraded",
+        "memory.am.recent.title": "Recent context",
+        "memory.am.recent.enabled": "Enabled",
+        "memory.am.recent.disabled": "Disabled",
+        "memory.am.recent.ttl": "TTL (minutes)",
+        "memory.am.recent.count": "Buffered events",
+        "memory.am.recent.clear": "Clear recent buffer",
+        "memory.am.recent.cleared": "Recent buffer cleared",
         "memory.am.memory.archivedDone": "Archived",
         "memory.am.memory.unarchivedDone": "Unarchived",
         "memory.am.memory.deleted": "Deleted",
@@ -1691,6 +1744,15 @@ window.__ModuleLoader__.load({
         "memory.features.group.enhance": "When it gets written",
         "memory.features.group.dream": "How it comes back",
         "memory.features.group.scope": "Between sessions",
+        "memory.features.group.scene": "Scene, recent and core memories",
+        "memory.features.sceneIsolationEnabled": "Isolate memories by QQ scene",
+        "memory.features.sceneIsolationEnabled.hint": "On: memories from a trusted Host scene are visible only there. Off: legacy behavior. Requires a trusted Host scene identity",
+        "memory.features.sceneStrictQQ": "Strict QQ scene mode",
+        "memory.features.sceneStrictQQ.hint": "On: cross-scene memory, graph and ordinary HTTP content routes are denied; background maintenance pauses. Off by default",
+        "memory.features.recentContextEnabled": "Recent context (10 min)",
+        "memory.features.recentContextEnabled.hint": "On: keep a bounded in-memory recent-event buffer, injected only in the authorized direction. No embedding/LLM and no long-term write",
+        "memory.features.coreMemoryEnabled": "Core memory (protected)",
+        "memory.features.coreMemoryEnabled.hint": "On: an authorized admin-private session can save protected core memories. Protection is independent of importance; maintenance cannot delete or overwrite them",
         "memory.features.group.advanced": "Advanced",
         "memory.features.allToggle": "All settings",
         "memory.features.advancedToggle": "7 rarer switches",
@@ -3772,7 +3834,8 @@ window.__ModuleLoader__.load({
         "personaEnabled", "personaStrictAddressing", "profileExtractEnabled"] },
       { key: "group.dream", items: ["sleepModeEnabled"] },
       // v0.8.0 A4（issue #17）：作用域隔离组——标注总开关 + 严格硬过滤。
-      { key: "group.scope", items: ["scopeEnabled", "strictScope"] }
+      { key: "group.scope", items: ["scopeEnabled", "strictScope"] },
+      { key: "group.scene", items: ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"] }
     ];
     const FEATURE_ADVANCED_BOOLS = ["hybridInject", "selectiveInjectEnabled", "adaptiveThresholdEnabled", "reflectionUpdateEnabled", "reflectionFailureTracking", "conflictFreezeEnabled", "trustEpistemicWeighting"];
     // 字符串键（blur/Enter 提交，空串合法 = 跟随默认）：巩固模型与语义
@@ -4572,7 +4635,8 @@ window.__ModuleLoader__.load({
     ];
     const AM_FEATURE_KEYS = [
       "autoInject", "autoSummarize", "autoDream", "sleepModeEnabled",
-      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled"
+      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled",
+      "sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"
     ];
     // Keep this list aligned with store.js TYPES minus document (document rows
     // must be minted by registerDocument, not by the ordinary editor).
@@ -4645,6 +4709,8 @@ window.__ModuleLoader__.load({
       const [features, setFeatures] = useState(null);
       const [prefs, setPrefs] = useState(null);
       const [vector, setVector] = useState(null);
+      const [sceneStatus, setSceneStatus] = useState(null);
+      const [recentStatus, setRecentStatus] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState("");
       const [message, setMessage] = useState("");
@@ -4694,16 +4760,20 @@ window.__ModuleLoader__.load({
         setLoading(true);
         setError("");
         try {
-          const [ov, ft, pf, vc] = await Promise.all([
+          const [ov, ft, pf, vc, sc, rc] = await Promise.all([
             adminJson("/overview"),
             adminJson("/features"),
             adminJson("/preferences"),
-            adminJson("/vector")
+            adminJson("/vector"),
+            adminJson("/scene"),
+            adminJson("/recent")
           ]);
           setOverview(ov);
           setFeatures(ft);
           setPrefs(pf);
           setVector(vc);
+          setSceneStatus(sc);
+          setRecentStatus(rc);
           setVectorDraft((prev) => (prev.baseUrl || prev.model || prev.apiKey || prev.enabled
             ? prev
             : { enabled: vc.enabled === true, baseUrl: vc.base_url || "", model: vc.model || "", apiKey: "" }));
@@ -4768,6 +4838,18 @@ window.__ModuleLoader__.load({
         } finally { setMemBusy(""); }
       };
 
+      const clearRecent = async () => {
+        setMemBusy("recent");
+        setMemError("");
+        try {
+          const data = await adminJson("/recent/clear", { method: "POST", body: "{}" });
+          setRecentStatus(data);
+          setMemNotice(t("memory.am.recent.cleared"));
+        } catch (e) {
+          setMemError(String(e.message || e));
+        } finally { setMemBusy(""); }
+      };
+
       const loadBackups = async () => {
         setBackupBusy("list");
         setBackupError("");
@@ -4783,7 +4865,7 @@ window.__ModuleLoader__.load({
         setMemError("");
         setMemNotice("");
         if (!id) {
-          setMemEditor({ id: "", type: "project", title: "", content: "", importance: 3, tags: "", updated_at: "" });
+          setMemEditor({ id: "", type: "project", title: "", content: "", importance: 3, tags: "", updated_at: "", protected: false, core_note: "" });
           return;
         }
         setMemBusy("open");
@@ -4792,7 +4874,12 @@ window.__ModuleLoader__.load({
           setMemEditor({
             id: data.id, type: data.type, title: data.title, content: data.content,
             importance: data.importance, tags: (data.tags || []).join(", "),
-            updated_at: data.updated_at
+            updated_at: data.updated_at, protected: data.protected === true,
+            core_note: data.core_note || "", scene_scope: data.scene_scope || null,
+            protected_at: data.protected_at || null,
+            original: { type: data.type, title: data.title, content: data.content,
+              importance: data.importance, tags: data.tags || [], protected: data.protected === true,
+              core_note: data.core_note || "" }
           });
         } catch (e) {
           setMemError(String(e.message || e));
@@ -4805,11 +4892,25 @@ window.__ModuleLoader__.load({
         if (!String(memEditor.content || "").trim()) { setMemError(t("memory.am.memory.contentRequired")); return; }
         setMemBusy("save");
         setMemError("");
+        let savedContent = false;
+        let savedId = memEditor.id;
+        let successNotice = t("memory.am.memory.saved");
         try {
           const tags = String(memEditor.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+          const original = memEditor.original;
+          const fieldsChanged = !original || original.type !== memEditor.type ||
+            original.title !== memEditor.title || original.content !== memEditor.content ||
+            original.importance !== Number(memEditor.importance) ||
+            JSON.stringify(original.tags) !== JSON.stringify(tags);
+          const protectionChanged = (original?.protected || false) !== (memEditor.protected === true);
+          const noteChanged = (original?.core_note || "") !== (memEditor.core_note || "");
+          if (memEditor.id && !fieldsChanged && !protectionChanged && !noteChanged) {
+            setMemEditor(null);
+            return;
+          }
           let payload;
           if (memEditor.id) {
-            payload = await adminJson("/memory/update", {
+            payload = fieldsChanged ? await adminJson("/memory/update", {
               method: "POST",
               body: JSON.stringify({
                 id: memEditor.id,
@@ -4820,8 +4921,8 @@ window.__ModuleLoader__.load({
                 importance: Number(memEditor.importance),
                 tags
               })
-            });
-            setMemNotice(t("memory.am.memory.saved"));
+            }) : { memory: { id: memEditor.id, updated_at: memEditor.updated_at } };
+            savedContent = fieldsChanged;
           } else {
             payload = await adminJson("/memory", {
               method: "POST",
@@ -4830,15 +4931,48 @@ window.__ModuleLoader__.load({
                 importance: Number(memEditor.importance), tags
               })
             });
-            setMemNotice(payload.memory?.archived
+            successNotice = payload.memory?.archived
               ? t("memory.am.memory.autoArchived")
-              : payload.action === "merged" ? t("memory.am.memory.merged") : t("memory.am.memory.created"));
+              : payload.action === "merged" ? t("memory.am.memory.merged") : t("memory.am.memory.created");
+            savedContent = true;
           }
+          const targetId = payload.memory?.id || memEditor.id;
+          savedId = targetId;
+          const wantProtected = memEditor.protected === true;
+          if (targetId) {
+            if (wantProtected && protectionChanged) {
+              await adminJson("/core", {
+                method: "POST",
+                body: JSON.stringify({ action: "protect", id: targetId, note: memEditor.core_note || "" })
+              });
+            } else if (!wantProtected && protectionChanged) {
+              await adminJson("/core", {
+                method: "POST",
+                body: JSON.stringify({ action: "unprotect", id: targetId })
+              });
+            }
+            if (wantProtected && !protectionChanged && noteChanged) {
+              await adminJson("/core", {
+                method: "POST",
+                body: JSON.stringify({ action: "note", id: targetId, note: memEditor.core_note || "" })
+              });
+            }
+          }
+          setMemNotice(successNotice);
           setMemEditor(null);
           await loadMemories(memQuery, memArchived, memEditor.id ? memOffset : 0);
           await load();
         } catch (e) {
-          setMemError(e.message === "memory changed since it was opened"
+          if (savedContent) {
+            // A later Core request may fail after the content write. Keep the
+            // editor open with the new CAS token so the owner can retry safely.
+            const data = savedId ? await adminJson(`/memory?id=${encodeURIComponent(savedId)}`).catch(() => null) : null;
+            if (data) setMemEditor((current) => current && ({ ...current, updated_at: data.updated_at,
+              id: data.id,
+              original: { ...(current.original || {}), type: data.type, title: data.title,
+                content: data.content, importance: data.importance, tags: data.tags || [] } }));
+            setMemError(`${t("memory.am.memory.saved")} · ${String(e.message || e)}`);
+          } else setMemError(e.message === "memory changed since it was opened"
             ? t("memory.am.memory.stale") : String(e.message || e));
         } finally { setMemBusy(""); }
       };
@@ -5251,6 +5385,22 @@ window.__ModuleLoader__.load({
               placeholder: t("memory.am.memory.tagsPlaceholder"),
               onChange: (e) => setMemEditor({ ...memEditor, tags: e.target.value })
             })),
+          h("label", { className: "mneme-set-hint", style: { display: "inline-flex", alignItems: "center", gap: 6 } },
+            h("input", {
+              type: "checkbox", checked: memEditor.protected === true, disabled: !!memBusy,
+              onChange: (e) => setMemEditor({ ...memEditor, protected: e.target.checked })
+            }), t("memory.am.memory.core")),
+          h("div", { className: "mneme-set-hint" }, t("memory.am.memory.coreHint")),
+          h("div", { className: "mneme-set-hint" },
+            `scene: ${memEditor.scene_scope || "—"} · protected_at: ${memEditor.protected_at || "—"}`),
+          (!memEditor.scene_scope) && h("div", { className: "mneme-set-hint" }, t("memory.am.scene.legacyNote")),
+          memEditor.protected && h("label", null,
+            h("span", { className: "mneme-set-hint" }, t("memory.am.memory.coreNote")),
+            h("input", {
+              className: "mneme-set-input", "aria-label": t("memory.am.memory.coreNote"),
+              value: memEditor.core_note || "", disabled: !!memBusy,
+              onChange: (e) => setMemEditor({ ...memEditor, core_note: e.target.value })
+            })),
           h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
             h("button", {
               className: "mneme-btn", onClick: saveMemory, disabled: !!memBusy,
@@ -5284,7 +5434,7 @@ window.__ModuleLoader__.load({
               h("div", { style: { flex: "1 1 240px", minWidth: 0, overflowWrap: "anywhere" } },
                 h("div", { className: "mneme-set-ruletext" }, item.title),
                 h("div", { className: "mneme-set-hint" },
-                  `${memoryTypeLabel(item.type)} · ${t("memory.am.memory.importance")}: ${item.importance} · ${item.archived ? t("memory.am.memory.archive") : ""} · ${item.updated_at || "—"}`),
+                  `${memoryTypeLabel(item.type)} · ${t("memory.am.memory.importance")}: ${item.importance} · ${item.archived ? t("memory.am.memory.archive") : ""} · ${item.protected ? t("memory.am.memory.coreBadge") : ""} · ${item.updated_at || "—"}`),
                 h("div", { className: "mneme-set-hint", style: { marginTop: 4 } }, item.excerpt || "")),
               h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
                 h("button", { className: "mneme-btn", onClick: () => openMemoryEditor(item.id), disabled: !!memBusy },
@@ -5308,6 +5458,32 @@ window.__ModuleLoader__.load({
               t("memory.am.memory.confirmDelete")),
             h("button", { className: "mneme-btn", onClick: () => setMemDelete(null), disabled: !!memBusy },
               t("memory.am.memory.cancel")))));
+
+      const sceneCard = () => h("div", { className: "mneme-set-card" },
+        h("div", { className: "mneme-set-grouphead" }, t("memory.am.scene.title")),
+        !sceneStatus && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+        sceneStatus && h("div", null,
+          h("div", { className: "mneme-set-hint" },
+            `${t("memory.am.scene.isolation")}: ${sceneStatus.enabled ? "on" : "off"} · ${t("memory.am.scene.strict")}: ${sceneStatus.strict_qq ? "on" : "off"}`),
+          !sceneStatus.host_contract && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-warning, var(--mneme-danger))" } },
+            t("memory.am.scene.hostUnavailable")),
+          h("div", { className: "mneme-set-hint" },
+            `${t("memory.am.scene.current")}: ${sceneStatus.current_scene || "—"}`),
+          h("div", { className: "mneme-set-hint" }, t("memory.am.scene.unknownPolicy")),
+          sceneStatus.degraded && h("div", { className: "mneme-set-hint" }, t("memory.am.scene.degraded")),
+          h("div", { className: "mneme-set-hint" }, t("memory.am.scene.legacyNote")),
+          h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } }, t("memory.am.scene.grants")),
+          (sceneStatus.grants || []).length === 0
+            ? h("div", { className: "mneme-set-hint" }, t("memory.am.scene.noGrants"))
+            : sceneStatus.grants.map((grant) => h("div", { className: "mneme-set-hint", key: grant.output },
+              `${grant.output} → ${(grant.sources || []).join(", ") || "—"}`)),
+          h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } }, t("memory.am.recent.title")),
+          recentStatus && h("div", null,
+            h("div", { className: "mneme-set-hint" },
+              `${recentStatus.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.ttl")}: ${(Number(recentStatus.ttl_ms) / 60000).toFixed(Number(recentStatus.ttl_ms) % 60000 ? 1 : 0)} · ${t("memory.am.recent.count")}: ${recentStatus.total_events}`),
+            h("button", { className: "mneme-btn", disabled: !!memBusy || !recentStatus.enabled, onClick: clearRecent },
+              memBusy === "recent" ? t("memory.am.loading") : t("memory.am.recent.clear")))
+        ));
 
       const backupCard = () => h("div", { className: "mneme-set-card" },
         h("div", { className: "mneme-set-hint", style: { marginBottom: 10 } }, t("memory.am.backup.hint")),
@@ -5389,6 +5565,8 @@ window.__ModuleLoader__.load({
 
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.memories")),
         memoryManagementCard(),
+
+        sceneCard(),
 
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.backup")),
         backupCard(),

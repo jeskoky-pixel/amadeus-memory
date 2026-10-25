@@ -49,6 +49,22 @@ function walkSchema(node, path, problems) {
   }
 }
 
+test("scene-tagged rows fail closed graph/identity/preference tools even after registration", async () => {
+  const { store, registered } = setup();
+  store.save({ type: "history", title: "tagged", content: "private", scene_scope: "qq:group:a" });
+  const byName = new Map(registered.map((tool) => [tool.name, tool]));
+  await assert.rejects(byName.get("memory_identity_lookup").execute({ query: "x" }, {}), /scene-isolation-active/);
+  await assert.rejects(byName.get("memory_preference_get").execute({}, {}), /scene-isolation-active/);
+});
+
+test("scene isolation hides identity/preference/organize at registration", () => {
+  const { registered } = setup({}, { sceneIsolationEnabled: true });
+  const names = registered.map((tool) => tool.name);
+  for (const hidden of ["memory_identity_lookup", "memory_preference_get", "memory_organize"]) {
+    assert.equal(names.includes(hidden), false, `${hidden} must not be exposed under scene isolation`);
+  }
+});
+
 test("registers thirteen tools with correct names", () => {
   const { registered } = setup();
   const names = registered.map((t) => t.name).sort();

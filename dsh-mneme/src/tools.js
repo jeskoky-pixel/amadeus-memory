@@ -10,6 +10,7 @@ import { injectChildEnabled } from "./config.js";
 import { normalizeScopeStateDimension, normalizeScopeStateValue, normalizeScopeStateState } from "./scope-state.js";
 import { lastUserQuery } from "./inject.js";
 import { normalizeIdentityKey } from "./identity.js";
+import { sceneFilterRows, currentScene, isAdminPrivateScene, isExplicitCoreRequest } from "./scene.js";
 
 const TEXT_OUTPUT = (text) => [{ type: "text", text }];
 // Read-only enhancer tools stay small and bounded even when the underlying
@@ -363,6 +364,8 @@ export function createTools(ctx, service, config, embedder) {
   // 「不存在」处理——update/delete 与 memory_get 同款无存在性泄漏。strictScope
   // 关、或会话身份取不到（scope 为 null）时恒可见（与 get 的短路语义一致）。
   const visibleUnderStrictScope = (memory, exec) => {
+    if (!memory) return false;
+    if (sceneFilterRows([memory]).length === 0) return false;
     if (config?.strictScope !== true) return true;
     const scope = resolveSessionScope(exec);
     return !scope || service.isVisibleInScope(memory, scope);
@@ -377,6 +380,14 @@ export function createTools(ctx, service, config, embedder) {
   const visibleForTool = (id, exec) => {
     const memory = id ? service.getById(id) : undefined;
     return visibleUnderStrictScope(memory, exec) ? memory : undefined;
+  };
+  // Graph/identity/preference reads are library-wide and cannot be scene-filtered
+  // safely. Fail closed at execution time too (not only when registering), so
+  // tagged rows arriving after startup or flags toggled off cannot expose them.
+  const sceneUnsafeRead = () => config?.sceneIsolationEnabled === true ||
+    service.hasSceneScopedRows?.() === true;
+  const assertSceneSafeRead = () => {
+    if (sceneUnsafeRead()) throw new Error("scene-isolation-active");
   };
   const tools = [
     defineTool({
@@ -561,8 +572,8 @@ export function createTools(ctx, service, config, embedder) {
           // A3：strict 开启时按会话 scope 硬过滤（宿主按 (args, runContext) 调用，
           // 从 arguments 取第二参）。
           ...strictVisibility(config, resolveSessionScope(arguments[1]))
-        }));
-        return { items: rows, total: service.count(args.type, { includeArchived, ...occurredWindow(args), ...strictVisibility(config, resolveSessionScope(arguments[1])) }) };
+        }).filter((row) => sceneFilterRows([row]).length === 1));
+        return { items: rows, total: rows.length };
       }
     }),
 
@@ -600,6 +611,7 @@ export function createTools(ctx, service, config, embedder) {
         if (config.strictScope === true && scope && !service.isVisibleInScope(memory, scope)) {
           throw new Error("memory not found");
         }
+        if (sceneFilterRows([memory]).length === 0) throw new Error("memory not found");
         return { memory: service.toApiList([memory])[0] };
       }
     }),
@@ -633,6 +645,7 @@ export function createTools(ctx, service, config, embedder) {
         }
       },
       async execute() {
+        assertSceneSafeRead();
         return preferenceStateDto();
       }
     }),
@@ -683,6 +696,7 @@ export function createTools(ctx, service, config, embedder) {
         }
       },
       async execute(args) {
+        assertSceneSafeRead();
         return identityLookupDto(args?.query);
       }
     }),
@@ -795,7 +809,7 @@ export function createTools(ctx, service, config, embedder) {
         render: (_args, value) => TEXT_OUTPUT(`Memory ${value.memory.id} injection ${value.memory.forgotten ? "suppressed" : "restored"}.`)
       },
       async execute(args) {
-        if (service.getById(args.id) === undefined) {
+        if (!visibleForTool(args.id, arguments[1])) {
           throw new Error("memory not found");
         }
         const memory = service.setForget(args.id, args.forgotten ?? true);
@@ -832,7 +846,7 @@ export function createTools(ctx, service, config, embedder) {
         render: (_args, value) => TEXT_OUTPUT(`Memory ${value.memory.id} ${value.memory.archived ? "archived" : "restored"}.`)
       },
       async execute(args) {
-        if (service.getById(args.id) === undefined) {
+        if (!visibleForTool(args.id, arguments[1])) {
           throw new Error("memory not found");
         }
         const memory = service.setArchived(args.id, args.archived ?? true);
@@ -1160,6 +1174,7 @@ export function createTools(ctx, service, config, embedder) {
         }
       },
       async execute(args, exec) {
+        assertSceneSafeRead();
         const mode = String(args?.mode ?? "dryRun").trim();
         const scope = resolveSessionScope(exec);
         const autoStamping = config?.scopeEnabled === true;
@@ -1369,6 +1384,46 @@ export function createTools(ctx, service, config, embedder) {
           ...(report.reason ? { reason: report.reason } : {})
         };
       }
+    }),
+
+    defineTool({
+      name: "memory_core_save",
+      description: "Save a permanent protected core memory. Only a Host-verified authorized admin private session can create one; model-supplied roles/scenes are ignored.",
+      parameters: {
+        title: { type: "string", required: true, description: "Short core title" },
+        content: { type: "string", required: true, description: "The core fact/experience" },
+        note: { type: "string", description: "Optional short first-person note; may be omitted" },
+        type: { type: "string", enum: ["preference", "project", "decision", "history", "pitfall", "constraint"], description: "Memory type (default history)" },
+        importance: { type: "integer", description: "1-5 (default 5; protection is independent)" }
+      },
+      output: {
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            memory: { type: "object", required: true, additionalProperties: false, properties: {
+              id: { type: "string", required: true },
+              title: { type: "string", required: true },
+              protected: { type: "boolean", required: true }
+            } }
+          }
+        },
+        render: (_args, value) => TEXT_OUTPUT(`Core memory saved and protected: ${value.memory.id} — ${value.memory.title}`)
+      },
+      async execute(args) {
+        if (config?.coreMemoryEnabled !== true) throw new Error("core memory feature is disabled");
+        if (!isAdminPrivateScene(currentScene())) throw new Error("core memory requires a verified admin private session");
+        const userText = lastUserQuery(arguments[1]);
+        if (!isExplicitCoreRequest(userText)) throw new Error("core memory requires an explicit user request in the current conversation");
+        const memory = service.createCore({
+          title: args.title,
+          content: args.content,
+          type: args.type ?? "history",
+          importance: args.importance ?? 5,
+          core_note: args.note
+        });
+        return { memory: { id: memory.id, title: memory.title, protected: memory.protected === true } };
+      }
     })
   ];
 
@@ -1382,14 +1437,16 @@ export function createTools(ctx, service, config, embedder) {
   // Entity aliases, relation summaries and saved preference names are library-wide.
   // They have no per-session scope marker, so do not expose them as model tools
   // when strict visibility is requested for this session.
-  if (config?.strictScope === true) {
+  if (config?.strictScope === true || config?.sceneIsolationEnabled === true || service.hasSceneScopedRows?.() === true) {
     hiddenTools.add("memory_identity_lookup");
     hiddenTools.add("memory_preference_get");
+    hiddenTools.add("memory_organize");
   }
   // #231 第二批是**反向**语义：memory_organize 默认不在场，organizeEnabled 打开才
   // 注册。仍走同一个闸门而不是在数组里条件展开——模型看不到就不会调，这比在描述里
   // 劝它别用可靠（上面那段 v0.8.5 的定性对两个方向都成立）。
   if (config?.organizeEnabled !== true) hiddenTools.add("memory_organize");
+  if (config?.coreMemoryEnabled !== true) hiddenTools.add("memory_core_save");
 
   for (const tool of tools) {
     if (hiddenTools.has(tool.name)) {

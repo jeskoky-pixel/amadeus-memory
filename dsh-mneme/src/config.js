@@ -895,6 +895,22 @@ export const Config = z.object({
   // 数据、观察 A2 加权质量后再切硬过滤。
   strictScope: z.boolean().default(false),
 
+  // --- Scene isolation (QQ-first, opt-in) --------------------------------
+  // Trusted scene IDs come only from a verified Host/platform adapter. The
+  // default is off, so ordinary non-QQ memory behavior is unchanged. strictQQ
+  // only takes effect when sceneIsolationEnabled is on; actual QQ cross-scene
+  // sharing remains disabled until the Bridge supplies a trusted contract.
+  sceneIsolationEnabled: z.boolean().default(false),
+  sceneStrictQQ: z.boolean().default(false),
+  // Recent Context: bounded in-memory events; never embedding/LLM/long-term.
+  recentContextEnabled: z.boolean().default(false),
+  recentContextTtlMs: z.natural().min(60000).max(600000).default(10 * 60 * 1000),
+  recentContextMaxEvents: z.natural().min(1).max(20).default(20),
+  recentContextMaxTokens: z.natural().min(100).max(500).default(500),
+  // Protected core memories; creation is restricted to a trusted admin-private
+  // scene (or authenticated owner API), never a model-supplied privilege.
+  coreMemoryEnabled: z.boolean().default(false),
+
   // scopeState（issue #471）：政策轴——作用域级可逆闸门。与上面两个键是**两条不同
   // 的轴**：scopeEnabled/strictScope 管「这条记忆属于谁」（事实轴：持久、跟着记忆
   // 行走、改的是归属数据），本键管「这个作用域现在通不通」（政策轴：暂时、由人单

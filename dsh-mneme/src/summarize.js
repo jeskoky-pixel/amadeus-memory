@@ -619,6 +619,10 @@ export function createSummarizer(ctx, service, config, deps = {}) {
 
   async function summarize(session, triggerEvent, opts = {}) {
     if (disposed || inFlight.has(session.id)) return;
+    // Background summarization cannot safely propagate per-scene visibility.
+    // Skip whenever isolation is enabled or tagged rows exist, including rows
+    // that appeared after startup.
+    if (config.sceneIsolationEnabled === true || service.hasSceneScopedRows?.() === true) return;
 
     const header = session.requestHeader?.()?.config;
     // Config override takes priority, then session header, then nothing.

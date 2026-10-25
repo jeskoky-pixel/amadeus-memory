@@ -178,6 +178,14 @@ const FEATURE_FLAG_BOOLEANS = [
   // Issue #17（v0.8.0 A3）：strictScope 硬过滤——他 scope 完全不可见（关闭时
   // 为 A2 软隔离：降权保留可见）。
   "strictScope",
+  // Scene/Recent/Core opt-ins (default off). See src/scene.js, recent-context.js.
+  "sceneIsolationEnabled",
+  "sceneStrictQQ",
+  "recentContextEnabled",
+  "recentContextTtlMs",
+  "recentContextMaxEvents",
+  "recentContextMaxTokens",
+  "coreMemoryEnabled",
   // Issue #471：政策轴——作用域级可逆闸门（scopeState）。与上面两个键是两条不同的
   // 轴：那两个管「这条记忆属于谁」（事实轴），这两个管「这个作用域现在通不通」
   // （政策轴，按作用域整体按下、跨会话存续、松开即恢复）。两级语义同

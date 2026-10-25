@@ -6,6 +6,8 @@ import { MEMORY_GUIDE_SECTION } from "./guide.js";
 import { adaptiveInjectBudget } from "./search/adaptive.js";
 import { injectChildEnabled } from "./config.js";
 import { safeSlice } from "./safe-slice.js";
+import { readRecentContext } from "./recent-context.js";
+import { scenePolicy, currentScene } from "./scene.js";
 
 // Issue #179：注入预览的数据底座。systemPrompt 渲染是同步回调，面板只能事后
 // 拉取，所以在这里旁路缓存「最近一帧组装」——快照就是本次渲染用过的同一份
@@ -224,9 +226,33 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     maxRounds: config.hotMemoryRounds ?? 5,
     maxTokens: config.hotMemoryMaxTokens ?? 2000
   });
+  // Bind hot rounds to the real Session ID, not a transient JS wrapper. A
+  // verified lifecycle change may reuse an ID; otherwise keep its old binding
+  // and fail closed on a Scene switch. At the cap, suppress hot context for
+  // unknown IDs instead of evicting a binding that might still be live.
+  const hotScenes = new Map();
+  const HOT_SCENE_MAX = 500;
 
   function renderHotContext(ctx) {
     if (config.hotMemoryEnabled === false) return "";
+    if (scenePolicy().enabled && scenePolicy().strictQQ) {
+      const scene = currentScene();
+      const session = ctx?.agent?.session;
+      const id = session?.id;
+      if (!scene || id === undefined || id === null) return "";
+      const rawLifecycle = session.createdAt ?? session.created_at ?? null;
+      const lifecycle = typeof rawLifecycle === "string" || typeof rawLifecycle === "number"
+        ? String(rawLifecycle) : rawLifecycle instanceof Date ? rawLifecycle.toISOString() : null;
+      let binding = hotScenes.get(id);
+      if (!binding && hotScenes.size >= HOT_SCENE_MAX) return "";
+      if (!binding || (binding.lifecycle != null && lifecycle != null && binding.lifecycle !== lifecycle)) {
+        binding = { lifecycle, sceneId: scene.sceneId, blocked: false };
+        hotScenes.set(id, binding);
+      } else if (binding.sceneId !== scene.sceneId) {
+        binding.blocked = true;
+      }
+      if (binding.blocked) return "";
+    }
     const rounds = extractRounds(ctx, config.hotMemoryRounds ?? 5);
     if (!rounds.length) return "";
     hot.clear();
@@ -234,6 +260,13 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     const body = hot.getContext();
     if (!body) return "";
     return escapePromptVars(STR.hotHeader[language](rounds.length, body));
+  }
+
+  function renderRecentContext() {
+    const events = readRecentContext();
+    if (!events.length) return "";
+    const lines = events.map((event) => `- [${new Date(event.at).toISOString()}] ${event.text}`);
+    return escapePromptVars(`[近期授权上下文 / Recent authorized context]\n${lines.join("\n")}`);
   }
 
   function render(candidates, pinnedStats = null) {
@@ -263,6 +296,12 @@ export function createInjector(ctx, service, settings, config, gate = null) {
       const full = m.graphHint === true
         ? STR.graphHintLine[language](m.type, title, content)
         : STR.entryLine[language](m.type, verified, title, content);
+      // The note is narrative, never a separately recalled fact. It inherits
+      // the selected row's scene visibility and consumes the same block budget.
+      const note = m.protected === true && m.core_note
+        ? `\n  [第一人称短记 / first-person narrative] ${injectMemory({ ...m, content: m.core_note }, maxContent)}`
+        : "";
+      const withNote = full + note;
       // 线索行引导语插在第一个线索行之前（保持块头语义：先声明「这些不是事实」）。
       if (m.graphHint === true && graphSeen === 1) {
         lines.push(STR.graphHintHeader[language]);
@@ -271,10 +310,10 @@ export function createInjector(ctx, service, settings, config, gate = null) {
         // pin 不扣块预算（上面那条设计注释的落地）：pin 一条就够击穿 MAX_BLOCK
         // （PINNED_CONTENT_MAX 2000 > MAX_BLOCK 1500），照扣会把 budget 压成负数，
         // 同一轮随后的普通候选全部退化成标题行——正是本议题要修的结构缺陷。
-        lines.push(full);
-      } else if (budget - full.length >= 0) {
-        lines.push(full);
-        budget -= full.length;
+        lines.push(withNote);
+      } else if (budget - withNote.length >= 0) {
+        lines.push(withNote);
+        budget -= withNote.length;
       } else {
         lines.push(`- [${m.type}] ${verified}${title}`);
       }
@@ -396,12 +435,13 @@ export function createInjector(ctx, service, settings, config, gate = null) {
         // the documented injection order 1→2. Folding it here (instead of a
         // separate context) keeps the prompt assembly stable at two blocks.
         const hotText = renderHotContext(ctx);
+        const recentText = renderRecentContext();
         const body = render(candidates, pinnedStats);
         // #333（issue #34 恢复）：时间前缀只在会话首轮出现（per-session 闩锁），
         // 排在整个记忆块的最前——模型先知道「今天几号」，再看热上下文与长期记忆。
         const timePrefix = renderTimePrefix(ctx);
-        // 拼接次序：时间 → 热上下文 → 长期记忆（三者都可能为空，逐级判空拼接）。
-        const withHot = !hotText ? body : body ? `${hotText}\n\n${body}` : hotText;
+        // 拼接次序：时间 → 热上下文 → 近期授权上下文 → 长期记忆（逐级判空）。
+        const withHot = [hotText, recentText, body].filter(Boolean).join("\n\n");
         const finalBody = !timePrefix ? withHot : withHot ? `${timePrefix}\n\n${withHot}` : timePrefix;
         // Issue #179：旁路缓存一帧——面板「注入预览」卡据此展示构成与体积。
         // chars 为条目内容的截断后近似值（与 render 同一函数计长），totalChars
@@ -441,6 +481,7 @@ export function createInjector(ctx, service, settings, config, gate = null) {
   return () => {
     queryVectorCache.clear();
     rotationHistory.clear();
+    hotScenes.clear();
     injectionSnapshot = null; // 注入器卸载即失效：快照不得跨生命周期存留
     for (const dispose of disposers) {
       if (typeof dispose === "function") dispose();

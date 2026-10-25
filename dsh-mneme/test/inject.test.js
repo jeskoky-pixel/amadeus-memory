@@ -4,6 +4,7 @@ import { createStore } from "../src/store.js";
 import { createService } from "../src/service.js";
 import { createInjector, getInjectionSnapshot } from "../src/inject.js";
 import { createSettings } from "../src/settings.js";
+import { mintTrustedScene, runWithTrustedScene, configureScene, resetSceneStateForTests } from "../src/scene.js";
 
 function setup(over = {}) {
   const store = createStore(":memory:");
@@ -46,6 +47,48 @@ test("returns empty text when nothing qualifies", () => {
   const { contexts } = setup();
   const text = contexts[0].text({});
   assert.equal(text, "");
+});
+
+test("Core note accompanies only a selected protected memory and is labeled narrative", () => {
+  const { contexts, service, store } = setup();
+  const row = service.saveWithDedupe({ type: "history", title: "核心经历", content: "当前事实", importance: 5 }).memory;
+  store.setProtected(row.id, true, { note: "我记得那一天" });
+  const text = contexts[0].text({});
+  assert.match(text, /当前事实/);
+  assert.match(text, /第一人称短记 \/ first-person narrative.*我记得那一天/);
+  store.setProtected(row.id, true, { note: "" });
+  assert.doesNotMatch(contexts[0].text({}), /第一人称短记/);
+});
+
+test("strict hot memory isolates sessions and blocks only a session reused across scenes", () => {
+  resetSceneStateForTests();
+  configureScene({ enabled: true, strictQQ: true, hostContract: true });
+  try {
+    const { contexts } = setup({ hotMemoryEnabled: true });
+    const scenes = [
+      mintTrustedScene({ platform: "qq", kind: "group", id: "a", verified: true }),
+      mintTrustedScene({ platform: "qq", kind: "group", id: "b", verified: true }),
+      mintTrustedScene({ platform: "qq", kind: "private", id: "owner", verified: true, admin: true })
+    ];
+    const makeSession = (id, word, createdAt = 'first') => ({ id, createdAt, snapshotEvents: () => [
+      { type: "user/message", data: { source: { kind: "user" }, content: [{ type: "text", text: word }] } },
+      { type: "assistant/message", data: { message: { content: [{ type: "text", text: `reply-${word}` }] } } }
+    ] });
+    const sessions = [makeSession("a", "group-a"), makeSession("b", "group-b"), makeSession("private", "owner-private")];
+    const render = (scene, session) => runWithTrustedScene(scene, () => contexts[0].text({ agent: { session } }));
+    for (let i = 0; i < 3; i++) assert.match(render(scenes[i], sessions[i]), new RegExp(`reply-${["group-a", "group-b", "owner-private"][i]}`));
+    assert.match(render(scenes[0], sessions[0]), /reply-group-a/);
+    assert.doesNotMatch(render(scenes[1], sessions[0]), /reply-group-a/);
+    assert.match(render(scenes[1], sessions[1]), /reply-group-b/);
+    assert.match(render(scenes[2], sessions[2]), /reply-owner-private/);
+    assert.doesNotMatch(render(scenes[0], sessions[0]), /reply-group-a/, "mixed session remains blocked");
+    assert.doesNotMatch(render(scenes[0], makeSession("a", "same-id-wrapper")), /reply-same-id-wrapper/,
+      "a new wrapper with the same Session ID cannot clear a blocked binding");
+    assert.match(render(scenes[0], makeSession("a", "new-session", "second")), /reply-new-session/,
+      "a verified new lifecycle may reuse the ID");
+  } finally {
+    resetSceneStateForTests();
+  }
 });
 
 test("renders summary block first when summary candidate exists", () => {

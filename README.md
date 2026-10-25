@@ -8,7 +8,7 @@ Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权�
 
 在 DSH 设置中打开 **Amadeus 记忆**，可以看到记忆库状态，创建、搜索、编辑、归档和删除记忆；调整自动记忆、注入和 Embedding 参数；设置标签及实体权重；创建、校验并确认恢复备份。复杂图谱与审计仍可从“打开完整记忆管理”进入原 Mneme 面板。若向量服务未配置，关键词检索继续可用；页面会明确显示降级状态。安装前请先阅读 [中文用户指南](dsh-mneme/docs/USER_GUIDE.zh.md) 和 [安装与升级说明](dsh-mneme/docs/INSTALL.md)。
 
-[![tests](https://img.shields.io/badge/tests-490%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/1)
+[![tests](https://img.shields.io/badge/tests-505%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/1)
 
 This branch packages a separately installable Mneme bundle in [`dsh-mneme/`](dsh-mneme/). It extends the existing SQLite memory store, retrieval, graph and Desktop panel with stable typed identities, reviewed aliases and canonical links, Tag/entity ranking preferences, and a controlled Life experience intake. The upstream import and license are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 
@@ -28,13 +28,13 @@ The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack
 
 ```powershell
 cd dsh-mneme
-npm test        # 运行 490 个测试
+npm test        # 运行 505 个测试
 npm run test:all              # full suite; 32 upstream/environment failures, not green
 npm run test:upstream-release # 21 upstream release-only failures, expected non-green
 npm run test:compat-windows   # Windows symlink/spawn capability probe
 ```
 
-`npm test` is the green product gate (490 tests): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) is **not** green on this Windows sandbox because upstream release-only fixtures/workflows and some symlink/spawn capabilities are unavailable; use `npm run test:upstream-release` and `npm run test:compat-windows` for those separate, explicitly non-green checks.
+`npm test` is the green product gate (505 tests): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) is **not** green on this Windows sandbox because upstream release-only fixtures/workflows and some symlink/spawn capabilities are unavailable; use `npm run test:upstream-release` and `npm run test:compat-windows` for those separate, explicitly non-green checks.
 
 ## Documentation
 

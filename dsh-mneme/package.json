@@ -1,7 +1,7 @@
 {
   "name": "@modusensus/dsh-mneme",
   "description": "Amadeus Memory (enhanced Mneme 0.9.4): cross-session memory with stable typed identities, native DSH settings, SQLite storage, autoDream, vector retrieval and 13 model tools.",
-  "version": "0.9.5-amadeus.1",
+  "version": "0.9.5-amadeus.2",
   "license": "MIT",
   "amadeus": {
     "edition": "enhanced",

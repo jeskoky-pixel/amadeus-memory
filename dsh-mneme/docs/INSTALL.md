@@ -3,7 +3,7 @@
 本包是 **Amadeus Memory 增强发行版**，基于 Mneme 0.9.4，沿用上游 MIT 许可。发行身份是安全增强版而不是新包：
 
 - 包名：`@modusensus/dsh-mneme`
-- 版本：`0.9.5-amadeus.1`
+- 版本：`0.9.5-amadeus.2`
 - 插件 ID / Bundle ID：`dsh-mneme`（保持不变）
 - 上游：`@modusensus/dsh-mneme@0.9.4`
 - 数据目录 / 配置键 / SQLite 格式：与上游兼容，升级不迁移到第二套数据库。
@@ -34,7 +34,7 @@ node test/tools.test.js
 npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 ```
 
-产物：`dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz`。SHA-256 记录在 `docs/RELEASE_NOTES.md` 与交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
+产物：`dist/modusensus-dsh-mneme-0.9.5-amadeus.2.tgz`。SHA-256 记录在 `docs/RELEASE_NOTES.md` 与交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
 
 ## 通过 Plugin Manager 安装
 
@@ -82,7 +82,7 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 
 ## 验收清单（Codex 实机）
 
-- [ ] Plugin Manager 显示 `@modusensus/dsh-mneme@0.9.5-amadeus.1`，启用成功。
+- [ ] Plugin Manager 显示 `@modusensus/dsh-mneme@0.9.5-amadeus.2`，启用成功。
 - [ ] 系统设置左侧出现 **Amadeus 记忆**，页面加载状态、记忆数、数据库和向量索引。
 - [ ] 记忆管理：搜索、新建、编辑、归档、取消归档、删除二次确认；并发编辑冲突会提示而不覆盖。
 - [ ] 备份：创建后列表显示 SHA-256；校验通过；暂存恢复需要确认，重启后应用且保留 `pre-restore-*` 现场。
