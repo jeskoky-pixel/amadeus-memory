@@ -2,9 +2,9 @@
 
 Run scope: full standard suite, explicit isolated `.test-tmp` where tests create data; no production/default `~/.dsh/memory`.
 
-Default `npm test` is the green 489/489 product gate and does **not** run this full inventory. Use `npm run test:all` for the full non-green suite. Capability details: [WINDOWS_COMPATIBILITY.md](WINDOWS_COMPATIBILITY.md).
+Default `npm test` is the green 490/490 product gate and does **not** run this full inventory. Use `npm run test:all` for the full non-green suite. Capability details: [WINDOWS_COMPATIBILITY.md](WINDOWS_COMPATIBILITY.md).
 
-Latest final full sweep: **190 files / 2392 tests / 2359 pass / 32 fail / 1 skip / 1 timeout**. After that sweep, one admin archived-status HTTP regression and one concurrent fresh-DB regression were added and passed; current source total is **2394 tests**, and the default product gate is **489/489 pass**. The 32 failures below are unchanged.
+Latest final full sweep: **190 files / 2392 tests / 2359 pass / 32 fail / 1 skip / 1 timeout**. After that sweep, the admin archived-status, concurrent fresh-DB and release-package workflow regressions were added and passed; current source total is **2395 tests**, and the default product gate is **490/490 pass**. The 32 failures below are unchanged.
 
 `lib-smoke` temporarily failed because `lib/qa-guard.js` was added after the prior sync; `npm run sync` fixed it and the final sweep includes it green. It is not one of the remaining 32.
 

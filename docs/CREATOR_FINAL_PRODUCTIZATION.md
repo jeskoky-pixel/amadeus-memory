@@ -37,6 +37,9 @@
 - `dsh-mneme/scripts/safe-test-tmp.mjs`
 - `dsh-mneme/scripts/compat-windows.mjs`
 - `dsh-mneme/scripts/package-hash.mjs`
+- `dsh-mneme/scripts/privacy-check.mjs`
+- `dsh-mneme/scripts/safe-test-tmp.mjs`
+- `dsh-mneme/scripts/compat-windows.mjs`
 - `dsh-mneme/scripts/clean-test-tmp.mjs`
 - `dsh-mneme/scripts/measure-productization.mjs`
 - `dsh-mneme/docs/PERFORMANCE.md`
@@ -44,6 +47,7 @@
 - `dsh-mneme/test/safe-clean.test.js`
 - `dsh-mneme/test/store-concurrent-init.test.js`
 - `dsh-mneme/test/helpers/store-init-worker.mjs`
+- `dsh-mneme/test/release-package-workflow.test.js`
 - `docs/QA_FAILURE_INVENTORY.md`
 - `docs/WINDOWS_COMPATIBILITY.md`
 - `docs/CREATOR_FINAL_PRODUCTIZATION.md`
@@ -181,11 +185,11 @@ API（owner、same-origin、写请求标记）：
 
 Default documented command is now **`npm test`**, which delegates to the green
 product gate `npm run quality:amadeus` (clean test temp, sync, check-sync, privacy,
-**489/489** selected runtime/enhancer/GUI/config/migration/package/fork-release
+**490/490** selected runtime/enhancer/GUI/config/migration/package/fork-release
 tests). Upstream-only and capability tests are separate, explicitly non-green:
 
 ```powershell
-npm test                      # green product gate: 489/489
+npm test                      # green product gate: 490/490
 npm run test:all              # full suite; current Windows result is not green
 npm run test:upstream-release # upstream release-only tests, expected non-green
 npm run test:compat-windows   # symlink/spawn capability probe, non-green if unavailable
@@ -199,10 +203,11 @@ npm run test:compat-windows   # symlink/spawn capability probe, non-green if una
 
 - **190 files；2392 tests；2359 pass；32 fail；1 skip；1 timeout**
 
-After that sweep, the admin archived-status HTTP regression and the concurrent
-fresh-DB regression added two passing tests; the current source total is 2394
-tests and the product gate is 489/489. The full sweep was not rerun for those
-targeted additions; the 32 failures below are unchanged.
+After that sweep, the admin archived-status HTTP regression, the concurrent
+fresh-DB regression and the release-package workflow regression added three
+passing tests; the current source total is 2395 tests and the product gate is
+490/490. The full sweep was not rerun for those targeted additions; the 32
+failures below are unchanged.
 
 失败清单的逐测试明细在 [QA_FAILURE_INVENTORY.md](QA_FAILURE_INVENTORY.md)。`lib-smoke` 的缺失 `lib/qa-guard.js` 是真实同步回归，已用 `npm run sync` 修复并 6/6 通过；当前 32 fail 不含它。
 
@@ -237,6 +242,25 @@ and bounded retries remain.
 `test/store-concurrent-init.test.js` starts 8 workers on a fresh path for 4
 rounds; run repeatedly (5/5) alongside 10/10 quality-extra runs. The production
 DTO/tool shape and quality policy are unchanged.
+
+### Release package workflow
+
+`npm run package:amadeus` previously ran the full privacy check before packing;
+that compared the existing tarball against stale `PACKAGE_INFO.json` and failed
+after any legitimate README/source change. The workflow is now phased:
+
+1. `quality:amadeus` runs **source-only** privacy (no dist comparison).
+2. deterministic `npm pack`.
+3. `scripts/package-hash.mjs` writes final `PACKAGE_INFO.json` and
+   `BUILD_INFO.json` with archive SHA-256/bytes/file count, current Git HEAD and
+   worktree dirty state.
+4. postpack `scripts/privacy-check.mjs` scans source + packed tarball and
+   verifies metadata; both phases still run.
+
+`test/release-package-workflow.test.js` simulates stale metadata + changed
+README: source privacy passes, rebuild/metadata match the new archive, and a
+packed credential/private path still fails. The real workflow was exercised after
+a README badge change with stale prior metadata and succeeded.
 
 
 
@@ -279,9 +303,9 @@ Token estimate is conservative and not a host tokenizer measurement; actual toke
 
 - 包：`@modusensus/dsh-mneme@0.9.5-amadeus.1`
 - 路径：`dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz`
-- **SHA-256：`9f23272b731e0175da9d564f2172da9a73a2eaa5d3dbca698b4c097465f2fc22`**
-- 大小：2,204,849 bytes
-- 文件数：418
+- **SHA-256：`e861c5cfab215968fd401abc8c4c358fbaf4a8517f9b0b4aaba25b53fa7ad4c1`**
+- 大小：2,208,079 bytes
+- 文件数：419
 - 连续两次 `npm pack --ignore-scripts --cache .npm-cache` 哈希一致
 - `dist/` 已忽略，包内不含 `node_modules`、SQLite、日志、`.test-tmp`、`.tmp-*`、`.productization-task` 或真实数据
 - `dist/modusensus-dsh-mneme-0.9.4.tgz` 是**历史上游回滚资产**，不是当前产品；标签见 `dist/HISTORICAL_0.9.4.md`，未删除。

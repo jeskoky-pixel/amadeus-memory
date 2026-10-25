@@ -1,5 +1,13 @@
 # Amadeus Memory handoff
 
+## Latest state (2026-10-26)
+
+The original persistent DSH Creator session implemented the productization fixes; Codex reviewed and committed the main implementation on `codex/memory-enhancer` as `fa87de7`. A follow-up release workflow fix allows repacking after README changes despite stale previous metadata. The default Amadeus product gate is `npm test`: Codex independently observed **490/490 pass** after this fix, plus 3/3 focused runs of the concurrent initialization regression. The full inherited upstream sweep is separately non-green because this fork lacks upstream release workflows and this Windows host lacks some symlink/process capabilities; see `docs/QA_FAILURE_INVENTORY.md` and `docs/WINDOWS_COMPATIBILITY.md`. Do not describe the full sweep as passing.
+
+README 更新及发行流程修复后重建的 archive `dist/modusensus-dsh-mneme-0.9.5-amadeus.1.tgz` SHA-256 为 `e861c5cfab215968fd401abc8c4c358fbaf4a8517f9b0b4aaba25b53fa7ad4c1`；`dist/PACKAGE_INFO.json` 是本地元数据。两个全新隔离官方 DSH Desktop 在启用前均验证独立 `memoryDir`。Codex 实测 GUI 创建/编辑/归档/取消归档、Tag 权重添加/恢复默认、配置保存/刷新/重启、备份/校验/确认恢复、停启/卸载重装及数据保留。最终文档和发行脚本变更未改变 Memory 运行时代码，最终 tarball 本身未重做 Desktop 安装。归档状态 DTO 和并发 SQLite 首次打开缺陷已修复。生产 Memory 未修改；历史 QA 目录事件记录在主项目本机私有审计。
+
+User direction on 2026-10-26: stop combined three-plugin runtime testing for now. The brief joint startup probe is not a final integration acceptance. Keep PR #1 OPEN, avoid production deployment and public release, and update README/HANDOFF for outside readers. Older hashes and test counts below are historical checkpoints; use this section and the current commit for recovery.
+
 2026-10-25. The implementation is on `codex/memory-enhancer` in this repository and under review in [PR #1](https://github.com/jeskoky-pixel/amadeus-memory/pull/1). The older `main` checkout at `plugins/amadeus-memory/` still contains the initial placeholder documents; use the PR branch for code review and development.
 
 ## Delivered
