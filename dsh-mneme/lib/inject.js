@@ -362,8 +362,19 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     }
   }
 
+  const QQ_PRESETS = new Set([
+    "amadeus-qq",
+    "amadeus-qq-search",
+    "amadeus-qq-media",
+    "amadeus-qq-media-search",
+    "amadeus-qq-owner"
+  ]);
+  function isQQSession(ctx) {
+    return QQ_PRESETS.has(sessionAgentId(ctx));
+  }
+
   function renderForQQScene(renderCtx, render) {
-    if (sessionAgentId(renderCtx) !== "amadeus-qq") return render();
+    if (!isQQSession(renderCtx)) return render();
     const policy = scenePolicy();
     if (!policy.enabled || !policy.strictQQ) {
       injectionSnapshot = null;
@@ -498,7 +509,7 @@ export function createInjector(ctx, service, settings, config, gate = null) {
       order: 85,
       // User settings contain unscoped profile/rules. Until they carry an
       // audience label, never send them into an external QQ Session.
-      text: (ctx) => sessionAgentId(ctx) === "amadeus-qq" ? "" : renderUserSettings(ctx)
+      text: (ctx) => isQQSession(ctx) ? "" : renderUserSettings(ctx)
     })
   ];
 

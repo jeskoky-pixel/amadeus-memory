@@ -29,11 +29,15 @@ test('QQ prompt injection is empty without a trusted Host binding or strict Scen
   try {
     f.service.saveWithDedupe({ type: 'history', title: 'Private secret', content: 'Only for private context', importance: 5 });
     f.settings.setProfile('Owner private profile');
-    assert.equal(f.render('memory', 'qq-session'), '');
-    assert.equal(f.render('user-settings', 'qq-session'), '');
+    for (const preset of ['amadeus-qq', 'amadeus-qq-search', 'amadeus-qq-media', 'amadeus-qq-media-search', 'amadeus-qq-owner']) {
+      assert.equal(f.render('memory', 'qq-session', preset), '', preset);
+      assert.equal(f.render('user-settings', 'qq-session', preset), '', preset);
+    }
     assert.match(f.render('memory', 'ordinary-session', 'cordis'), /Private secret/);
     configureScene({ enabled: true, strictQQ: true });
-    assert.equal(f.render('memory', 'qq-session'), '');
+    for (const preset of ['amadeus-qq', 'amadeus-qq-search', 'amadeus-qq-media', 'amadeus-qq-media-search', 'amadeus-qq-owner']) {
+      assert.equal(f.render('memory', 'qq-session', preset), '', preset);
+    }
     assert.equal(getInjectionSnapshot(), null);
   } finally { f.store.close(); resetSceneStateForTests(); }
 });
@@ -56,5 +60,29 @@ test('QQ Host binding exposes only memories from the bound Scene', () => {
     assert.doesNotMatch(text, /B secret/);
     assert.equal(f.render('memory', 'retired-session'), '');
     assert.equal(f.render('user-settings', 'session-a'), '');
+  } finally { f.store.close(); resetSceneStateForTests(); }
+});
+
+test('all packaged QQ presets keep the trusted Scene gate and suppress unscoped profile', () => {
+  resetSceneStateForTests();
+  configureScene({ enabled: true, strictQQ: true });
+  const f = fixture();
+  try {
+    const groupA = mintTrustedScene({ platform: 'qq', kind: 'group', id: '10001:20001', verified: true });
+    const groupB = mintTrustedScene({ platform: 'qq', kind: 'group', id: '10001:20002', verified: true });
+    runWithTrustedScene(groupA, () => f.service.saveWithDedupe({ type: 'history', title: 'A plan', content: 'A only', importance: 5 }));
+    runWithTrustedScene(groupB, () => f.service.saveWithDedupe({ type: 'history', title: 'B secret', content: 'B only', importance: 5 }));
+    f.settings.setProfile('Private profile');
+    f.setQQ({ resolveTrustedSessionScene(id) {
+      if (id === 'session-a') return { platform: 'qq', kind: 'group', id: '10001:20001', verified: true, admin: false };
+      throw new Error('QQ_UNAUTHORIZED');
+    } });
+    for (const preset of ['amadeus-qq', 'amadeus-qq-search', 'amadeus-qq-media', 'amadeus-qq-media-search', 'amadeus-qq-owner']) {
+      const text = f.render('memory', 'session-a', preset);
+      assert.match(text, /A plan/, preset);
+      assert.doesNotMatch(text, /B secret/, preset);
+      assert.equal(f.render('memory', 'retired-session', preset), '', preset);
+      assert.equal(f.render('user-settings', 'session-a', preset), '', preset);
+    }
   } finally { f.store.close(); resetSceneStateForTests(); }
 });
