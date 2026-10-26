@@ -10,4 +10,6 @@
 
 此补丁处理系统提示词注入。模型工具、HTTP 路由和其他插件的来源校验仍各自执行现有权限规则。跨 Scene 授权仍由 `hostContract:false` 关闭；本补丁不打开共享。
 
-`node --test test/qq-host-inject.test.js test/inject.test.js test/scene-recent-core.test.js test/persona-inject.test.js`：51 pass。`npm run quality:amadeus`：512 pass。真实 DSH Desktop 的 QQ→Memory 跨 Scene 路径仍需隔离联调。
+`node --test test/qq-host-inject.test.js test/inject.test.js test/scene-recent-core.test.js test/persona-inject.test.js`：51 pass。`npm run quality:amadeus`：512 pass。
+
+隔离 DSH Desktop 0.2.1-rc.3 联调：在同一隔离 Profile 中启用 Memory 严格 Scene 模式及 QQ 插件，只连接本机模拟 OneBot。用可信隔离存储写入群 A、B 各一条独有测试记忆，真实 QQ Session 分别触发模型请求。DSH 的 `user/message` 运行上下文显示 A 只注入 A 的记忆、B 只注入 B 的记忆；两个请求均无跨群记忆、无用户画像块，`request/header` 均只有 8 个 QQ 工具、0 个非 QQ 工具。两条模型活动完成。此结果不等于真实 QQ 平台链路验收。
