@@ -1,6 +1,12 @@
 # Amadeus Memory 发行说明
 
-## 0.9.5-amadeus.3 候选
+## 1.0.0-rc.1 候选
+
+- 在可信 QQ Scene 下恢复原有 autoDream、autoSummarize 与按需启用的 Sleep。Dream 和 Sleep 按持久化来源分批执行，legacy 未标注记忆独立处理；生成结果和审计保留 Scene 来源。
+- Dream 与 Sleep 共用串行队列；Sleep 取消不报告整轮成功。规范实体的成员证据先按 Scene 过滤再汇总，关系补全不会引用其他 Scene 的证据。
+- 新增隔离合成库的 1 万条记忆检索 P95 基准。实机安装、重启与剩余验收范围见仓库交付报告；未部署生产环境。
+
+## 0.9.5-amadeus.3 历史候选
 
 - QQ 的五种 Session 预设仅在严格 Scene 模式且同进程 QQ Host 能验证当前 Session 绑定时注入本场景记忆；不满足条件时保持空注入。跨场景授权仍关闭。
 - 原生 **Amadeus 记忆** 管理页新增按单一 Scene 选择的只读实体关系图；数据由 owner 鉴权、同源的管理 API 提供，关系和节点必须有该 Scene 的有效记忆证据。原 Mneme 普通图谱接口在严格模式下继续拒绝读取。

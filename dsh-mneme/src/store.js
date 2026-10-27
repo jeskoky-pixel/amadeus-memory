@@ -15,6 +15,7 @@ import { IDENTITY_SCHEMA, seedIdentitySchema } from "./identity.js";
 import { PREFERENCE_SCHEMA } from "./preferences.js";
 import { INTAKE_SCHEMA } from "./intake.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
+import { LEGACY_SCENE_JOB } from "./scene-job.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS dream_runs (
   receipt        TEXT NOT NULL,
   policy_epoch   INTEGER NOT NULL DEFAULT 0,  -- 裁决规则版本：规则升级后旧裁决降级为历史证据
   run_type       TEXT NOT NULL DEFAULT 'auto', -- auto | sleep | organize：周期审计的类别区分
+  scene_scope    TEXT,                    -- background job Scene; NULL = legacy/unscoped
   skipped        TEXT,                    -- JSON: degraded 轮被跳过的逐条明细（index/action/ids/error）
   -- Issue #89（基线半边）：本轮成功刷新后的活跃记忆「条数 / 正文字符数」——阈值判定的
   -- 基线原本只活在调度器闭包内存里，进程重启归零 → 库里记忆多于阈值时，重启后第一条
@@ -608,6 +610,7 @@ function toDreamRun(row) {
     receipt: row.receipt,
     policy_epoch: row.policy_epoch ?? 0,
     run_type: row.run_type ?? "auto",
+    scene_scope: row.scene_scope ?? undefined,
     // Issue #104：degraded 轮的逐条跳过明细（JSON 列，NULL = 该轮无跳过项）。
     skipped: row.skipped ? JSON.parse(row.skipped) : undefined,
     // Issue #89（基线半边）：成功轮落下的阈值基线（NULL = 该轮没有推进基线）。
@@ -988,6 +991,7 @@ export function createStore(path) {
   // Legacy dream_runs without policy_epoch → backfill with the default epoch.
   addColumn("dream_runs", "policy_epoch", "ALTER TABLE dream_runs ADD COLUMN policy_epoch INTEGER NOT NULL DEFAULT 0");
   addColumn("dream_runs", "run_type", "ALTER TABLE dream_runs ADD COLUMN run_type TEXT NOT NULL DEFAULT 'auto'");
+  addColumn("dream_runs", "scene_scope", "ALTER TABLE dream_runs ADD COLUMN scene_scope TEXT");
   // Issue #104：degraded（合法子集已应用）轮被跳过的决策明细。此前只进 logger.warn，
   // 离线回放 dream_runs 无法定位 degraded 成因（跨类型 merge / update 保护期 / unknown id）。
   addColumn("dream_runs", "skipped", "ALTER TABLE dream_runs ADD COLUMN skipped TEXT");
@@ -1668,17 +1672,19 @@ export function createStore(path) {
     return Boolean(db.prepare("SELECT 1 FROM memories WHERE scene_scope IS NOT NULL LIMIT 1").get());
   }
 
-  function listSceneScopes({ limit = 500 } = {}) {
+  function listSceneScopes({ limit = 500, offset = 0 } = {}) {
     const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    const off = Number.isSafeInteger(offset) && offset > 0 ? offset : 0;
     return db.prepare(
       `SELECT scene_scope AS scope, COUNT(*) AS total,
               SUM(CASE WHEN forgotten = 0 AND archived = 0 THEN 1 ELSE 0 END) AS active
          FROM memories
         GROUP BY scene_scope
         ORDER BY active DESC, total DESC, scene_scope ASC
-        LIMIT ?`
-    ).all(bounded).map((row) => ({
+        LIMIT ? OFFSET ?`
+    ).all(bounded, off).map((row) => ({
       scope: row.scope ?? "legacy",
+      null_scope: row.scope === null,
       total: Number(row.total) || 0,
       active: Number(row.active) || 0
     }));
@@ -1690,6 +1696,26 @@ export function createStore(path) {
       throw new TypeError("invalid scene ACL identifier");
     }
     return text;
+  }
+
+  function sceneEntityIds(sceneScopes) {
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const clause = sceneSql ? ` AND ${sceneSql.sql}` : "";
+    const params = sceneSql?.params ?? [];
+    const rows = db.prepare(
+      `SELECT DISTINCT ea.entity_id AS entity_id
+         FROM entity_attrs ea JOIN memories m ON m.id = ea.memory_id
+        WHERE ea.valid_until IS NULL AND m.forgotten = 0 AND m.archived = 0${clause}
+       UNION
+       SELECT DISTINCT r.from_entity AS entity_id
+         FROM entity_relations r JOIN memories m ON m.id = r.memory_id
+        WHERE m.forgotten = 0 AND m.archived = 0${clause}
+       UNION
+       SELECT DISTINCT r.to_entity AS entity_id
+         FROM entity_relations r JOIN memories m ON m.id = r.memory_id
+        WHERE m.forgotten = 0 AND m.archived = 0${clause}`
+    ).all(...params, ...params, ...params);
+    return new Set(rows.map((row) => row.entity_id));
   }
 
   function listSceneReadGrants({ limit = 500 } = {}) {
@@ -1752,8 +1778,15 @@ export function createStore(path) {
 
   function sceneScopeSql(sceneScopes) {
     if (!Array.isArray(sceneScopes)) return null;
-    const tagged = [...new Set(sceneScopes.filter((scope) => scope && scope !== "legacy"))];
-    const legacy = sceneScopes.includes("legacy");
+    const realScopes = sceneScopes
+      .filter((scope) => scope && typeof scope === "object" && typeof scope.realScope === "string")
+      .map((scope) => scope.realScope);
+    const plainScopes = sceneScopes.filter((scope) => typeof scope === "string" && scope);
+    const tagged = [...new Set([
+      ...realScopes,
+      ...plainScopes.filter((scope) => scope !== "legacy" && scope !== LEGACY_SCENE_JOB)
+    ])];
+    const legacy = plainScopes.includes("legacy") || plainScopes.includes(LEGACY_SCENE_JOB);
     if (tagged.length === 0 && !legacy) return { sql: "0 = 1", params: [] };
     const parts = [];
     const params = [];
@@ -1887,11 +1920,30 @@ export function createStore(path) {
     return rows.map(toRow);
   }
 
-  function all() {
+  function all(sceneScopes = null) {
     // Issue #202：显式列清单排除 embedding——toRow 本就不输出向量，SELECT *
     // 纯属把全表最重的列（9.4 MB TEXT/5k 行）拖进内存再丢弃。
-    const rows = db.prepare(`SELECT ${memoryColumnList} FROM memories ORDER BY updated_at DESC`).all();
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const where = sceneSql ? ` WHERE ${sceneSql.sql}` : "";
+    const rows = db.prepare(`SELECT ${memoryColumnList} FROM memories${where} ORDER BY updated_at DESC`)
+      .all(...(sceneSql?.params ?? []));
     return rows.map(toRow);
+  }
+
+  // Count/character total for threshold baselines without materializing bodies.
+  function activeSize(sceneScopes = null) {
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const where = [
+      "archived = 0",
+      "type NOT IN ('summary', 'document')",
+      ...(sceneSql ? [sceneSql.sql] : [])
+    ].join(" AND ");
+    const row = db.prepare(
+      `SELECT COUNT(*) AS count,
+              COALESCE(SUM(LENGTH(COALESCE(title, '')) + LENGTH(COALESCE(content, ''))), 0) AS chars
+         FROM memories WHERE ${where}`
+    ).get(...(sceneSql?.params ?? []));
+    return { count: Number(row?.count) || 0, chars: Number(row?.chars) || 0 };
   }
 
   // Issue #430：写路径要的「最近若干条正文」。质量过滤的近重复判定只读 content
@@ -2186,15 +2238,16 @@ export function createStore(path) {
     const storeChars = baselineKnown ? run.store_chars : null;
     db.prepare(
       `INSERT INTO dream_runs (id, created_at, status, error, provider, model, snapshot_hash,
-        input_count, input, decisions, outcome, applied, summary_stored, receipt, policy_epoch, run_type, skipped,
+        input_count, input, decisions, outcome, applied, summary_stored, receipt, policy_epoch, run_type, scene_scope, skipped,
         store_count, store_chars)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          created_at=excluded.created_at, status=excluded.status, error=excluded.error,
          provider=excluded.provider, model=excluded.model, snapshot_hash=excluded.snapshot_hash,
          input_count=excluded.input_count, input=excluded.input, decisions=excluded.decisions,
          outcome=excluded.outcome, applied=excluded.applied, summary_stored=excluded.summary_stored,
          receipt=excluded.receipt, policy_epoch=excluded.policy_epoch, run_type=excluded.run_type,
+         scene_scope=excluded.scene_scope,
          skipped=excluded.skipped, store_count=excluded.store_count, store_chars=excluded.store_chars`
     ).run(
       id,
@@ -2213,6 +2266,7 @@ export function createStore(path) {
       run.receipt,
       policyEpoch,
       runType,
+      run.scene_scope ?? null,
       skipped,
       storeCount,
       storeChars
@@ -2222,6 +2276,13 @@ export function createStore(path) {
 
   function getDreamRun(id) {
     const row = db.prepare("SELECT * FROM dream_runs WHERE id = ?").get(id);
+    return toDreamRun(row);
+  }
+
+  function latestDreamRun(runType) {
+    const row = db.prepare(
+      "SELECT * FROM dream_runs WHERE run_type = ? ORDER BY created_at DESC, id DESC LIMIT 1"
+    ).get(runType);
     return toDreamRun(row);
   }
 
@@ -3657,10 +3718,12 @@ export function createStore(path) {
     getUnrecalledSince,
     list,
     all,
+    activeSize,
     hasSceneScopedRows,
     listSceneScopes,
     listSceneReadGrants,
     listSceneReadSources,
+    sceneEntityIds,
     hasSceneReadGrant,
     grantSceneRead,
     revokeSceneRead,
@@ -3683,6 +3746,7 @@ export function createStore(path) {
     lastDreamRunAt,
     lastDreamBaseline,
     getDreamRun,
+    latestDreamRun,
     listDreamRuns,
     getLatestPolicyEpoch,
     saveReceipt,

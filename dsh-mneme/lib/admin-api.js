@@ -581,15 +581,20 @@ function safeEmbedderStatus(embedder, config, settings, vectorIndex, service, re
   };
 }
 
+function safeDreamRun(row) {
+  if (!row) return null;
+  return {
+    run_type: row.run_type ?? null,
+    status: row.status ?? null,
+    created_at: row.created_at ?? null,
+    error: row.error ?? null,
+    summary: row.summary ?? null
+  };
+}
+
 function lastDreamRuns(store) {
   try {
-    return store.listDreamRuns({ limit: 5 }).map((row) => ({
-      run_type: row.run_type ?? null,
-      status: row.status ?? null,
-      created_at: row.created_at ?? null,
-      error: row.error ?? null,
-      summary: row.summary ?? null
-    }));
+    return store.listDreamRuns({ limit: 5 }).map(safeDreamRun);
   } catch {
     return [];
   }
@@ -612,6 +617,12 @@ function overview({ store, service, settings, config, embedder, vectorIndex, rer
     quickCheck = Object.values(row ?? {})[0] ?? "unknown";
   } catch { /* reported as unknown */ }
   const dreamRuns = lastDreamRuns(store);
+  const latestDream = safeDreamRun((() => {
+    try { return store.latestDreamRun("auto"); } catch { return null; }
+  })());
+  const latestSleep = safeDreamRun((() => {
+    try { return store.latestDreamRun("sleep"); } catch { return null; }
+  })());
   const flags = featureState(settings, config);
   return {
     package: packageInfo(),
@@ -641,8 +652,8 @@ function overview({ store, service, settings, config, embedder, vectorIndex, rer
     },
     semantic: safeEmbedderStatus(embedder, config, settings, vectorIndex, service, reranker),
     features: flags,
-    last_dream: dreamRuns.find((row) => row.run_type === "auto") ?? null,
-    last_sleep: dreamRuns.find((row) => row.run_type === "sleep") ?? null,
+    last_dream: latestDream,
+    last_sleep: latestSleep,
     recent_runs: dreamRuns,
     config: {
       language: config?.language ?? null,

@@ -14,7 +14,7 @@ import { createInjector } from "./inject.js";
 import { createPreInjectGate } from "./pre-inject-gate.js";
 import { createContinuityRescue } from "./continuity.js";
 import { createSummarizer } from "./summarize.js";
-import { createDreamScheduler, describeStreamFailure } from "./dream.js";
+import { createDreamScheduler, describeStreamFailure, recordScopedDreamBaseline } from "./dream.js";
 import { createSleepScheduler, runSleep } from "./dream/sleep.js";
 import { createApi } from "./api.js";
 import { createStandaloneApi } from "./api-standalone.js";
@@ -22,6 +22,7 @@ import { createStandaloneApi } from "./api-standalone.js";
 import { createMaintenance } from "./maintenance.js";
 import { createSettings } from "./settings.js";
 import { configureScene, setSceneReadAclReader } from "./scene.js";
+import { runWithSceneJob, LEGACY_SCENE_JOB, scopedSleepOutcome } from "./scene-job.js";
 import { configureRecentContext } from "./recent-context.js";
 import { mountAdminApi } from "./admin-api.js";
 import { applyStagedRestore } from "./backup.js";
@@ -575,8 +576,61 @@ export const apply = (ctx, config) => {
   // rows, even if the user turned the flags off afterwards. Runtime guards below
   // also cover tagged rows arriving after startup.
   const sceneUnsafeDerivation = () => cfg.sceneIsolationEnabled === true || store.hasSceneScopedRows() === true;
+
+  // Background jobs are partitioned by persisted scene_scope only. The scope
+  // list is internal store metadata, never model/HTTP input; pagination keeps
+  // the enumeration bounded. "legacy" is its own isolated null bucket.
+  function listBackgroundSceneScopes() {
+    const out = [];
+    const pageSize = 200;
+    for (let offset = 0; ; offset += pageSize) {
+      const batch = store.listSceneScopes({ limit: pageSize, offset });
+      out.push(...batch.map((row) => (row.null_scope ? LEGACY_SCENE_JOB : row.scope)));
+      if (batch.length < pageSize) break;
+    }
+    return out;
+  }
+
+  function globalDreamBaseline() {
+    return store.activeSize();
+  }
+
+  async function runScopedDreams() {
+    const scopes = listBackgroundSceneScopes();
+    if (!scopes.length) return { ok: true, skipped: true, reason: "no-scenes", baseline: globalDreamBaseline() };
+    let ok = true;
+    let last = { ok: true, skipped: true };
+    const results = [];
+    for (const scope of scopes) {
+      const result = await runWithSceneJob(scope, () => dream.runDream(ctx, service, cfg));
+      last = result ?? last;
+      results.push(result ?? { ok: false });
+      if (!result?.ok) ok = false;
+    }
+    const recorded = ok ? recordScopedDreamBaseline(store, service, cfg, results) : null;
+    return { ...last, ok, baseline: recorded ?? globalDreamBaseline() };
+  }
+
+  async function runScopedSleep(signal) {
+    const scopes = listBackgroundSceneScopes();
+    if (!scopes.length) return { ok: true, skipped: true, reason: "no-scenes" };
+    let ok = true;
+    let last = { ok: true, skipped: true };
+    let processed = 0;
+    for (const scope of scopes) {
+      if (signal?.aborted) break;
+      const result = await runWithSceneJob(scope, () => runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal));
+      processed += 1;
+      last = result ?? last;
+      if (!result?.ok) ok = false;
+    }
+    const outcome = scopedSleepOutcome({
+      last, ok, processed, total: scopes.length, aborted: Boolean(signal?.aborted)
+    });
+    return outcome;
+  }
   let dream = null;
-  if (cfg.autoDream && !sceneUnsafeDerivation()) {
+  if (cfg.autoDream) {
     dream = createDreamScheduler({
       thresholdCount: cfg.dreamThresholdCount,
       thresholdChars: cfg.dreamThresholdChars,
@@ -618,9 +672,7 @@ export const apply = (ctx, config) => {
           metadata: JSON.stringify({ count, chars })
         });
       },
-      onRun: () => (dream && !sceneUnsafeDerivation()
-        ? dream.runDream(ctx, service, cfg)
-        : Promise.resolve({ ok: true, skipped: true, reason: "scene-isolation" }))
+      onRun: () => (dream ? runScopedDreams() : Promise.resolve({ ok: true, skipped: true, reason: "dream-disposed" }))
     });
     service.setDreamHook(() => dream.maybeSchedule(service));
   }
@@ -631,15 +683,13 @@ export const apply = (ctx, config) => {
   // service.enqueue so they serialize with autoDream — the two never overlap.
   // Abortable on user activity; audited into dream_runs with run_type='sleep'.
   let sleep = null;
-  if (cfg.sleepModeEnabled && !sceneUnsafeDerivation()) {
+  if (cfg.sleepModeEnabled) {
     sleep = createSleepScheduler({
       service,
       config: cfg,
       logger: ctx.logger,
       lastRunAtSeed: store.lastDreamRunAt("sleep"),
-      onRun: (signal) => (sleep && !sceneUnsafeDerivation()
-        ? runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal)
-        : Promise.resolve({ ok: true, skipped: true, reason: "scene-isolation" }))
+      onRun: (signal) => (sleep ? runScopedSleep(signal) : Promise.resolve({ ok: true, skipped: true, reason: "sleep-disposed" }))
     });
     service.setSleepHook(() => sleep.noteWrite());
   }

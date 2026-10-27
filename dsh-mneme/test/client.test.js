@@ -2422,6 +2422,13 @@ test("GUI exposes scene/recent status and Core provenance without bypassing owne
     "unscoped legacy promotion must be explained");
 });
 
+test("scene degraded copy says enabled Dream/Sleep run per Scene, not paused", () => {
+  assert.ok(clientSource.includes("已启用的 autoDream/Sleep 按持久化 Scene 分批运行"));
+  assert.ok(clientSource.includes("Enabled autoDream/Sleep run per persisted Scene"));
+  assert.equal(clientSource.includes("autoDream、Sleep 已安全暂停"), false);
+  assert.equal(clientSource.includes("autoDream and Sleep are safely paused"), false);
+});
+
 test("owner scene graph card is registered with scope selector and keyboard nodes", () => {
   for (const key of [
     "memory.am.graph.title",

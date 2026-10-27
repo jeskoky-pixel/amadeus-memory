@@ -76,6 +76,28 @@ test("strict Scene autoSummarize stamps group A/B writes and keeps them separate
   }
 });
 
+test("Host-bound custom preset is treated as QQ Scene, not legacy", async () => {
+  const host = {
+    qq: {
+      resolveTrustedSessionScene() {
+        return { platform: "qq", kind: "group", id: "custom-bound", verified: true };
+      }
+    }
+  };
+  const { store, summarizer, handler } = setup({ sceneIsolationEnabled: true, sceneStrictQQ: true }, host);
+  try {
+    const session = qqSession("session-custom");
+    session.header = { agentPreset: "renamed-qq-preset" };
+    await handler(session, { seq: 2, type: "turn/end" });
+    const rows = store.all();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].scene_scope, "qq:group:custom-bound");
+  } finally {
+    summarizer.dispose();
+    store.close();
+  }
+});
+
 test("strict Scene autoSummarize refuses an unverified Host contract", async () => {
   const { store, summarizer, handler, calls } = setup({ sceneIsolationEnabled: true, sceneStrictQQ: true }, {});
   try {
@@ -184,12 +206,15 @@ test("scene change during LLM generation rejects the write", async () => {
   }
 });
 
-test("index keeps the strict-QQ summarizer enabled while dream/sleep stay gated", () => {
+test("index keeps the strict-QQ summarizer enabled and runs Dream/Sleep per Scene", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
   assert.match(src, /const strictQQScene = cfg\.sceneIsolationEnabled === true && cfg\.sceneStrictQQ === true/);
   assert.match(src, /!strictQQScene && sceneUnsafeDerivation\(\)/);
-  assert.match(src, /if \(cfg\.autoDream && !sceneUnsafeDerivation\(\)\)/);
-  assert.match(src, /if \(cfg\.sleepModeEnabled && !sceneUnsafeDerivation\(\)\)/);
+  assert.match(src, /function listBackgroundSceneScopes\(\)/);
+  assert.match(src, /runWithSceneJob\(scope, \(\) => dream\.runDream/);
+  assert.match(src, /runWithSceneJob\(scope, \(\) => runSleep/);
+  assert.doesNotMatch(src, /if \(cfg\.autoDream && !sceneUnsafeDerivation\(\)\)/);
+  assert.doesNotMatch(src, /if \(cfg\.sleepModeEnabled && !sceneUnsafeDerivation\(\)\)/);
 });
 
 test("feature-off autoSummarize keeps the legacy unscoped write behavior", async () => {

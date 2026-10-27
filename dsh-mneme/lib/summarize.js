@@ -598,12 +598,17 @@ export function createSummarizer(ctx, service, config, deps = {}) {
     if (!isolation) return { kind: "deny" }; // tagged rows without isolation keep the old gate
     if (config.sceneStrictQQ !== true) return { kind: "deny" };
     const preset = sessionAgentPreset(session);
-    if (!preset) return { kind: "deny" }; // unknown session provenance fails closed
-    if (!QQ_SCENE_PRESETS.has(preset)) return { kind: "legacy" }; // strict QQ does not apply to non-QQ
+    // Host binding is stronger evidence than a preset name: a QQ Scene returned
+    // by the in-process Host is authoritative even when the preset is custom or
+    // renamed. Only after that do known-QQ/no-Host and non-QQ fallbacks apply.
     const scene = resolveHostScene(session);
-    if (!scene) return { kind: "deny" };
-    if (expectedSceneId && scene.sceneId !== expectedSceneId) return { kind: "deny" };
-    return { kind: "scene", scene };
+    if (scene) {
+      if (expectedSceneId && scene.sceneId !== expectedSceneId) return { kind: "deny" };
+      return { kind: "scene", scene };
+    }
+    if (!preset) return { kind: "deny" }; // unknown session provenance fails closed
+    if (QQ_SCENE_PRESETS.has(preset)) return { kind: "deny" }; // known QQ without Host binding
+    return { kind: "legacy" }; // genuinely non-QQ
   }
 
   function latestSessionSeq(session) {

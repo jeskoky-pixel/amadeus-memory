@@ -18,6 +18,7 @@ import { createPreferenceService } from "./preferences.js";
 import { createIntakeService } from "./intake.js";
 import { normalizeEventTag, stripEventTags, eventTagForKind, isEventTag } from "./trusted-events.js";
 import { currentScene, sceneFilterRows, sceneIdOf, isAdminPrivateScene, scenePolicy, sceneAllowsMemory } from "./scene.js";
+import { sceneJobScopes, sceneJobMatches, sceneJobEquals, currentSceneJob, LEGACY_SCENE_JOB } from "./scene-job.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
@@ -484,6 +485,52 @@ export function createService({ store, mirror, config, onWrite, logger, document
     return [scene.sceneId];
   }
 
+  function withJobScopes(options = {}) {
+    const scopes = sceneJobScopes();
+    return scopes ? { ...options, sceneScopes: scopes } : options;
+  }
+
+  function assertJobScene(existing, label = "memory") {
+    const job = currentSceneJob();
+    if (!job) return;
+    if (!existing) throw new Error(`${label} not found in scene job`);
+    if (!sceneJobEquals(existing.scene_scope)) {
+      throw new Error(`SCENE_JOB_MISMATCH: ${label} escaped its Scene`);
+    }
+  }
+
+  function jobOrSceneFilter(rows) {
+    const job = currentSceneJob();
+    return job ? rows.filter((row) => sceneJobMatches(row)) : sceneFilterRows(rows);
+  }
+
+  function jobEntityIds() {
+    return currentSceneJob() ? store.sceneEntityIds(sceneJobScopes()) : null;
+  }
+
+  function jobGroupVisible(group, ids = jobEntityIds()) {
+    if (!ids) return true;
+    return [group?.id, ...(group?.member_ids ?? [])].some((id) => id && ids.has(id));
+  }
+
+  function jobEntityFilter() {
+    const ids = jobEntityIds();
+    return ids ? (group) => jobGroupVisible(group, ids) : null;
+  }
+
+  function jobRelationsForEntity(id) {
+    const group = identity.groupForEntity(id);
+    if (!group) return [];
+    const raw = [];
+    for (const memberId of group.member_ids) raw.push(...store.getRelations(memberId));
+    const visible = raw.filter((relation) => {
+      if (!relation?.memory_id) return false;
+      const memory = store.getById(relation.memory_id);
+      return memory ? sceneJobMatches(memory) : false;
+    });
+    return identity.canonicalizeRelations(visible);
+  }
+
   /**
    * Search for memories attached to a named entity (v0.3.0 Phase 3).
    * 合并优先级：entity_attrs.memory_id 精确关联 = 1.0 > 关键词提及 = 0.7；
@@ -510,7 +557,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const scorer = preferences.createScorer();
     const recallWindow = scorer.active ? Math.min(200, Math.max(lim * 8, 60)) : lim;
     const merged = new Map();
-    const readableScopes = trustedReadableSceneScopes();
+    const readableScopes = sceneJobScopes() ?? trustedReadableSceneScopes();
     const groupSummaries = resolution.ambiguous
       ? groups.map((group) => ({
           id: group.id,
@@ -556,7 +603,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       }
     }
     const ranked = Array.from(merged.values()).sort((a, b) => b._score - a._score);
-    const gated = sceneFilterRows(gateByScope(ranked, scope));
+    const gated = jobOrSceneFilter(gateByScope(ranked, scope));
     let visible = scorer.active
       ? preferences.rerankRows(gated, { scorer, scoreKey: "_score", lim })
       : gated.slice(0, lim);
@@ -591,7 +638,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 当前有效记忆（v0.3.0，store.js 已实现）。
     const rows = store.findMemoriesByAttr(key, value ?? "");
     // 同 searchByEntity：先过闸再截 topK，且闸门在 touchRecalled 之前。
-    const visible = sceneFilterRows(gateByScope(rows, scope)).slice(0, topK);
+    const visible = jobOrSceneFilter(gateByScope(rows, scope)).slice(0, topK);
     touchRecalled(visible);
     return visible;
   }
@@ -628,7 +675,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
    * normalized to [0,1]. Failures degrade to [] — BM25 is a recall booster,
    * never a correctness gate.
    */
-  function bm25Recall(q, limit, sceneScopes = trustedReadableSceneScopes()) {
+  function bm25Recall(q, limit, sceneScopes = sceneJobScopes() ?? trustedReadableSceneScopes()) {
     if (config?.bm25SearchEnabled === false) return [];
     try {
       const docs = store.list({ limit: 500, includeForgotten: false, sceneScopes }).filter((m) => !m.archived);
@@ -1049,7 +1096,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       ? Math.max(recallLimit, 200)
       : recallLimit;
     const effectiveRecallLimit = Math.max(recallLimit, sceneRecallLimit);
-    const effectiveSceneScopes = Array.isArray(sceneScopes) ? sceneScopes : trustedReadableSceneScopes();
+    const effectiveSceneScopes = Array.isArray(sceneScopes) ? sceneScopes : (sceneJobScopes() ?? trustedReadableSceneScopes());
 
     // Keyword results, decorated with a score so they can be weight-blended
     // with vector results and reported uniformly. source tracks where each
@@ -1556,6 +1603,12 @@ export function createService({ store, mirror, config, onWrite, logger, document
     } else if (trustedScene?.platform === "qq") {
       memory = { ...memory, scene_scope: trustedScene.sceneId };
     }
+    // Background Dream/Sleep jobs have one exact persisted Scene (or legacy).
+    // This stamp is internal job context, never model/HTTP input.
+    const job = currentSceneJob();
+    if (job) {
+      memory = { ...memory, scene_scope: job.sceneScope === LEGACY_SCENE_JOB ? null : job.sceneScope };
+    }
     // Event claims are authority-bearing provenance, not free-form labels.
     // Every ordinary write loses all event:* spellings; the private trusted
     // writer adds back only the tag derived from its validated kind.
@@ -1587,7 +1640,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // dream 总览按 source 身份去重，而非本地化标题：memory.language 切换后
     // 标题变化，若仍按 (type, title) 匹配会出现两个活跃的 summary 同时注入。
     // 其余类型维持 (type, title) 匹配不变。
-    const candidates = store.list({ type: memory.type, limit: 100 });
+    const candidates = store.list(withJobScopes({ type: memory.type, limit: 100 }));
     // v0.8.0 A1（issue #17）：去重键由 (type, title) 扩展为
     // (type, title, agent_scope, workspace_scope, sensitivity)——不同作用域的同
     // 标题记忆绝不互相物理合并（旧逻辑跨 agent/workspace 并行，事后无法拆分）。
@@ -1607,6 +1660,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 实现。目标已被并发删除时回落到常规匹配。显式目标同样过 scope 门：跨作用域
     // 的语义相似不并入（防泄漏），回落为独立新行。
     const explicitTarget = memory._mergeInto ? store.getById(memory._mergeInto) : undefined;
+    if (explicitTarget) assertJobScene(explicitTarget, "merge target");
     const existing = trustedContext?.forceNew
       ? undefined
       : explicitTarget
@@ -2689,9 +2743,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
   // 处置）共用的写路径：mirror 同步、写通知、嵌入调度全部同源，不能各写一份。
   function updateMemory(id, p, ctx = {}) {
     const old = store.getById(id);
+    if (currentSceneJob()) {
+      if (!old || !sceneJobMatches(old)) throw new Error("memory not found in scene job");
+    }
     if (old?.scene_scope && scenePolicy().enabled) {
       const scene = currentScene();
-      if (!scene || old.scene_scope !== scene.sceneId) {
+      const jobAllowsExactScene = currentSceneJob() !== null && sceneJobMatches(old);
+      if ((!scene || old.scene_scope !== scene.sceneId) && !jobAllowsExactScene) {
         const error = new Error("SCENE_DENIED");
         error.code = "SCENE_DENIED";
         throw error;
@@ -2783,6 +2841,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
   }
 
   function archiveMemory(id, f) {
+    const current = store.getById(id);
+    if (!current) return undefined;
+    assertJobScene(current);
     const updated = store.setArchived(id, f);
     afterSync("write");
     // #275 B 项：归档行的向量会被手动回收清掉（检索恒带 archived = 0，按定义不可达），
@@ -2832,8 +2893,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // cohesive blocks; API routes and the panel call these rather than SQL.
     identity,
     preferences,
-    listEntities: (o) => identity.listEntities(o),
-    listEntitiesPage: (o) => identity.listEntitiesPage(o),
+    listEntities: (o) => identity.listEntities({ ...(o ?? {}), filter: jobEntityFilter() }),
+    listEntitiesPage: (o) => identity.listEntitiesPage({ ...(o ?? {}), filter: jobEntityFilter() }),
     listTagWeights: () => preferences.listTagWeights(),
     listEntityWeights: () => preferences.listEntityWeights(),
     getPreferenceState: () => preferences.getState(),
@@ -2997,8 +3058,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
     evaluateRetrieval,
     computeRetrievalMetrics,
     // passthroughs used by tools and api layers; mutations keep the mirror in sync
-    search: (q, o) => store.search(q, o),
-    searchVector: (v, o) => store.searchVector(v, o),
+    search: (q, o) => store.search(q, withJobScopes(o)),
+    searchVector: (v, o) => store.searchVector(v, withJobScopes(o)),
     embeddedCount: () => store.embeddedCount(),
     // 向量出身的两个分组读数：状态端点 /semantic 用它们区分「有向量」和
     // 「可检索」（byModel 按行级 embedding_model，byDimension 按向量维数）。
@@ -3006,11 +3067,17 @@ export function createService({ store, mirror, config, onWrite, logger, document
     embeddingModelBreakdown: () => store.embeddingModelBreakdown(),
     embeddingDimensionBreakdown: () => store.embeddingDimensionBreakdown(),
     hasSceneScopedRows: () => store.hasSceneScopedRows(),
-    list: (o) => store.list(o),
-    all: () => store.all(),
-    count: (type, opts) => store.count(type, opts),
-    getById: (id) => store.getById(id),
+    list: (o) => store.list(withJobScopes(o)),
+    all: () => store.all(sceneJobScopes()),
+    count: (type, opts) => store.count(type, withJobScopes(opts)),
+    getById: (id) => {
+      const row = store.getById(id);
+      return row && sceneJobMatches(row) ? row : undefined;
+    },
     remove: (id) => {
+      const row = store.getById(id);
+      if (!row) return;
+      assertJobScene(row);
       store.remove(id);
       afterSync("write");
       notifyWrite();
@@ -3057,6 +3124,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
       return updated;
     },
     setForget: (id, f) => {
+      const current = store.getById(id);
+      if (!current) return undefined;
+      assertJobScene(current);
       const updated = store.setForget(id, f);
       afterSync("write");
       return updated;
@@ -3067,11 +3137,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // touchLastAccess is a read-stamp — deliberately NO write hook (a recall
     // must not dirty the mirror). getUnrecalledSince is a pure read.
     demoteToSummary: (id, summary, opts) => {
+      assertJobScene(store.getById(id));
       const updated = store.demoteToSummary(id, summary, opts);
       afterSync("write");
       return updated;
     },
     restoreContent: (id) => {
+      assertJobScene(store.getById(id));
       const updated = store.restoreContent(id);
       afterSync("write");
       return updated;
@@ -3091,8 +3163,22 @@ export function createService({ store, mirror, config, onWrite, logger, document
     listReceipts: (opts) => store.listReceipts(opts),
     // Conflict freeze bookkeeping (same semantics as the audit passthroughs
     // above: an audit write, never a write-hook-triggering memory mutation).
-    saveConflictPending: (r) => store.saveConflictPending(r),
-    listConflictPending: (opts) => store.listConflictPending(opts),
+    saveConflictPending: (r) => {
+      if (currentSceneJob()) {
+        assertJobScene(store.getById(r?.memory_a), "conflict memory_a");
+        assertJobScene(store.getById(r?.memory_b), "conflict memory_b");
+      }
+      return store.saveConflictPending(r);
+    },
+    listConflictPending: (opts) => {
+      const rows = store.listConflictPending(opts);
+      if (!currentSceneJob()) return rows;
+      return rows.filter((row) => {
+        const a = store.getById(row.memory_a);
+        const b = store.getById(row.memory_b);
+        return a && b && sceneJobMatches(a) && sceneJobMatches(b);
+      });
+    },
     listConflictQueue,
     resolveConflictPending,
     countConflictPending: () => store.countConflictPending(),
@@ -3113,11 +3199,17 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // (applyDecisions): records supersedes relations after an update and
     // migrates entity_attrs on merge. Bookkeeping writes like the audit
     // passthroughs above — never write-hook-triggering memory mutations.
-    saveRelation: (r) => store.saveRelation(r),
+    saveRelation: (r) => {
+      if (currentSceneJob()) {
+        if (!r?.memory_id) throw new Error("SCENE_JOB_RELATION_SOURCE_REQUIRED");
+        assertJobScene(store.getById(r.memory_id), "relation memory");
+      }
+      return store.saveRelation(r);
+    },
     // Canonical view: relation endpoints resolve to the stable canonical UUID,
     // internal edges of one merged group are hidden, duplicate endpoints are
     // aggregated with all original edge ids preserved.
-    getRelations: (id) => identity.relationsForEntity(id),
+    getRelations: (id) => (currentSceneJob() ? jobRelationsForEntity(id) : identity.relationsForEntity(id)),
     groupsForEntityIds: (ids) => identity.groupsForEntityIds(ids),
     // v0.7.0 实体热投影：实体热 = 关联记忆 heat 聚合（取 max）。无关联记忆
     // 或 heatEnabled=false 时返回 null；前端据此决定图谱节点大小/明暗。
@@ -3153,7 +3245,10 @@ export function createService({ store, mirror, config, onWrite, logger, document
     listPendingAssertions: (opts) => identity.listPendingAssertions(opts),
     listPendingRelations: (opts) => identity.listPendingRelations(opts),
     resolvePendingAssertion: (opts) => identity.resolvePendingAssertion(opts),
-    getAttrsByMemory: (id) => store.getAttrsByMemory(id),
+    getAttrsByMemory: (id) => {
+      if (currentSceneJob() && !sceneJobMatches(store.getById(id))) return [];
+      return store.getAttrsByMemory(id);
+    },
     // 记忆详情侧栏：一条记忆关联到的实体（entity_attrs.memory_id 反查，纯读）。
     // Canonical view: duplicates in one group collapse, member UUIDs stay visible.
     entitiesForMemory: (id) => {
@@ -3181,7 +3276,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
     getCurrentAttrs: (id) => {
       const group = identity.groupForEntity(id);
       if (!group) return [];
-      return group.member_ids.flatMap((memberId) => store.getCurrentAttrs(memberId));
+      if (currentSceneJob() && !jobGroupVisible(group)) return [];
+      return group.member_ids.flatMap((memberId) => store.getCurrentAttrs(memberId))
+        .filter((attr) => !currentSceneJob() || (attr.memory_id && sceneJobMatches(store.getById(attr.memory_id))));
     },
     getAttrHistory: (id) => {
       const group = identity.groupForEntity(id);

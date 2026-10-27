@@ -23,6 +23,7 @@ import { findPotentialConflicts, cosineSimilarity } from "./clustering.js";
 import { scopeKeyOf } from "../scope.js";
 import { buildReceipt, describeStreamFailure, resolveDreamEffort, withEffortFallback, withMaxTokensFallback, maintainIndexAfterDream } from "../dream.js";
 import { computeHeat } from "../heat.js";
+import { currentSceneJob, LEGACY_SCENE_JOB } from "../scene-job.js";
 
 // Issue #126 review（Copilot）：默认档（sleepActionSet="conflict"）允许的动作 = 全局
 // ACTIONS 去掉 #126 新增的两个。从 ACTIONS 派生而非硬编码，将来再扩动作集时自动跟随。
@@ -700,6 +701,9 @@ export async function runSleep(ctx, service, config, logger, semantic = null, si
       receipt,
       policy_epoch: config.policyEpoch ?? 0,
       run_type: "sleep",
+      scene_scope: currentSceneJob()
+        ? (currentSceneJob().sceneScope === LEGACY_SCENE_JOB ? null : currentSceneJob().sceneScope)
+        : undefined,
       skipped: skippedDetail.length ? skippedDetail : undefined
     });
   } catch (error) {

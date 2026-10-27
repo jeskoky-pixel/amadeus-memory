@@ -11,7 +11,7 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 test("Amadeus Memory release identity is explicit and backward compatible", () => {
   assert.equal(pkg.name, "@modusensus/dsh-mneme");
-  assert.match(pkg.version, /^0\.9\.5-amadeus\.\d+$/);
+  assert.match(pkg.version, /^1\.0\.0-rc\.\d+$/);
   assert.equal(pkg.amadeus.edition, "enhanced");
   assert.equal(pkg.amadeus.product, "memory");
   assert.equal(pkg.amadeus.upstream, "@modusensus/dsh-mneme@0.9.4");
