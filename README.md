@@ -2,7 +2,7 @@
 
 Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权的长期信息，在对话时检索相关记忆，并提供可视化的记忆、标签权重、实体关系和备份管理。此版本继承 Mneme 的插件 ID 与数据格式，方便已有用户升级。
 
-> `1.0.0-rc.1` 已通过 [PR #3](https://github.com/jeskoky-pixel/amadeus-memory/pull/3) 合并到 `main`，尚未公开发行或部署到生产 DSH。
+> `1.0.0-rc.1` 已通过 [PR #3](https://github.com/jeskoky-pixel/amadeus-memory/pull/3) 合并到 `main`；`1.0.0` 正在独立分支进行版本收口与四插件联合验收，尚未公开发行或部署到生产 DSH。
 
 ## 日常使用
 
@@ -16,8 +16,8 @@ The enhancement was merged into `main` through [Memory PR #1](https://github.com
 
 ## Package and installation
 
-- Source package: `dsh-mneme/`, package name `@modusensus/dsh-mneme`, candidate version `1.0.0-rc.1` (same plugin ID/data path as upstream 0.9.4).
-- The previous baseline archive is `dist/modusensus-dsh-mneme-0.9.5-amadeus.2.tgz`. The current candidate archive is `dist/modusensus-dsh-mneme-1.0.0-rc.1.tgz`; its SHA-256 and acceptance boundaries are recorded in [`MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md`](docs/verification/MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md).
+- Source package: `dsh-mneme/`, package name `@modusensus/dsh-mneme`, version `1.0.0` (same plugin ID/data path as upstream 0.9.4).
+- The merged RC archive is `dist/modusensus-dsh-mneme-1.0.0-rc.1.tgz`; its SHA-256 and acceptance boundaries are recorded in [`MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md`](docs/verification/MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md). The `1.0.0` package is built and verified separately for the four-plugin acceptance.
 - Native DSH Settings entry: **Amadeus 记忆 / Amadeus Memory** (overview, automatic memory, Embedding, Tag/entity preferences, link to the full Memory panel).
 - In an isolated DSH Desktop Profile, choose and verify a dedicated `memoryDir` **before enabling** the bundle, then use Plugin Manager **Install bundle** with this archive. Set `apiToken` only if the optional trusted intake API is needed. The source package can also be linked during development.
 - Keep only one Memory bundle enabled; the same plugin ID must not run twice. Keep the old Mneme package and a SQLite consistent backup for rollback. Do not point a development Profile at a live memory database.
@@ -34,7 +34,7 @@ npm run test:upstream-release # 单独运行上游发行专用测试
 npm run test:compat-windows   # Windows symlink/spawn capability probe
 ```
 
-`npm test` is the product gate (540 tests at `1.0.0-rc.1`): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
+`npm test` is the product gate (540 tests at `1.0.0`): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
 
 ## Documentation
 
@@ -58,7 +58,7 @@ npm run test:compat-windows   # Windows symlink/spawn capability probe
 | **v0.7** | 记忆核心与面板 | ✅ 已发布 |
 | **v0.8** | 实体与身份增强 | ✅ 已发布 |
 | **v0.9** | Amadeus Memory 产品化（0.9.5-amadeus.2） | 已合并 `main`，未公开发行或生产部署 |
-| **v1.0** | QQ Scene 安全运行、图谱与后台整理（1.0.0-rc.1） | 已合并 `main`，未公开发行或生产部署 |
+| **v1.0** | QQ Scene 安全运行、图谱与后台整理（1.0.0） | 正式版本收口中；RC 已合并，未公开发行或生产部署 |
 
 ## Roadmap
 
@@ -67,7 +67,7 @@ npm run test:compat-windows   # Windows symlink/spawn capability probe
 | **v0.7** | Memory core and panel | ✅ Released |
 | **v0.8** | Entity and identity enhancement | ✅ Released |
 | **v0.9** | Amadeus Memory productization (0.9.5-amadeus.2) | Merged into `main`; not publicly released or deployed |
-| **v1.0** | QQ Scene safety, graph and background maintenance (`1.0.0-rc.1`) | Merged into `main`; not publicly released or deployed |
+| **v1.0** | QQ Scene safety, graph and background maintenance (`1.0.0`) | Final version acceptance in progress; RC merged, not publicly released or deployed |
 
 The Scene graph has been exercised through a real isolated Desktop GUI with synthetic memories. The earlier QQ Host test also exercised real model requests through isolated QQ Sessions; production recall quality and latency remain unmeasured. PR #1, PR #2 and PR #3 are merged; production deployment is a separate decision.
 

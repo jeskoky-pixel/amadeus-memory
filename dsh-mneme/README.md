@@ -221,7 +221,7 @@ Amadeus 分支在实体层之上增加三块**默认不影响旧行为**的能�
 配置键、API、迁移/回滚与合成基准见
 [Amadeus 记忆增强文档](docs/AMADEUS_MEMORY_ENHANCER.md)。
 
-### Amadeus Memory 产品化（1.0.0-rc.1 候选）
+### Amadeus Memory 产品化（1.0.0）
 
 - **发行身份**：同包名 `@modusensus/dsh-mneme`、同插件 ID `dsh-mneme` 的增强版本，升级继承原 `memoryDir`、配置、Embedding 与 SQLite；不是第二个 Memory 包，不能与上游同时启用。上游/许可见 `UPSTREAM.md` 与 `LICENSE`。
 - **系统设置入口**：DSH 设置左侧 **Amadeus 记忆 / Amadeus Memory**，提供运行概览、记忆搜索/新建/编辑/归档/删除、安全备份/恢复、自动记忆/autoDream/Sleep、注入参数、Embedding 状态与配置、Tag/实体偏好、打开原完整面板。
@@ -369,7 +369,7 @@ dsh web
 ```bash
 cd dsh-mneme
 npm pack                       # 产出 modusensus-dsh-mneme-<版本>.tgz
-dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-1.0.0-rc.1.tgz"
+dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-1.0.0.tgz"
 ```
 
 > 必须用 `npm pack`，别用 `pnpm pack`：`bin/cli.mjs` 在工作区里是 CRLF，pnpm 会以 `ERR_PNPM_BIN_CRLF` 直接失败。

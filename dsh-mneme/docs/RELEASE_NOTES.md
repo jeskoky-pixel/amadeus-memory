@@ -1,5 +1,10 @@
 # Amadeus Memory 发行说明
 
+## 1.0.0 版本收口
+
+- 沿用 `@modusensus/dsh-mneme` 包名、`dsh-mneme` 插件 ID 与现有数据库升级路径；本次只将通过验收的 RC 收口为正式版本号，不新增记忆能力。
+- QQ Scene 后台整理、可信自动摘要及未知 Preset 安全拒绝沿用下述 RC 实现。正式包仍需在四插件隔离环境中联合验收；未公开发布或部署生产环境。
+
 ## 1.0.0-rc.1 候选
 
 - 在可信 QQ Scene 下恢复原有 autoDream、autoSummarize 与按需启用的 Sleep。Dream 和 Sleep 按持久化来源分批执行，legacy 未标注记忆独立处理；生成结果和审计保留 Scene 来源。
