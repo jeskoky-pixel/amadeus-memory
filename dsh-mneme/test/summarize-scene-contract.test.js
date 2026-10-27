@@ -98,6 +98,36 @@ test("Host-bound custom preset is treated as QQ Scene, not legacy", async () => 
   }
 });
 
+test("custom QQ preset without a trusted Host binding cannot write legacy summaries", async () => {
+  const host = { qq: { resolveTrustedSessionScene: () => null } };
+  const { store, summarizer, handler, calls } = setup({ sceneIsolationEnabled: true, sceneStrictQQ: true }, host);
+  try {
+    const session = qqSession("session-custom-unbound");
+    session.header = { agentPreset: "renamed-qq-preset" };
+    await handler(session, { seq: 2, type: "turn/end" });
+    assert.equal(calls.length, 0);
+    assert.equal(store.count(), 0);
+  } finally {
+    summarizer.dispose();
+    store.close();
+  }
+});
+
+test("known ordinary DSH preset keeps legacy autoSummarize in strict QQ mode", async () => {
+  const { store, summarizer, handler } = setup({ sceneIsolationEnabled: true, sceneStrictQQ: true }, {});
+  try {
+    const session = qqSession("ordinary-session");
+    session.header = { agentPreset: "standard" };
+    await handler(session, { seq: 2, type: "turn/end" });
+    const rows = store.all();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].scene_scope, undefined);
+  } finally {
+    summarizer.dispose();
+    store.close();
+  }
+});
+
 test("strict Scene autoSummarize refuses an unverified Host contract", async () => {
   const { store, summarizer, handler, calls } = setup({ sceneIsolationEnabled: true, sceneStrictQQ: true }, {});
   try {

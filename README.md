@@ -8,7 +8,7 @@ Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权�
 
 在 DSH 设置中打开 **Amadeus 记忆**，按 **记忆 / 实体 / 状态 / 设置** 浏览。记忆页区分长期记忆和近期上下文；实体页提供按单一 Scene 选择的只读图谱；设置页再分基础、检索、场景和备份。记忆可创建、搜索、编辑、归档和删除，核心记忆可受保护。原 Mneme 面板在没有 Scene 数据且未启用严格模式时仍可用；严格模式下旧图谱与身份接口安全关闭。若向量服务未配置，关键词检索继续可用。安装前请阅读 [中文用户指南](dsh-mneme/docs/USER_GUIDE.zh.md) 和 [安装与升级说明](dsh-mneme/docs/INSTALL.md)。
 
-[![tests](https://img.shields.io/badge/tests-538%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
+[![tests](https://img.shields.io/badge/tests-540%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
 
 This repository packages a separately installable Mneme bundle in [`dsh-mneme/`](dsh-mneme/). It extends the existing SQLite memory store, retrieval, graph and Desktop panel with stable typed identities, reviewed aliases and canonical links, Tag/entity ranking preferences, controlled Life experience intake, Scene-aware isolation, Recent Context and Core Memories. The upstream import and license are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 
@@ -28,13 +28,13 @@ The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack
 
 ```powershell
 cd dsh-mneme
-npm test        # 运行 538 个测试
+npm test        # 运行 540 个测试
 npm run test:all              # 完整套件，含上游发行专用测试
 npm run test:upstream-release # 单独运行上游发行专用测试
 npm run test:compat-windows   # Windows symlink/spawn capability probe
 ```
 
-`npm test` is the product gate (538 tests at `1.0.0-rc.1`): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
+`npm test` is the product gate (540 tests at `1.0.0-rc.1`): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
 
 ## Documentation
 

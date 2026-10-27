@@ -5,6 +5,7 @@
 - 在可信 QQ Scene 下恢复原有 autoDream、autoSummarize 与按需启用的 Sleep。Dream 和 Sleep 按持久化来源分批执行，legacy 未标注记忆独立处理；生成结果和审计保留 Scene 来源。
 - Dream 与 Sleep 共用串行队列；Sleep 取消不报告整轮成功。规范实体的成员证据先按 Scene 过滤再汇总，关系补全不会引用其他 Scene 的证据。
 - 新增隔离合成库的 1 万条记忆检索 P95 基准。实机安装、重启与剩余验收范围见仓库交付报告；未部署生产环境。
+- 严格 QQ 模式下，Host 绑定缺失且 Preset 来源不明确的会话不再回退到 legacy 自动摘要；已知普通 DSH Preset 仍保持原有摘要行为。
 
 ## 0.9.5-amadeus.3 历史候选
 

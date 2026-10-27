@@ -15,6 +15,10 @@ const QQ_SCENE_PRESETS = new Set([
   "amadeus-qq-media-search",
   "amadeus-qq-owner"
 ]);
+// In strict QQ mode, an unbound Session may use the legacy path only for
+// built-in ordinary DSH presets. An arbitrary/custom preset is not proof that
+// the Session is non-QQ when the QQ Host temporarily loses its binding.
+const ORDINARY_DSH_PRESETS = new Set(["standard", "minimal", "creator", "creative", "default"]);
 
 function sessionAgentPreset(session) {
   try {
@@ -600,7 +604,8 @@ export function createSummarizer(ctx, service, config, deps = {}) {
     const preset = sessionAgentPreset(session);
     // Host binding is stronger evidence than a preset name: a QQ Scene returned
     // by the in-process Host is authoritative even when the preset is custom or
-    // renamed. Only after that do known-QQ/no-Host and non-QQ fallbacks apply.
+    // renamed. Without a binding, only known ordinary DSH presets may fall
+    // back to the legacy path; unknown/custom provenance fails closed.
     const scene = resolveHostScene(session);
     if (scene) {
       if (expectedSceneId && scene.sceneId !== expectedSceneId) return { kind: "deny" };
@@ -608,7 +613,7 @@ export function createSummarizer(ctx, service, config, deps = {}) {
     }
     if (!preset) return { kind: "deny" }; // unknown session provenance fails closed
     if (QQ_SCENE_PRESETS.has(preset)) return { kind: "deny" }; // known QQ without Host binding
-    return { kind: "legacy" }; // genuinely non-QQ
+    return ORDINARY_DSH_PRESETS.has(preset) ? { kind: "legacy" } : { kind: "deny" };
   }
 
   function latestSessionSeq(session) {

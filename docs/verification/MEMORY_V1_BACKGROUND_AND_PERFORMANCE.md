@@ -53,7 +53,7 @@ real conversation query quality remain outside this synthetic P95.
 
 ## Scene job acceptance
 
-Source and synchronized `lib/` pass the 538-test Amadeus quality gate.
+Source and synchronized `lib/` pass the 540-test Amadeus quality gate.
 Focused Scene background regression tests pass 14/14 and cover multi-Scene
 Dream/Sleep prompts, exact Scene writes, legacy NULL isolation, relation
 evidence filtering before canonical aggregation, entity pagination and merged
@@ -62,8 +62,10 @@ restart, and a trusted Host binding on a custom QQ preset.
 
 ## Isolated DSH Desktop acceptance (2026-10-27)
 
-The reviewed `1.0.0-rc.1` archive was installed with the official Plugin
-Manager into the isolated Desktop Profile and hard-restarted. This Profile uses
+The pre-boundary-fix `1.0.0-rc.1` archive (SHA-256
+`B8EEEC6FFDD8FA5A66315036F58A21F193613FEC921A564BCB9224B9AD16EAB3`)
+was installed with the official Plugin Manager into the isolated Desktop
+Profile and hard-restarted. This Profile uses
 synthetic memories and a separate SQLite directory; the production Mneme
 database, DSH Profile, QQ Bridge and Life data were not changed.
 
@@ -82,10 +84,10 @@ establish that every future model decision is valid.
 
 ## Package, limits and rollback
 
-`npm run package:amadeus` passed **538/538** tests, synchronized `src/` with
+`npm run package:amadeus` passed **540/540** tests, synchronized `src/` with
 `lib/`, and passed source and archive privacy checks. The installable archive is
 `dist/modusensus-dsh-mneme-1.0.0-rc.1.tgz`, SHA-256
-`B8EEEC6FFDD8FA5A66315036F58A21F193613FEC921A564BCB9224B9AD16EAB3`.
+`AC4EC4AA407D3A5F01CF878D607CD93C7F92283CF58A59866CAE985A286AA666`.
 The privacy check found no credentials, databases, logs, symlinks or temporary
 artifacts in the archive. No local authentication URL or token is included in
 this report.
@@ -94,6 +96,16 @@ The P95 figures above exclude remote Embedding and model generation. Real QQ
 traffic, production-size multi-Scene load, long-term semantic quality and
 production migration remain unverified. The Desktop checks use synthetic data;
 they do not substitute for a monitored production rollout.
+
+The final boundary fix makes strict-mode autoSummarize reject an unbound
+Session with a custom/unknown Preset instead of writing it as legacy. A failing
+regression reproduced the prior model call; after the fix, both that case and
+the known ordinary DSH Preset compatibility test pass. The complete 540-test
+gate and archive privacy scan were rerun. This change does not alter the
+retrieval path or the P95 measurements above. The final archive was not
+reinstalled into Desktop; the Desktop observations in this report apply to the
+pre-fix archive identified above, while the changed boundary was verified by
+the focused and full automated suites.
 
 Before deployment, back up the current SQLite database and retain the previous
 plugin archive. Rehearse installation and migration on an isolated copy, then
