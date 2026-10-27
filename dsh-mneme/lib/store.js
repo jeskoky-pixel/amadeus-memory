@@ -15,6 +15,7 @@ import { IDENTITY_SCHEMA, seedIdentitySchema } from "./identity.js";
 import { PREFERENCE_SCHEMA } from "./preferences.js";
 import { INTAKE_SCHEMA } from "./intake.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
+import { LEGACY_SCENE_JOB } from "./scene-job.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS dream_runs (
   receipt        TEXT NOT NULL,
   policy_epoch   INTEGER NOT NULL DEFAULT 0,  -- 裁决规则版本：规则升级后旧裁决降级为历史证据
   run_type       TEXT NOT NULL DEFAULT 'auto', -- auto | sleep | organize：周期审计的类别区分
+  scene_scope    TEXT,                    -- background job Scene; NULL = legacy/unscoped
   skipped        TEXT,                    -- JSON: degraded 轮被跳过的逐条明细（index/action/ids/error）
   -- Issue #89（基线半边）：本轮成功刷新后的活跃记忆「条数 / 正文字符数」——阈值判定的
   -- 基线原本只活在调度器闭包内存里，进程重启归零 → 库里记忆多于阈值时，重启后第一条
@@ -301,6 +303,19 @@ CREATE INDEX IF NOT EXISTS idx_memory_provenance_session ON memory_provenance(se
 -- 同一 (记忆, 会话, 区间) 只有一条事实，用唯一索引 + ON CONFLICT DO NOTHING 表达。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_provenance_link
   ON memory_provenance(memory_id, session_id, seq_start, seq_end);
+
+-- Directional QQ group read grants. The reader may read the source group's
+-- memories for model retrieval; grants are non-transitive, read-only and never
+-- carry private/legacy scopes. Persisted so revocation survives restart.
+CREATE TABLE IF NOT EXISTS scene_read_grants (
+  reader_scene TEXT NOT NULL,
+  source_scene TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  created_by TEXT,
+  note TEXT,
+  PRIMARY KEY (reader_scene, source_scene)
+);
+CREATE INDEX IF NOT EXISTS idx_scene_read_grants_reader ON scene_read_grants(reader_scene);
 
 -- entity gene (v0.3.0): named entities mentioned across memories, with
 -- time-boxed attributes (valid_from → valid_until) and typed relations.
@@ -595,6 +610,7 @@ function toDreamRun(row) {
     receipt: row.receipt,
     policy_epoch: row.policy_epoch ?? 0,
     run_type: row.run_type ?? "auto",
+    scene_scope: row.scene_scope ?? undefined,
     // Issue #104：degraded 轮的逐条跳过明细（JSON 列，NULL = 该轮无跳过项）。
     skipped: row.skipped ? JSON.parse(row.skipped) : undefined,
     // Issue #89（基线半边）：成功轮落下的阈值基线（NULL = 该轮没有推进基线）。
@@ -975,6 +991,7 @@ export function createStore(path) {
   // Legacy dream_runs without policy_epoch → backfill with the default epoch.
   addColumn("dream_runs", "policy_epoch", "ALTER TABLE dream_runs ADD COLUMN policy_epoch INTEGER NOT NULL DEFAULT 0");
   addColumn("dream_runs", "run_type", "ALTER TABLE dream_runs ADD COLUMN run_type TEXT NOT NULL DEFAULT 'auto'");
+  addColumn("dream_runs", "scene_scope", "ALTER TABLE dream_runs ADD COLUMN scene_scope TEXT");
   // Issue #104：degraded（合法子集已应用）轮被跳过的决策明细。此前只进 logger.warn，
   // 离线回放 dream_runs 无法定位 degraded 成因（跨类型 merge / update 保护期 / unknown id）。
   addColumn("dream_runs", "skipped", "ALTER TABLE dream_runs ADD COLUMN skipped TEXT");
@@ -1101,7 +1118,7 @@ export function createStore(path) {
     return getDistillCursor(sessionId);
   }
 
-  function count(type, { minImportance = null, source = null, includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null } = {}) {
+  function count(type, { minImportance = null, source = null, includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null, sceneScopes = null } = {}) {
     const clauses = [];
     const params = [];
     if (type !== undefined) {
@@ -1157,6 +1174,11 @@ export function createStore(path) {
       } else {
         clauses.push("(workspace_scope IS NULL OR workspace_scope_source IS NOT 'explicit')");
       }
+    }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) {
+      clauses.push(sceneSql.sql);
+      params.push(...sceneSql.params);
     }
     if (!includeForgotten) {
       clauses.push("forgotten = 0");
@@ -1650,7 +1672,133 @@ export function createStore(path) {
     return Boolean(db.prepare("SELECT 1 FROM memories WHERE scene_scope IS NOT NULL LIMIT 1").get());
   }
 
-  function list({ type, excludeTypes = null, limit = 50, offset = 0, order = "importance", includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, minImportance = null, source = null, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null } = {}) {
+  function listSceneScopes({ limit = 500, offset = 0 } = {}) {
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    const off = Number.isSafeInteger(offset) && offset > 0 ? offset : 0;
+    return db.prepare(
+      `SELECT scene_scope AS scope, COUNT(*) AS total,
+              SUM(CASE WHEN forgotten = 0 AND archived = 0 THEN 1 ELSE 0 END) AS active
+         FROM memories
+        GROUP BY scene_scope
+        ORDER BY active DESC, total DESC, scene_scope ASC
+        LIMIT ? OFFSET ?`
+    ).all(bounded, off).map((row) => ({
+      scope: row.scope ?? "legacy",
+      null_scope: row.scope === null,
+      total: Number(row.total) || 0,
+      active: Number(row.active) || 0
+    }));
+  }
+
+  function normalizeAclScene(value) {
+    const text = String(value ?? "").trim();
+    if (!text || text.length > 200 || !/^[A-Za-z0-9_.:-]+$/.test(text)) {
+      throw new TypeError("invalid scene ACL identifier");
+    }
+    return text;
+  }
+
+  function sceneEntityIds(sceneScopes) {
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const clause = sceneSql ? ` AND ${sceneSql.sql}` : "";
+    const params = sceneSql?.params ?? [];
+    const rows = db.prepare(
+      `SELECT DISTINCT ea.entity_id AS entity_id
+         FROM entity_attrs ea JOIN memories m ON m.id = ea.memory_id
+        WHERE ea.valid_until IS NULL AND m.forgotten = 0 AND m.archived = 0${clause}
+       UNION
+       SELECT DISTINCT r.from_entity AS entity_id
+         FROM entity_relations r JOIN memories m ON m.id = r.memory_id
+        WHERE m.forgotten = 0 AND m.archived = 0${clause}
+       UNION
+       SELECT DISTINCT r.to_entity AS entity_id
+         FROM entity_relations r JOIN memories m ON m.id = r.memory_id
+        WHERE m.forgotten = 0 AND m.archived = 0${clause}`
+    ).all(...params, ...params, ...params);
+    return new Set(rows.map((row) => row.entity_id));
+  }
+
+  function listSceneReadGrants({ limit = 500 } = {}) {
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    return db.prepare(
+      `SELECT reader_scene, source_scene, created_at, created_by, note
+         FROM scene_read_grants
+        ORDER BY created_at DESC, reader_scene, source_scene
+        LIMIT ?`
+    ).all(bounded);
+  }
+
+  function listSceneReadSources(reader, { limit = 500 } = {}) {
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    return db.prepare(
+      `SELECT source_scene FROM scene_read_grants
+        WHERE reader_scene = ?
+        ORDER BY source_scene
+        LIMIT ?`
+    ).all(String(reader), bounded).map((row) => row.source_scene);
+  }
+
+  function hasSceneReadGrant(reader, source) {
+    const row = db.prepare(
+      "SELECT 1 AS present FROM scene_read_grants WHERE reader_scene = ? AND source_scene = ?"
+    ).get(String(reader), String(source));
+    return row?.present === 1;
+  }
+
+  function grantSceneRead(reader, source, { actor = null, note = null } = {}) {
+    const readerScene = normalizeAclScene(reader);
+    const sourceScene = normalizeAclScene(source);
+    if (readerScene === sourceScene) throw new TypeError("self grant is not allowed");
+    const now = new Date().toISOString();
+    return runAtomically(() => {
+      const result = db.prepare(
+        `INSERT INTO scene_read_grants (reader_scene, source_scene, created_at, created_by, note)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(reader_scene, source_scene) DO NOTHING`
+      ).run(readerScene, sourceScene, now, actor == null ? null : String(actor).slice(0, 200), note == null ? null : String(note).slice(0, 500));
+      return {
+        reader_scene: readerScene,
+        source_scene: sourceScene,
+        created: result.changes > 0,
+        created_at: now
+      };
+    });
+  }
+
+  function revokeSceneRead(reader, source) {
+    const readerScene = normalizeAclScene(reader);
+    const sourceScene = normalizeAclScene(source);
+    return runAtomically(() => {
+      const result = db.prepare(
+        "DELETE FROM scene_read_grants WHERE reader_scene = ? AND source_scene = ?"
+      ).run(readerScene, sourceScene);
+      return { reader_scene: readerScene, source_scene: sourceScene, revoked: result.changes > 0 };
+    });
+  }
+
+  function sceneScopeSql(sceneScopes) {
+    if (!Array.isArray(sceneScopes)) return null;
+    const realScopes = sceneScopes
+      .filter((scope) => scope && typeof scope === "object" && typeof scope.realScope === "string")
+      .map((scope) => scope.realScope);
+    const plainScopes = sceneScopes.filter((scope) => typeof scope === "string" && scope);
+    const tagged = [...new Set([
+      ...realScopes,
+      ...plainScopes.filter((scope) => scope !== "legacy" && scope !== LEGACY_SCENE_JOB)
+    ])];
+    const legacy = plainScopes.includes("legacy") || plainScopes.includes(LEGACY_SCENE_JOB);
+    if (tagged.length === 0 && !legacy) return { sql: "0 = 1", params: [] };
+    const parts = [];
+    const params = [];
+    if (tagged.length) {
+      parts.push(`scene_scope IN (${tagged.map(() => "?").join(", ")})`);
+      params.push(...tagged);
+    }
+    if (legacy) parts.push("scene_scope IS NULL");
+    return { sql: `(${parts.join(" OR ")})`, params };
+  }
+
+  function list({ type, excludeTypes = null, limit = 50, offset = 0, order = "importance", includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, minImportance = null, source = null, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null, sceneScopes = null } = {}) {
     const clauses = [];
     const params = [];
     if (type) {
@@ -1719,6 +1867,11 @@ export function createStore(path) {
         clauses.push("(workspace_scope IS NULL OR workspace_scope_source IS NOT 'explicit')");
       }
     }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) {
+      clauses.push(sceneSql.sql);
+      params.push(...sceneSql.params);
+    }
     if (!includeForgotten) {
       clauses.push("forgotten = 0");
     }
@@ -1767,11 +1920,30 @@ export function createStore(path) {
     return rows.map(toRow);
   }
 
-  function all() {
+  function all(sceneScopes = null) {
     // Issue #202：显式列清单排除 embedding——toRow 本就不输出向量，SELECT *
     // 纯属把全表最重的列（9.4 MB TEXT/5k 行）拖进内存再丢弃。
-    const rows = db.prepare(`SELECT ${memoryColumnList} FROM memories ORDER BY updated_at DESC`).all();
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const where = sceneSql ? ` WHERE ${sceneSql.sql}` : "";
+    const rows = db.prepare(`SELECT ${memoryColumnList} FROM memories${where} ORDER BY updated_at DESC`)
+      .all(...(sceneSql?.params ?? []));
     return rows.map(toRow);
+  }
+
+  // Count/character total for threshold baselines without materializing bodies.
+  function activeSize(sceneScopes = null) {
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const where = [
+      "archived = 0",
+      "type NOT IN ('summary', 'document')",
+      ...(sceneSql ? [sceneSql.sql] : [])
+    ].join(" AND ");
+    const row = db.prepare(
+      `SELECT COUNT(*) AS count,
+              COALESCE(SUM(LENGTH(COALESCE(title, '')) + LENGTH(COALESCE(content, ''))), 0) AS chars
+         FROM memories WHERE ${where}`
+    ).get(...(sceneSql?.params ?? []));
+    return { count: Number(row?.count) || 0, chars: Number(row?.chars) || 0 };
   }
 
   // Issue #430：写路径要的「最近若干条正文」。质量过滤的近重复判定只读 content
@@ -1930,26 +2102,57 @@ export function createStore(path) {
     }, new Map());
   }
 
-  function search(query, { limit = 20, includeArchived = false } = {}) {
+  function search(query, { limit = 20, offset = 0, includeArchived = false, onlyArchived = false, type = null, minImportance = null, updatedFrom = null, updatedTo = null, sceneScopes = null } = {}) {
     const q = String(query).trim();
     if (!q) return [];
     // Plain LIKE substring scan over title/content/tags (wildcards escaped so
     // user input matches literally). No FTS5: CJK substring matching needs
     // LIKE, and typical memory stores are small enough that a scan is fine.
     const like = `%${escapeLike(q)}%`;
-    const { limit: lim } = sanitizePage(limit, 0, 20);
-    const archivedFilter = includeArchived ? "" : "archived = 0 AND ";
+    const { limit: lim, offset: off } = sanitizePage(limit, offset, 20);
+    const archivedFilter = onlyArchived ? "archived = 1 AND " : (includeArchived ? "" : "archived = 0 AND ");
+    const clauses = [];
+    const params = [];
+    if (type) { clauses.push("type = ?"); params.push(type); }
+    if (minImportance != null) { clauses.push("importance >= ?"); params.push(minImportance); }
+    const bounds = updatedAtBounds(updatedFrom, updatedTo);
+    if (bounds.from) { clauses.push("updated_at >= ?"); params.push(bounds.from); }
+    if (bounds.to) { clauses.push("updated_at <= ?"); params.push(bounds.to); }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) { clauses.push(sceneSql.sql); params.push(...sceneSql.params); }
+    const extra = clauses.length ? ` AND ${clauses.join(" AND ")}` : "";
     const rows = db.prepare(
       `SELECT * FROM memories
-       WHERE ${archivedFilter}forgotten = 0 AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')
+       WHERE ${archivedFilter}forgotten = 0${extra} AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')
        ORDER BY
          CASE WHEN title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
          importance DESC,
          updated_at DESC,
          id
-       LIMIT ?`
-    ).all(like, like, like, like, lim);
+       LIMIT ? OFFSET ?`
+    ).all(...params, like, like, like, like, lim, off);
     return rows.map(toRow);
+  }
+
+  function countSearch(query, { includeArchived = false, onlyArchived = false, type = null, minImportance = null, updatedFrom = null, updatedTo = null, sceneScopes = null } = {}) {
+    const q = String(query).trim();
+    if (!q) return 0;
+    const like = `%${escapeLike(q)}%`;
+    const archivedFilter = onlyArchived ? "archived = 1 AND " : (includeArchived ? "" : "archived = 0 AND ");
+    const clauses = [];
+    const params = [];
+    if (type) { clauses.push("type = ?"); params.push(type); }
+    if (minImportance != null) { clauses.push("importance >= ?"); params.push(minImportance); }
+    const bounds = updatedAtBounds(updatedFrom, updatedTo);
+    if (bounds.from) { clauses.push("updated_at >= ?"); params.push(bounds.from); }
+    if (bounds.to) { clauses.push("updated_at <= ?"); params.push(bounds.to); }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) { clauses.push(sceneSql.sql); params.push(...sceneSql.params); }
+    const extra = clauses.length ? ` AND ${clauses.join(" AND ")}` : "";
+    return db.prepare(
+      `SELECT count(*) AS c FROM memories
+       WHERE ${archivedFilter}forgotten = 0${extra} AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')`
+    ).get(...params, like, like, like).c;
   }
 
   // --- vector search ------------------------------------------------------
@@ -1972,16 +2175,18 @@ export function createStore(path) {
    * Brute-force cosine similarity over embedded rows. Returns rows decorated
    * with a `score` (0..1). Only rows with a stored embedding participate.
    */
-  function searchVector(vector, { limit = 20, includeArchived = false, threshold = 0 } = {}) {
+  function searchVector(vector, { limit = 20, includeArchived = false, threshold = 0, sceneScopes = null } = {}) {
     if (!Array.isArray(vector) || !vector.length) return [];
     const archivedFilter = includeArchived ? "" : "archived = 0 AND ";
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const sceneFilter = sceneSql ? ` AND ${sceneSql.sql}` : "";
     // Issue #202：只取 id 列（~40 KB）而非 SELECT *（~11 MB）——向量从缓存取，
     // 缓存未命中时按 id 点查 embedding 再解析回填。SQL 里保留 embedding 的
     // IS NOT NULL 过滤，保证「有向量的行」集合始终以库为准（删除/清空即时生效）。
     const rows = db.prepare(
       `SELECT id FROM memories
-       WHERE ${archivedFilter}forgotten = 0 AND embedding IS NOT NULL AND embedding != ''`
-    ).all();
+       WHERE ${archivedFilter}forgotten = 0${sceneFilter} AND embedding IS NOT NULL AND embedding != ''`
+    ).all(...(sceneSql?.params ?? []));
     const scored = [];
     for (const row of rows) {
       const v = getParsedEmbedding(row.id);
@@ -2033,15 +2238,16 @@ export function createStore(path) {
     const storeChars = baselineKnown ? run.store_chars : null;
     db.prepare(
       `INSERT INTO dream_runs (id, created_at, status, error, provider, model, snapshot_hash,
-        input_count, input, decisions, outcome, applied, summary_stored, receipt, policy_epoch, run_type, skipped,
+        input_count, input, decisions, outcome, applied, summary_stored, receipt, policy_epoch, run_type, scene_scope, skipped,
         store_count, store_chars)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          created_at=excluded.created_at, status=excluded.status, error=excluded.error,
          provider=excluded.provider, model=excluded.model, snapshot_hash=excluded.snapshot_hash,
          input_count=excluded.input_count, input=excluded.input, decisions=excluded.decisions,
          outcome=excluded.outcome, applied=excluded.applied, summary_stored=excluded.summary_stored,
          receipt=excluded.receipt, policy_epoch=excluded.policy_epoch, run_type=excluded.run_type,
+         scene_scope=excluded.scene_scope,
          skipped=excluded.skipped, store_count=excluded.store_count, store_chars=excluded.store_chars`
     ).run(
       id,
@@ -2060,6 +2266,7 @@ export function createStore(path) {
       run.receipt,
       policyEpoch,
       runType,
+      run.scene_scope ?? null,
       skipped,
       storeCount,
       storeChars
@@ -2069,6 +2276,13 @@ export function createStore(path) {
 
   function getDreamRun(id) {
     const row = db.prepare("SELECT * FROM dream_runs WHERE id = ?").get(id);
+    return toDreamRun(row);
+  }
+
+  function latestDreamRun(runType) {
+    const row = db.prepare(
+      "SELECT * FROM dream_runs WHERE run_type = ? ORDER BY created_at DESC, id DESC LIMIT 1"
+    ).get(runType);
     return toDreamRun(row);
   }
 
@@ -3504,10 +3718,20 @@ export function createStore(path) {
     getUnrecalledSince,
     list,
     all,
+    activeSize,
     hasSceneScopedRows,
+    listSceneScopes,
+    listSceneReadGrants,
+    listSceneReadSources,
+    sceneEntityIds,
+    hasSceneReadGrant,
+    grantSceneRead,
+    revokeSceneRead,
+    runAtomically,
     // #430：有界单列读，写路径（质量过滤）用。
     recentContents,
     search,
+    countSearch,
     setEmbedding,
     getEmbeddings,
     getParsedEmbedding,
@@ -3522,6 +3746,7 @@ export function createStore(path) {
     lastDreamRunAt,
     lastDreamBaseline,
     getDreamRun,
+    latestDreamRun,
     listDreamRuns,
     getLatestPolicyEpoch,
     saveReceipt,

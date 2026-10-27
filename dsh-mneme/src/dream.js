@@ -2,6 +2,7 @@ import { validateDecisions, applyDecisions } from "./dream/decisions.js";
 import { clusterMemories, findPotentialConflicts, cosineSimilarity } from "./dream/clustering.js";
 import { clusterByTag, intersectEvidence } from "./dream/narratives.js";
 import { scopeKeyOf } from "./scope.js";
+import { currentSceneJob, LEGACY_SCENE_JOB } from "./scene-job.js";
 // Issue #239（第 4 项）镜像到巩固：错峰时段解析与「最近的高峰结束时刻」从独立的
 // 零依赖模块 peak-hours.js 取（该模块从 summarize.js 抽出，PR #320 review）——
 // 不另写一份解析器，两份实现漂移会让「同一个时段串在两处行为不同」，那比没有
@@ -11,6 +12,48 @@ import { isInPeakWindow, nextOffPeakAt } from "./peak-hours.js";
 import { createHash, randomUUID } from "node:crypto";
 import { STR, langOf } from "./lang.js";
 export { validateDecisions, applyDecisions, withEffortFallback, withMaxTokensFallback, parseMaxTokensCap, describeStreamFailure, resolveDreamEffort, resolveRoute, streamText, runAuditedLlm };
+
+/**
+ * Record the aggregate result of a per-Scene Dream round. The child rows keep
+ * their own scene_scope audit; this parent row carries the single global
+ * baseline so a restart seeds thresholds exactly like the pre-Scene scheduler.
+ * A partially failed round writes nothing (no fake success / no baseline move).
+ */
+export function recordScopedDreamBaseline(store, service, config, results) {
+  const list = Array.isArray(results) ? results : [];
+  if (!list.length || list.some((result) => !result?.ok)) return null;
+  const runIds = list.map((result) => result.runId).filter(Boolean);
+  if (!runIds.length) return null;
+  const baseline = store.activeSize();
+  const applied = list.reduce((sum, result) => sum + (Number(result.applied) || 0), 0);
+  const summaryStored = list.some((result) => result.summary === true);
+  const runId = runIds[runIds.length - 1];
+  try {
+    service.saveDreamRun({
+      id: `scoped-${runId}`,
+      created_at: new Date().toISOString(),
+      status: "ok",
+      provider: config?.dreamProvider,
+      model: config?.dreamModel,
+      snapshot_hash: `scoped:${runIds.join(",")}`,
+      input_count: 0,
+      input: null,
+      decisions: null,
+      outcome: null,
+      applied,
+      summary_stored: summaryStored,
+      receipt: `scoped-aggregate:${runIds.join(",")}`,
+      policy_epoch: config?.policyEpoch ?? 0,
+      run_type: "auto",
+      scene_scope: null,
+      store_count: baseline.count,
+      store_chars: baseline.chars
+    });
+    return baseline;
+  } catch {
+    return null;
+  }
+}
 
 // Extract the first JSON array from LLM output, tolerating markdown fences,
 // leading/trailing prose, and common wrapper noise. Returns an array or null.
@@ -963,7 +1006,9 @@ export function createDreamScheduler({ onRun, thresholdCount = 10, thresholdChar
     running = true;
     lastRunAt = now();
     inFlight = Promise.resolve()
-      .then(() => (onRun ? onRun() : Promise.resolve({ ok: true, skipped: true })))
+      .then(() => (service?.enqueue
+        ? service.enqueue(() => (onRun ? onRun() : Promise.resolve({ ok: true, skipped: true })))
+        : (onRun ? onRun() : Promise.resolve({ ok: true, skipped: true }))))
       .then((result) => {
         // Refresh the baseline only for a successful run (design §5.3: an
         // LLM failure must not move the baseline, so the next write can
@@ -1087,13 +1132,14 @@ export function createDreamScheduler({ onRun, thresholdCount = 10, thresholdChar
       // 重启后播种就会拿到一个「其实没推进过」的假基线，阈值反而被抬高。
       // 取不到（库已关闭等）就落 NULL：宁可不持久化，也不写一个错的基线。
       let baselineSnapshot = null;
-      if (result.ok) {
+      if (result.ok && !currentSceneJob()) {
         try {
           baselineSnapshot = activeStoreSize(service);
         } catch {
           baselineSnapshot = null;
         }
       }
+      const job = currentSceneJob();
       try {
         service.saveDreamRun({
           id: runId,
@@ -1110,6 +1156,7 @@ export function createDreamScheduler({ onRun, thresholdCount = 10, thresholdChar
           // 当时的 epoch，旧裁决据此降级为历史证据（store 层 getLatestPolicyEpoch
           // 只负责读取当前生效版本，写入由这里完成）。
           policy_epoch: config.policyEpoch ?? 0,
+          scene_scope: job ? (job.sceneScope === LEGACY_SCENE_JOB ? null : job.sceneScope) : undefined,
           // Full input snapshot (canonical fields) so the exact arbitration
           // input can be rebuilt offline from the audit row alone — the
           // digest + decisions + outcome triple makes silent errors locatable

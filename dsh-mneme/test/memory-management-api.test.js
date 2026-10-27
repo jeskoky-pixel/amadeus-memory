@@ -12,14 +12,14 @@ import { mountAdminApi } from "../src/admin-api.js";
 import { applyStagedRestore } from "../src/backup.js";
 import { assertIsolatedMemoryDir } from "../src/qa-guard.js";
 import { configureRecentContext, recordTrustedRecentEvent, resetRecentContextForTests } from "../src/recent-context.js";
-import { mintTrustedScene } from "../src/scene.js";
+import { mintTrustedScene, runWithTrustedScene, configureScene, resetSceneStateForTests } from "../src/scene.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, "..", ".test-tmp");
 mkdirSync(ROOT, { recursive: true });
 let seq = 0;
 
-function setup({ coreMemoryEnabled = true } = {}) {
+function setup({ coreMemoryEnabled = true, principal = "owner" } = {}) {
   const lexical = join(ROOT, `management-${process.pid}-${Date.now()}-${seq++}`);
   const dir = assertIsolatedMemoryDir(lexical, { qaRoot: ROOT });
   const store = createStore(join(dir, "memory.db"));
@@ -35,7 +35,7 @@ function setup({ coreMemoryEnabled = true } = {}) {
   const routes = [];
   const ctx = {
     webServer: { register(route) { routes.push(route); return () => {}; } },
-    connection: { admit() { return { peer: { principal: { kind: "owner" } } }; } },
+    connection: { admit() { return { peer: { principal: { kind: principal } } }; } },
     inject(_names, apply) { apply(ctx); },
     effect(fn) { return fn(); }
   };
@@ -54,11 +54,11 @@ function makeRes() {
     end(body) { this.body = String(body ?? ""); }
   };
 }
-function req({ method = "GET", url = "/", body } = {}) {
+function req({ method = "GET", url = "/", body, headers = {} } = {}) {
   const chunks = body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
   return {
     method, url,
-    headers: { host: "127.0.0.1:5119", origin: "http://127.0.0.1:5119", "content-type": "application/json", "x-amadeus-memory": "1" },
+    headers: { host: "127.0.0.1:5119", origin: "http://127.0.0.1:5119", "content-type": "application/json", "x-amadeus-memory": "1", ...headers },
     async *[Symbol.asyncIterator]() { for (const chunk of chunks) yield chunk; }
   };
 }
@@ -201,6 +201,334 @@ test("archived status is authoritative in list/detail and quality-filter auto-ar
     h.close();
     h.cleanup();
   }
+});
+
+test("owner scene graph is scope-validated, evidence-only, bounded and excludes archived/forgotten", async () => {
+  const h = setup();
+  try {
+    const a1 = h.store.save({ type: "history", title: "A1", content: "secret body A1", scene_scope: "qq:group:a" });
+    const a2 = h.store.save({ type: "history", title: "A2", content: "secret body A2", scene_scope: "qq:group:a" });
+    const b1 = h.store.save({ type: "history", title: "B1", content: "secret body B1", scene_scope: "qq:group:b" });
+    const p1 = h.store.save({ type: "history", title: "P1", content: "secret private body", scene_scope: "qq:private:admin" });
+    const legacy = h.store.save({ type: "history", title: "L1", content: "secret legacy body" });
+    const archived = h.store.save({ type: "history", title: "archived", content: "secret archived body", scene_scope: "qq:group:a" });
+    h.store.setArchived(archived.id, true);
+    const forgotten = h.store.save({ type: "history", title: "forgotten", content: "secret forgotten body", scene_scope: "qq:group:b" });
+    h.store.setForget(forgotten.id, true);
+
+    const alice = h.store.createEntity({ name: "Alice", type: "person" });
+    const bob = h.store.createEntity({ name: "Bob", type: "person" });
+    const carol = h.store.createEntity({ name: "Carol", type: "person" });
+    const ghost = h.store.createEntity({ name: "Ghost", type: "person" });
+    const legacyEntity = h.store.createEntity({ name: "Legacy", type: "person" });
+    const privateEntity = h.store.createEntity({ name: "PrivatePerson", type: "person" });
+    const archivedEntity = h.store.createEntity({ name: "ArchivedEntity", type: "person" });
+    const forgottenEntity = h.store.createEntity({ name: "ForgottenEntity", type: "person" });
+    h.store.createEntity({ name: "NoEvidence", type: "person" });
+    h.store.saveAttr({ entity_id: alice.id, attr_key: "likes", attr_value: "A-only", memory_id: a1.id });
+    h.store.saveAttr({ entity_id: bob.id, attr_key: "likes", attr_value: "A-only", memory_id: a2.id });
+    h.store.saveAttr({ entity_id: carol.id, attr_key: "likes", attr_value: "B-only", memory_id: b1.id });
+    h.store.saveAttr({ entity_id: legacyEntity.id, attr_key: "likes", attr_value: "legacy", memory_id: legacy.id });
+    h.store.saveAttr({ entity_id: privateEntity.id, attr_key: "likes", attr_value: "private", memory_id: p1.id });
+    h.store.saveAttr({ entity_id: archivedEntity.id, attr_key: "likes", attr_value: "archived", memory_id: archived.id });
+    h.store.saveAttr({ entity_id: forgottenEntity.id, attr_key: "likes", attr_value: "forgotten", memory_id: forgotten.id });
+    const edgeA = h.store.saveRelation({ from_entity: alice.id, to_entity: bob.id, relation_type: "knows", memory_id: a1.id });
+    h.store.saveRelation({ from_entity: carol.id, to_entity: ghost.id, relation_type: "knows", memory_id: b1.id });
+    h.store.saveRelation({ from_entity: alice.id, to_entity: archivedEntity.id, relation_type: "archived-edge", memory_id: archived.id });
+    h.store.saveRelation({ from_entity: carol.id, to_entity: forgottenEntity.id, relation_type: "forgotten-edge", memory_id: forgotten.id });
+
+    const scopes = await call(h.route, { url: "/api/amadeus-memory/admin/graph/scopes" });
+    assert.equal(scopes.status, 200);
+    const byScope = new Map(scopes.json.data.items.map((row) => [row.scope, row]));
+    assert.equal(byScope.get("qq:group:a").active, 2);
+    assert.equal(byScope.get("qq:group:b").active, 1);
+    assert.equal(byScope.get("qq:private:admin").active, 1);
+    assert.equal(byScope.get("legacy").active, 1);
+    assert.equal(JSON.stringify(scopes.json.data).includes("secret"), false);
+
+    const graphA = await call(h.route, { url: "/api/amadeus-memory/admin/graph?scope=qq:group:a" });
+    assert.equal(graphA.status, 200);
+    assert.deepEqual(graphA.json.data.nodes.map((node) => node.name).sort(), ["Alice", "Bob"]);
+    assert.deepEqual(graphA.json.data.edges, [{
+      id: edgeA.id, from: alice.id, to: bob.id, relation_type: "knows", weight: 1, source: "manual"
+    }]);
+    assert.equal(JSON.stringify(graphA.json.data).includes("secret"), false);
+    assert.equal(JSON.stringify(graphA.json.data).includes("memory_id"), false);
+
+    const graphB = await call(h.route, { url: "/api/amadeus-memory/admin/graph?scope=qq:group:b" });
+    assert.deepEqual(graphB.json.data.nodes.map((node) => node.name).sort(), ["Carol", "Ghost"]);
+    assert.equal(graphB.json.data.nodes.some((node) => node.name === "Alice"), false);
+
+    const graphLegacy = await call(h.route, { url: "/api/amadeus-memory/admin/graph?scope=legacy" });
+    assert.deepEqual(graphLegacy.json.data.nodes.map((node) => node.name), ["Legacy"]);
+
+    const graphPrivate = await call(h.route, { url: "/api/amadeus-memory/admin/graph?scope=qq:private:admin" });
+    assert.deepEqual(graphPrivate.json.data.nodes.map((node) => node.name), ["PrivatePerson"]);
+    assert.equal(graphPrivate.json.data.nodes.some((node) => node.name === "Alice"), false);
+    assert.equal(graphA.json.data.nodes.some((node) => node.name === "ArchivedEntity" || node.name === "ForgottenEntity"), false);
+    assert.equal(graphB.json.data.nodes.some((node) => node.name === "ArchivedEntity" || node.name === "ForgottenEntity"), false);
+
+    assert.equal((await call(h.route, { url: "/api/amadeus-memory/admin/graph" })).status, 400);
+    assert.equal((await call(h.route, { url: "/api/amadeus-memory/admin/graph?scope=qq:group:nope" })).status, 400);
+    assert.equal((await call(h.route, {
+      url: "/api/amadeus-memory/admin/graph?scope=qq:group:a",
+      headers: { origin: "http://evil.example" }
+    })).status, 403);
+    const bounded = await call(h.route, { url: "/api/amadeus-memory/admin/graph?scope=qq:group:a&node_limit=1&edge_limit=1" });
+    assert.ok(bounded.json.data.nodes.length <= 1);
+    assert.equal(bounded.json.data.truncated, true);
+
+    // Relation endpoints win the bounded node slots over attr-only entities.
+    const capMem = h.store.save({ type: "history", title: "cap", content: "cap body", scene_scope: "qq:group:cap" });
+    const capFrom = h.store.createEntity({ name: "CapFrom", type: "person" });
+    const capTo = h.store.createEntity({ name: "CapTo", type: "person" });
+    for (let i = 0; i < 6; i += 1) {
+      const attrEntity = h.store.createEntity({ name: `CapAttr${i}`, type: "person" });
+      h.store.saveAttr({ entity_id: attrEntity.id, attr_key: "likes", attr_value: "cap", memory_id: capMem.id });
+    }
+    h.store.saveRelation({ from_entity: capFrom.id, to_entity: capTo.id, relation_type: "cap-edge", memory_id: capMem.id });
+    const capGraph = await call(h.route, {
+      url: "/api/amadeus-memory/admin/graph?scope=qq:group:cap&node_limit=2&edge_limit=10"
+    });
+    assert.deepEqual(capGraph.json.data.nodes.map((node) => node.name).sort(), ["CapFrom", "CapTo"]);
+    assert.equal(capGraph.json.data.edges.length, 1, "prioritized relation endpoints must keep the edge visible");
+    assert.equal(capGraph.json.data.truncated, true);
+
+    const anonymous = setup({ principal: "anonymous" });
+    try {
+      assert.equal((await call(anonymous.route, { url: "/api/amadeus-memory/admin/graph?scope=legacy" })).status, 403);
+    } finally {
+      anonymous.close(); anonymous.cleanup();
+    }
+  } finally {
+    h.close();
+    h.cleanup();
+  }
+});
+
+test("owner ACL API is directional, persistent, same-origin and merged graph is explicit", async () => {
+  const h = setup();
+  try {
+    const a = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:acl-a", verified: true });
+    const b = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:acl-b", verified: true });
+    const c = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:acl-c", verified: true });
+    const aRow = runWithTrustedScene(a, () => h.service.saveWithDedupe({ type: "history", title: "ACL A", content: "This is a synthetic long-form memory body used only for the ACL API regression; it intentionally contains enough substantive prose to avoid short-content quality filtering while remaining entirely fabricated and non-production.", importance: 3 }));
+    const bRow = runWithTrustedScene(b, () => h.service.saveWithDedupe({ type: "history", title: "ACL B", content: "This is a synthetic long-form memory body used only for the ACL API regression; it intentionally contains enough substantive prose to avoid short-content quality filtering while remaining entirely fabricated and non-production.", importance: 3 }));
+    h.service.setArchived(aRow.memory.id, false);
+    h.service.setArchived(bRow.memory.id, false);
+    const acl = await call(h.route, { url: "/api/amadeus-memory/admin/acl" });
+    assert.equal(acl.status, 200);
+    assert.equal(acl.json.data.scenes.some((row) => row.scope === a.sceneId), true);
+
+    const denied = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { reader_scene: a.sceneId, source_scene: b.sceneId },
+      headers: { origin: "http://evil.example" }
+    });
+    assert.equal(denied.status, 403);
+    const grantBeforeMemory = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { reader_scene: a.sceneId, source_scene: c.sceneId }
+    });
+    assert.equal(grantBeforeMemory.status, 200, "a canonical group can be granted before it has memories");
+    const revokeBeforeMemory = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/revoke",
+      body: { reader_scene: a.sceneId, source_scene: c.sceneId }
+    });
+    assert.equal(revokeBeforeMemory.status, 200);
+    const numericGrant = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { bot: "123456", reader_group: "10001", source_group: "10002" }
+    });
+    assert.equal(numericGrant.status, 200);
+    assert.equal(numericGrant.json.data.reader_scene, "qq:group:123456:10001");
+    assert.equal(numericGrant.json.data.source_scene, "qq:group:123456:10002");
+    const numericRevoke = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/revoke",
+      body: { bot: "123456", reader_group: "10001", source_group: "10002" }
+    });
+    assert.equal(numericRevoke.status, 200);
+    const privateGrant = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { reader_scene: a.sceneId, source_scene: "qq:private:bot:peer" }
+    });
+    assert.equal(privateGrant.status, 400, "private Scenes are not valid allowlist sources");
+    const grant = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { reader_scene: a.sceneId, source_scene: b.sceneId }
+    });
+    assert.equal(grant.status, 200);
+    assert.equal(grant.json.data.created, true);
+    assert.equal(h.store.hasSceneReadGrant(a.sceneId, b.sceneId), true);
+    assert.equal(h.store.hasSceneReadGrant(b.sceneId, a.sceneId), false, "grant is directional");
+
+    const graph = await call(h.route, { url: "/api/amadeus-memory/admin/graph?scopes=all" });
+    assert.equal(graph.status, 200);
+    assert.deepEqual(graph.json.data.scopes.sort(), [a.sceneId, b.sceneId]);
+    const buckets = await call(h.route, { url: `/api/amadeus-memory/admin/memories?scenes=${encodeURIComponent(a.sceneId)}` });
+    assert.equal(buckets.status, 200);
+    assert.deepEqual(buckets.json.data.items.map((row) => row.scene_scope), [a.sceneId]);
+    assert.equal(buckets.json.data.items.some((row) => row.title === "ACL B"), false);
+    const multi = await call(h.route, { url: `/api/amadeus-memory/admin/memories?scenes=${encodeURIComponent(a.sceneId + "," + b.sceneId)}` });
+    assert.equal(multi.status, 200);
+    assert.deepEqual(new Set(multi.json.data.items.map((row) => row.scene_scope)), new Set([a.sceneId, b.sceneId]));
+    const chrono = await call(h.route, { url: `/api/amadeus-memory/admin/memories?scenes=all&order=chrono` });
+    assert.equal(chrono.status, 200);
+    assert.equal(chrono.json.data.items.length >= 2, true);
+    const bCurrent = h.store.getById(bRow.memory.id);
+    const browserEdit = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/memory/update",
+      body: { id: bCurrent.id, expected_updated_at: bCurrent.updated_at, title: "ACL B edited by owner" }
+    });
+    assert.equal(browserEdit.status, 200, "owner browser edit may manage any selected Scene");
+    assert.equal(h.store.getById(bCurrent.id).title, "ACL B edited by owner");
+
+    const revoke = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/revoke",
+      body: { reader_scene: a.sceneId, source_scene: b.sceneId }
+    });
+    assert.equal(revoke.status, 200);
+    assert.equal(h.store.hasSceneReadGrant(a.sceneId, b.sceneId), false);
+    // Revocation also works after the source group's last memory is deleted.
+    h.store.remove(bRow.memory.id);
+    const regrant = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { reader_scene: a.sceneId, source_scene: b.sceneId }
+    });
+    assert.equal(regrant.status, 200);
+    const revokeAfterDelete = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/revoke",
+      body: { reader_scene: a.sceneId, source_scene: b.sceneId }
+    });
+    assert.equal(revokeAfterDelete.status, 200);
+    assert.equal(aRow.memory.id.length > 0, true);
+  } finally { h.close(); h.cleanup(); }
+});
+
+test("owner full memory detail returns complete long content for explorer editing", async () => {
+  const h = setup();
+  try {
+    const body = "Long synthetic body. ".repeat(60);
+    const created = h.service.saveWithDedupe({ type: "history", title: "long detail", content: body, importance: 3 });
+    const detail = await call(h.route, { url: `/api/amadeus-memory/admin/memory?id=${created.memory.id}` });
+    assert.equal(detail.status, 200);
+    assert.equal(detail.json.data.content.length, body.length);
+    assert.equal(detail.json.data.content, body);
+    const update = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/memory/update",
+      body: { id: created.memory.id, expected_updated_at: detail.json.data.updated_at, content: body + " edited" }
+    });
+    assert.equal(update.status, 200);
+    assert.equal(h.store.getById(created.memory.id).content, body + " edited");
+  } finally { h.close(); h.cleanup(); }
+});
+
+test("numeric allowlist derives a single known bot and rejects ambiguous/multi-bot guesses", async () => {
+  const h = setup();
+  try {
+    const one = mintTrustedScene({ platform: "qq", kind: "group", id: "999:10001", verified: true });
+    const two = mintTrustedScene({ platform: "qq", kind: "group", id: "999:10002", verified: true });
+    runWithTrustedScene(one, () => h.service.saveWithDedupe({ type: "history", title: "one", content: "synthetic one body long enough for quality filter" }));
+    runWithTrustedScene(two, () => h.service.saveWithDedupe({ type: "history", title: "two", content: "synthetic two body long enough for quality filter" }));
+    const grant = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/acl/grant",
+      body: { reader_group: "10001", source_group: "10002" }
+    });
+    assert.equal(grant.status, 200);
+    assert.equal(grant.json.data.reader_scene, "qq:group:999:10001");
+    assert.equal(grant.json.data.source_scene, "qq:group:999:10002");
+    assert.equal(grant.json.data.state.scenes.some((row) => row.scope === "qq:group:999:10001"), true);
+  } finally { h.close(); h.cleanup(); }
+});
+
+test("owner personalization API saves profile/persona and returns real injection preview", async () => {
+  const h = setup();
+  configureScene({ enabled: true, strictQQ: true, hostContract: true });
+  try {
+    const initial = await call(h.route, { url: "/api/amadeus-memory/admin/personalization" });
+    assert.equal(initial.status, 200);
+    assert.equal(typeof initial.json.data.profile, "string");
+    assert.ok(initial.json.data.persona && initial.json.data.persona.default);
+    const profile = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/personalization/profile",
+      body: { profile: "synthetic owner profile" }
+    });
+    assert.equal(profile.status, 200);
+    assert.equal(profile.json.data.profile, "synthetic owner profile");
+    const persona = await call(h.route, {
+      method: "POST", url: "/api/amadeus-memory/admin/personalization/persona",
+      body: { persona: { default: { name: "Synthetic", personality: "calm", replyStyle: "brief", enabled: true }, byAgent: {} } }
+    });
+    assert.equal(persona.status, 200);
+    assert.equal(persona.json.data.persona.default.name, "Synthetic");
+    const reload = await call(h.route, { url: "/api/amadeus-memory/admin/personalization" });
+    assert.equal(reload.json.data.profile, "synthetic owner profile");
+    assert.equal(reload.json.data.persona.default.name, "Synthetic");
+    assert.ok(String(reload.json.data.preview?.text ?? "").includes("synthetic owner profile"),
+      "preview must come from the real injection renderer");
+  } finally { resetSceneStateForTests(); h.close(); h.cleanup(); }
+});
+
+test("owner selected-Scene memory list filters in SQL before LIMIT", async () => {
+  const h = setup();
+  try {
+    const a = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:selected-a", verified: true });
+    const c = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:selected-c", verified: true });
+    for (let i = 0; i < 1005; i += 1) {
+      h.store.save({ type: "history", title: `other ${i}`, content: "unrelated synthetic", importance: 5, scene_scope: c.sceneId });
+    }
+    runWithTrustedScene(a, () => h.service.saveWithDedupe({
+      type: "history", title: "selected low rank",
+      content: "synthetic selected low rank body that survives quality filtering", importance: 1
+    }));
+    const page = await call(h.route, {
+      url: `/api/amadeus-memory/admin/memories?scenes=${encodeURIComponent(a.sceneId)}&limit=1&offset=0`
+    });
+    assert.equal(page.status, 200);
+    assert.equal(page.json.data.total, 1);
+    assert.equal(page.json.data.items[0].title, "selected low rank");
+  } finally { h.close(); h.cleanup(); }
+});
+
+test("owner keyword search applies Scene/type/importance/date and archived-only in SQL", async () => {
+  const h = setup();
+  try {
+    const a = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:combo-a", verified: true });
+    const c = mintTrustedScene({ platform: "qq", kind: "group", id: "bot:combo-c", verified: true });
+    const body = "combo-keyword synthetic body long enough to avoid quality filtering";
+    const target = runWithTrustedScene(a, () => h.service.saveWithDedupe({ type: "history", title: "target combo", content: body, importance: 4 }));
+    const activeA = runWithTrustedScene(a, () => h.service.saveWithDedupe({ type: "history", title: "active combo", content: body, importance: 4 }));
+    const otherScene = runWithTrustedScene(c, () => h.service.saveWithDedupe({ type: "history", title: "other combo", content: body, importance: 4 }));
+    const otherType = runWithTrustedScene(a, () => h.service.saveWithDedupe({ type: "decision", title: "decision combo", content: body, importance: 4 }));
+    const low = runWithTrustedScene(a, () => h.service.saveWithDedupe({ type: "history", title: "low combo", content: body, importance: 1 }));
+    for (const row of [target, otherScene, otherType, low]) h.service.setArchived(row.memory.id, true);
+    const from = new Date(Date.now() - 86400000).toISOString();
+    const result = await call(h.route, {
+      url: `/api/amadeus-memory/admin/memories?q=combo&scenes=${encodeURIComponent(a.sceneId)}&type=history&min_importance=3&archived=1&updated_from=${encodeURIComponent(from)}&limit=10`
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.json.data.total, 1);
+    assert.deepEqual(result.json.data.items.map((row) => row.title), ["target combo"]);
+    assert.equal(result.json.data.items.some((row) => row.title === "active combo"), false);
+    assert.equal(activeA.memory.id.length > 0, true);
+  } finally { h.close(); h.cleanup(); }
+});
+
+test("owner status endpoint returns real audit totals and daily rows", async () => {
+  const h = setup();
+  try {
+    h.store.saveLlmAudit({
+      trigger_source: "test", operation_type: "summarize", model_id: "fake",
+      input_tokens: 10, output_tokens: 5, total_tokens: 15, status: "success"
+    });
+    const status = await call(h.route, { url: "/api/amadeus-memory/admin/status" });
+    assert.equal(status.status, 200);
+    assert.equal(status.json.data.audit.total_calls, 1);
+    assert.equal(status.json.data.audit.total_tokens, 15);
+    assert.ok(Array.isArray(status.json.data.audit.by_day) && status.json.data.audit.by_day.length >= 1);
+    assert.equal(status.json.data.audit.by_day[0].total_tokens, 15);
+    assert.equal(status.json.data.audit.by_operation[0].total_tokens, 15);
+  } finally { h.close(); h.cleanup(); }
 });
 
 test("scene and recent admin status are bounded and clear is owner-only", async () => {

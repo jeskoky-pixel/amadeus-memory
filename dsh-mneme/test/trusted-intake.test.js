@@ -75,6 +75,23 @@ test("valid self action saves provenance, explicit scope and a deterministic eve
   }
 });
 
+test("CAS updates strip forged event tags and restore provenance-backed event tags", () => {
+  const h = setup();
+  try {
+    const trusted = h.service.submitTrustedMemory(base());
+    const old = h.store.getById(trusted.memory.id);
+    const updated = h.service.compareAndUpdate(old.id, old.updated_at, {
+      tags: ["event:forged", "custom-tag"], title: "Synthetic CAS title"
+    });
+    assert.equal(updated.tags.includes("event:forged"), false, "caller event tags must be stripped");
+    assert.equal(updated.tags.includes("event:self_action"), true, "trusted provenance tag must be restored");
+    assert.equal(updated.tags.includes("custom-tag"), true, "ordinary custom tags remain allowed");
+    assert.equal(h.service.trustedProvenanceFor(old.id).length, 1);
+  } finally {
+    h.close();
+  }
+});
+
 test("planned/unconfirmed actions, absent scope and kind/status mismatches are rejected", () => {
   const h = setup();
   try {

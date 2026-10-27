@@ -61,8 +61,8 @@ export function createVectorIndex({ store, logger }) {
     },
 
     /** Cosine search over embedded rows; results carry a 0..1 score. */
-    search(queryVector, { limit = 20, threshold = 0.65 } = {}) {
-      return store.searchVector(queryVector, { limit, threshold });
+    search(queryVector, { limit = 20, threshold = 0.65, sceneScopes = null } = {}) {
+      return store.searchVector(queryVector, { limit, threshold, sceneScopes });
     },
 
     /** Re-embed every row missing an embedding. Returns indexed count. */

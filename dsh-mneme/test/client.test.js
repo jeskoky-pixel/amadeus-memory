@@ -12,8 +12,12 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 test("native Memory settings exposes Scene, Recent and Core switches through owner API", () => {
   const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"];
-  const list = clientSource.match(/const AM_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
-  for (const key of keys) assert.ok(list.includes(`"${key}"`), `${key} belongs in the native settings card`);
+  const featureList = clientSource.match(/const AM_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
+  const sceneList = clientSource.match(/const AM_SCENE_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
+  for (const key of keys) {
+    assert.ok(featureList.includes(`"${key}"`) || sceneList.includes(`"${key}"`), `${key} belongs in the native settings card`);
+  }
+  assert.ok(clientSource.includes("AM_SCENE_FEATURE_KEYS.map(featureRow)"), "Scene switches must render in Settings > Scene");
   assert.match(clientSource, /adminJson\("\/features",\s*\{\s*method: "POST"/);
 });
 
@@ -191,9 +195,9 @@ test("memory entry registers into the sidebar foot slot and native settings page
 // dialog role stays banned either way.
 test("sidebar entry opens the sheet; conversation-view tab stays retired", () => {
   assert.equal(
-    clientSource.includes("role: \"dialog\""),
-    false,
-    "no dialog surface should remain"
+    (clientSource.match(/role: "dialog"/g) || []).length,
+    1,
+    "the full owner explorer is the only dialog surface; legacy overlay remains non-dialog"
   );
   assert.ok(
     /function openLibrary\(\) \{\s*setOverlayOpen\(true\);/.test(clientSource),
@@ -2416,4 +2420,230 @@ test("GUI exposes scene/recent status and Core provenance without bypassing owne
     "Core editor must display scene and protected time");
   assert.ok(clientSource.includes('t("memory.am.scene.legacyNote")'),
     "unscoped legacy promotion must be explained");
+});
+
+test("scene degraded copy says enabled Dream/Sleep run per Scene, not paused", () => {
+  assert.ok(clientSource.includes("已启用的 autoDream/Sleep 按持久化 Scene 分批运行"));
+  assert.ok(clientSource.includes("Enabled autoDream/Sleep run per persisted Scene"));
+  assert.equal(clientSource.includes("autoDream、Sleep 已安全暂停"), false);
+  assert.equal(clientSource.includes("autoDream and Sleep are safely paused"), false);
+});
+
+test("owner scene graph card is registered with scope selector and keyboard nodes", () => {
+  for (const key of [
+    "memory.am.graph.title",
+    "memory.am.graph.scope",
+    "memory.am.graph.chooseHint",
+    "memory.am.graph.empty",
+    "memory.am.graph.truncated",
+    "memory.am.graph.relations",
+    "memory.am.graph.related",
+    "memory.am.graph.overview",
+    "memory.am.graph.nodesList"
+  ]) {
+    const occurrences = clientSource.split(`"${key}"`).length - 1;
+    assert.ok(occurrences >= 2, `i18n key ${key} must exist in both zh and en`);
+  }
+  assert.ok(clientSource.includes('adminJson("/graph/scopes")'), "scope list must come from owner admin API");
+  assert.ok(clientSource.includes('adminJson(`/graph?scope=${encodeURIComponent(scope)}`)'), "selected scope must be explicit");
+  assert.ok(clientSource.includes('"aria-hidden": "true", focusable: "false"'), "SVG is a visual summary, not the accessible interaction surface");
+  assert.ok(clientSource.includes('t("memory.am.graph.nodesList")'), "bounded node list must be keyboard selectable");
+  assert.ok(clientSource.includes('t("memory.am.graph.overview")'), "visual subset must disclose omitted overview nodes");
+  assert.ok(!clientSource.includes("edges.slice(0, 30)"), "relation list must not silently omit edges");
+  assert.ok(clientSource.includes('t("memory.am.graph.noRelations")'), "empty relation state must be visible");
+  assert.ok(clientSource.includes('"--mneme-graphic-dim": "color-mix(in srgb,var(--dsw-alias-label-primary) 50%,transparent)"'),
+    "graph edge color must be defined inside the native settings card, outside the legacy panel root");
+  assert.ok(clientSource.includes('const requestId = ++graphRequestRef.current'), "graph requests must be raced by a monotonically increasing id");
+  assert.ok(clientSource.includes("graphRequestRef.current !== requestId"), "stale graph responses/errors/loading must be ignored");
+  assert.ok(clientSource.includes('item.scene_scope || t("memory.am.scene.legacy")'), "memory cards must show scene scope");
+});
+
+test("native settings exposes top and nested tab hierarchy with bilingual keyboard tabs", () => {
+  for (const key of [
+    "memory.am.tabs.memory",
+    "memory.am.tabs.entities",
+    "memory.am.tabs.status",
+    "memory.am.tabs.settings",
+    "memory.am.memoryView.longTerm",
+    "memory.am.memoryView.recent",
+    "memory.am.settings.general",
+    "memory.am.settings.retrieval",
+    "memory.am.settings.scene",
+    "memory.am.settings.backup"
+  ]) {
+    const occurrences = clientSource.split(`"${key}"`).length - 1;
+    assert.ok(occurrences >= 2, `i18n key ${key} must exist in both zh and en`);
+  }
+  for (const token of [
+    'role: "tab"',
+    '"aria-selected"',
+    'tabIndex: item.key === active ? 0 : -1',
+    'event.key === "ArrowRight"',
+    'event.key === "ArrowLeft"',
+    'event.key === "Home"',
+    'event.key === "End"',
+    'flexWrap: "wrap"',
+    'className: item.key === active ? "mneme-chip mneme-active" : "mneme-chip"'
+  ]) {
+    assert.ok(clientSource.includes(token), `tab navigation must include ${token}`);
+  }
+  assert.ok(clientSource.includes('const [panelTab, setPanelTab] = useState(() => settingsOnly ? "settings" : readAmadeusNav().panelTab)'));
+  assert.ok(clientSource.includes('const [memoryView, setMemoryView] = useState(() => readAmadeusNav().memoryView)'));
+  assert.ok(clientSource.includes('const [settingsPage, setSettingsPage] = useState(() => readAmadeusNav().settingsPage)'));
+});
+
+test("hierarchy keeps every existing card reachable once and separates hot from trusted Recent", () => {
+  for (const key of [
+    "memory.am.recent.hotTitle",
+    "memory.am.recent.hotHint",
+    "memory.am.recent.trustedTitle",
+    "memory.am.recent.trustedHint",
+    "memory.am.entitiesHint",
+    "memory.am.entitiesFullHint",
+    "memory.am.entitiesWeights"
+  ]) {
+    assert.ok((clientSource.split(`"${key}"`).length - 1) >= 2, `i18n key ${key} must exist in both languages`);
+  }
+  assert.ok(clientSource.includes('t("memory.am.recent.hotState")') && clientSource.includes('flagOn("hotMemoryEnabled")'),
+    "hot memory effective state must come from the existing feature flag");
+  const generalFeatures = clientSource.match(/const AM_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
+  assert.ok(generalFeatures.includes('"hotMemoryEnabled"'), "hotMemoryEnabled must remain an exposed feature control");
+  assert.ok(clientSource.includes('const AM_SCENE_FEATURE_KEYS') && clientSource.includes('AM_SCENE_FEATURE_KEYS.map(featureRow)'),
+    "Scene switches must remain reachable in Settings > Scene");
+  assert.ok(clientSource.includes('memoryManagementCard()'), "long-term memory card must stay reachable");
+  assert.ok(clientSource.includes('panelTab === "entities"') && clientSource.includes("graphCard()"),
+    "single-Scene graph must stay reachable in Entities");
+  assert.ok(clientSource.includes('t("memory.am.entitiesOpenFull")'), "full panel access must stay reachable");
+  assert.ok(clientSource.includes('setSettingsPage("retrieval")'), "Entities must link to Tag/entity weights");
+  assert.ok(clientSource.includes('panelTab === "status" && sceneCard()'), "Scene status must stay reachable");
+  assert.ok(clientSource.includes("backupCard()") && clientSource.includes("AM_CONFIG_FIELDS.map(configField)"),
+    "backup and injection parameters must stay reachable");
+  assert.ok(clientSource.includes("saveVector") && clientSource.includes("saveTag") && clientSource.includes("resetPreferences"),
+    "Embedding, weights and reset actions must stay reachable");
+  assert.equal((clientSource.match(/onClick: clearRecent/g) || []).length, 1,
+    "trusted Recent clear action must exist exactly once");
+  assert.ok(!clientSource.includes("recentStatus.items") && !clientSource.includes("recentStatus.events"),
+    "owner UI must not invent or enumerate raw short-term Recent text");
+  assert.ok(clientSource.includes('t("memory.am.recent.trustedHint")') && clientSource.includes("10-minute TTL"),
+    "trusted Recent TTL must be explained");
+  assert.ok(clientSource.includes('panelTab === "memory"') && clientSource.includes('memoryView === "recent"'),
+    "Recent must be a Memory subview");
+});
+
+test("full owner explorer supports all/multi/one Scenes, card/timeline and nested ACL settings", () => {
+  assert.ok(clientSource.includes("function AmadeusOwnerExplorer"));
+  assert.ok(clientSource.includes('setExplorerOpen(true)') && clientSource.includes('role: "dialog"'));
+  assert.ok(clientSource.includes('selectedScopes.join(",")'));
+  assert.ok(!clientSource.includes('selectedScopes.map((scope) => encodeURIComponent(scope))'),
+    "Scene IDs must be encoded exactly once");
+  assert.ok(clientSource.includes('viewMode === "timeline"') && clientSource.includes('order: "chrono"'),
+    "timeline must use chronological server ordering");
+  assert.ok(clientSource.includes("borderLeft: \"2px solid var(--dsw-alias-state-business-primary)\""),
+    "timeline must render a real chronological track, not date prefixes on cards");
+  assert.ok(clientSource.includes('{ key: "acl", label: t("memory.am.settings.acl") }'),
+    "Read allowlist must be the last nested Settings subpage");
+  assert.ok(clientSource.includes('settingsPage === "acl"') && clientSource.includes("datalist"));
+  assert.ok(clientSource.includes('list: "amadeus-memory-acl-bots"'), "known bot IDs must be suggested");
+  assert.ok(clientSource.includes('inputMode: "numeric"') && clientSource.includes("aclEffectiveBot"),
+    "manual numeric group IDs and an explicit/derived bot must drive canonical Scene construction");
+  assert.ok(clientSource.includes('t("memory.explorer.aclDirection")'), "allowlist direction must be described in natural language");
+  assert.ok(clientSource.includes("openDetail") && clientSource.includes('/memory?id='),
+    "explorer must fetch the full memory DTO before editing");
+  const explorerStart = clientSource.indexOf("function AmadeusOwnerExplorer");
+  const explorerEnd = clientSource.indexOf("function AmadeusMemorySettings", explorerStart);
+  const explorerSource = clientSource.slice(explorerStart, explorerEnd);
+  assert.ok(explorerSource.includes("reactDom.createPortal(tree, document.body)"),
+    "the explorer must portal out of the host settings sheet clipping/stacking context");
+  assert.ok(explorerSource.includes('onClick: onClose'), "close must return to the original settings page");
+  assert.ok(explorerSource.includes('["memory", t("memory.am.tabs.memory")]')
+    && explorerSource.includes('["entity", t("memory.am.tabs.entities")]')
+    && explorerSource.includes('["status", t("memory.am.tabs.status")]')
+    && explorerSource.includes('["settings", t("memory.am.tabs.settings")]'),
+    "all four explorer top views must remain mounted and switchable");
+  const adminJsonDef = clientSource.indexOf("async function adminJson");
+  assert.ok(adminJsonDef >= 0 && adminJsonDef < explorerStart,
+    "adminJson must be module-scoped and defined before both explorer and settings");
+  assert.ok(!clientSource.includes("const adminJson = useCallback"),
+    "adminJson must not be scoped to AmadeusMemorySettings");
+  assert.ok(clientSource.includes("status.audit.total_calls") && clientSource.includes("status.audit.by_day"),
+    "status must bind the real audit DTO fields");
+  assert.ok(clientSource.includes("status.audit.by_operation") && clientSource.includes('t("memory.explorer.tokenShare")'),
+    "status must render a real operation token-share breakdown");
+  assert.ok(clientSource.includes('scenes: scopeParam') && clientSource.includes('/graph?scopes='),
+    "the same Scene selection must drive memory and graph reads");
+  assert.ok(clientSource.includes('settingsPage === "personalization"') && clientSource.includes('adminJson("/personalization")'),
+    "owner personalization must be reachable in nested Settings");
+  assert.ok(clientSource.includes('adminJson("/personalization/profile"') && clientSource.includes('adminJson("/personalization/persona"'),
+    "profile and persona cards must save through owner APIs");
+  assert.ok(clientSource.includes('personalization?.preview?.text'), "preview must render the real server text");
+});
+
+
+test("graph preview includes a selected node outside the first 12 and prioritizes its neighbors", () => {
+  for (const key of [
+    "memory.am.graph.search",
+    "memory.am.graph.searchPlaceholder",
+    "memory.am.graph.searchClear",
+    "memory.am.graph.searchEmpty",
+    "memory.am.graph.focused"
+  ]) {
+    assert.ok((clientSource.split(`"${key}"`).length - 1) >= 2, `bilingual graph key ${key} must exist`);
+  }
+  const start = clientSource.indexOf("// #graph-preview-start");
+  const end = clientSource.indexOf("// #graph-preview-end");
+  assert.ok(start >= 0 && end > start, "graph preview helper markers must exist");
+  const snippet = clientSource.slice(start, end);
+  const preview = new Function(`${snippet}; return amadeusGraphPreview;`)();
+  const nodes = Array.from({ length: 20 }, (_, index) => ({ id: `n${index}`, name: `Node ${index}`, type: "person", degree: 0 }));
+  const edges = [
+    { id: "e1", from: "n19", to: "n18", relation_type: "knows" },
+    { id: "e2", from: "n19", to: "n10", relation_type: "knows" },
+    { id: "e3", from: "n1", to: "n2", relation_type: "knows" }
+  ];
+  const focused = preview(nodes, edges, ["n19"], 12);
+  assert.equal(focused.length, 12);
+  assert.equal(focused[0].id, "n19", "selected node must be first even when outside the old 12");
+  assert.ok(focused.some((node) => node.id === "n18") && focused.some((node) => node.id === "n10"),
+    "direct neighbors must be included before unrelated nodes");
+  assert.ok(focused.some((node) => node.id === "n1"), "remaining slots retain a reasonable overview");
+  const noFocus = preview(nodes, edges, [], 12);
+  assert.deepEqual(noFocus.map((node) => node.id), nodes.slice(0, 12).map((node) => node.id));
+});
+
+test("navigation persistence stores only validated top/subtab selection in sessionStorage", () => {
+  const start = clientSource.indexOf("const AM_NAV_STORAGE_KEY");
+  const end = clientSource.indexOf("function AmadeusMemorySettings", start);
+  assert.ok(start >= 0 && end > start, "navigation persistence helpers must exist");
+  const snippet = clientSource.slice(start, end);
+  const storage = new Map();
+  const sandbox = {
+    window: { sessionStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value)
+    } },
+    JSON, Set
+  };
+  vm.runInNewContext(snippet, sandbox);
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  assert.deepEqual(plain(sandbox.readAmadeusNav()), { panelTab: "memory", memoryView: "long-term", settingsPage: "general" });
+  sandbox.writeAmadeusNav({ panelTab: "settings", memoryView: "recent", settingsPage: "retrieval" });
+  assert.deepEqual(plain(sandbox.readAmadeusNav()), { panelTab: "settings", memoryView: "recent", settingsPage: "retrieval" });
+  const stored = JSON.parse(storage.get("amadeus-memory.nav.v1"));
+  assert.deepEqual(Object.keys(stored).sort(), ["memoryView", "panelTab", "settingsPage"],
+    "nav storage must not contain graph/Scene/search/credentials/drafts");
+  storage.set("amadeus-memory.nav.v1", JSON.stringify({ panelTab: "bogus", memoryView: "x", settingsPage: "y" }));
+  assert.deepEqual(plain(sandbox.readAmadeusNav()), { panelTab: "memory", memoryView: "long-term", settingsPage: "general" });
+  storage.set("amadeus-memory.nav.v1", "{not-json");
+  assert.deepEqual(plain(sandbox.readAmadeusNav()), { panelTab: "memory", memoryView: "long-term", settingsPage: "general" });
+  assert.ok(!snippet.includes("localStorage"), "navigation must use session storage only");
+});
+
+test("Scene switch resets graph selection and search while stale responses remain guarded", () => {
+  const start = clientSource.indexOf("const loadGraph = async (scope)");
+  const end = clientSource.indexOf("const clearRecent", start);
+  const source = clientSource.slice(start, end);
+  assert.ok(source.includes("setGraphSelected(null)") && source.includes('setGraphQuery("")'));
+  assert.ok(source.includes("graphRequestRef.current !== requestId"));
+  assert.ok(clientSource.includes("filteredNodes.map") && clientSource.includes("onClick: () => setGraphSelected({ kind: \"node\", id: node.id })"),
+    "full searchable node list must remain keyboard-selectable buttons");
 });

@@ -644,24 +644,26 @@ export function createIdentityService({ db, store, logger } = {}) {
     return loadSnapshot().groups;
   }
 
-  function listEntities({ limit = 500 } = {}) {
-    const groups = allGroups()
+  function listEntities({ limit = 500, filter = null } = {}) {
+    let groups = allGroups()
       .slice()
       .sort((a, b) => String(b.last_seen).localeCompare(String(a.last_seen)) || a.name.localeCompare(b.name));
+    if (typeof filter === "function") groups = groups.filter(filter);
     return Number.isInteger(limit) && limit > 0 ? groups.slice(0, limit) : groups;
   }
 
-  function listEntitiesPage({ limit = 500, offset = 0, query = "", publicOnly = false } = {}) {
+  function listEntitiesPage({ limit = 500, offset = 0, query = "", publicOnly = false, filter = null } = {}) {
     const all = allGroups()
       .slice()
       .sort((a, b) => String(b.last_seen).localeCompare(String(a.last_seen)) || a.name.localeCompare(b.name));
     const key = normalizeIdentityKey(query);
-    const filtered = key
+    let filtered = key
       ? all.filter((group) => publicOnly
           ? normalizeIdentityKey(group.name).includes(key)
           : normalizeIdentityKey(group.name).includes(key) ||
             group.aliases.some((alias) => alias.normalized_alias.includes(key)))
       : all;
+    if (typeof filter === "function") filtered = filtered.filter(filter);
     const pageSize = Math.max(1, Math.min(1000, Number.isInteger(limit) ? limit : 500));
     const start = Math.max(0, Number.isInteger(offset) ? offset : 0);
     const items = filtered.slice(start, start + pageSize);

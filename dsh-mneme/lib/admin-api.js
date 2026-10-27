@@ -11,6 +11,7 @@ import { TYPES } from "./store.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
 import { scenePolicy, currentScene, listSceneGrants } from "./scene.js";
 import { recentContextConfig, recentContextCounts, clearRecentContext } from "./recent-context.js";
+import { renderUserSettingsBlock } from "./user-settings.js";
 import {
   createBackup,
   listBackups,
@@ -165,6 +166,292 @@ function memorySummary(m, status = m) {
   };
 }
 
+function graphScopeClause(scope) {
+  return scope === "legacy" ? "m.scene_scope IS NULL" : "m.scene_scope = ?";
+}
+function graphScopeParams(scope) {
+  return scope === "legacy" ? [] : [scope];
+}
+
+function sceneAclGroup(sceneId) {
+  const match = /^qq:group:([^:]+):(.+)$/.exec(String(sceneId ?? ""));
+  if (!match) return null;
+  return { botId: match[1], peerId: match[2] };
+}
+
+function sceneAclState(deps) {
+  const scopes = typeof deps.store.listSceneScopes === "function"
+    ? deps.store.listSceneScopes({ limit: 500 })
+    : graphScopes(deps).items;
+  return {
+    grants: typeof deps.store.listSceneReadGrants === "function"
+      ? deps.store.listSceneReadGrants({ limit: 500 })
+      : [],
+    scenes: scopes.filter((row) => sceneAclGroup(row.scope))
+      .map((row) => ({ scope: row.scope, ...sceneAclGroup(row.scope), total: row.total, active: row.active })),
+    policy: {
+      owner_reads_all: true,
+      grants_are_directional: true,
+      grants_are_read_only: true,
+      grants_include_private: false,
+      grants_include_legacy: false
+    }
+  };
+}
+
+function aclKnownBots(deps) {
+  const bots = new Set();
+  for (const row of deps.store.listSceneScopes({ limit: 500 })) {
+    const group = sceneAclGroup(row.scope);
+    if (group?.botId) bots.add(group.botId);
+  }
+  return [...bots].sort();
+}
+
+function validateAclPair(deps, body) {
+  let reader = String(body.reader_scene ?? "").trim();
+  let source = String(body.source_scene ?? "").trim();
+  if (!reader || !source) {
+    const readerGroupId = String(body.reader_group ?? "").trim();
+    const sourceGroupId = String(body.source_group ?? "").trim();
+    let bot = String(body.bot ?? "").trim();
+    if (!/^\d+$/.test(readerGroupId) || !/^\d+$/.test(sourceGroupId)) {
+      const error = new Error("reader_group and source_group must be numeric QQ group IDs");
+      error.status = 400;
+      throw error;
+    }
+    if (!bot) {
+      const known = aclKnownBots(deps);
+      if (known.length !== 1) {
+        const error = new Error("bot is required when zero or multiple QQ bots are known");
+        error.status = 400;
+        throw error;
+      }
+      bot = known[0];
+    }
+    if (!/^\d+$/.test(bot)) {
+      const error = new Error("bot must be a numeric QQ bot ID");
+      error.status = 400;
+      throw error;
+    }
+    reader = `qq:group:${bot}:${readerGroupId}`;
+    source = `qq:group:${bot}:${sourceGroupId}`;
+  }
+  const readerGroup = sceneAclGroup(reader);
+  const sourceGroup = sceneAclGroup(source);
+  if (!readerGroup || !sourceGroup) {
+    const error = new Error("reader and source must be canonical QQ group scenes");
+    error.status = 400;
+    throw error;
+  }
+  if (reader === source) {
+    const error = new Error("self grant is not allowed");
+    error.status = 400;
+    throw error;
+  }
+  if (readerGroup.botId !== sourceGroup.botId) {
+    const error = new Error("grants must stay on the same QQ bot");
+    error.status = 400;
+    throw error;
+  }
+  // Canonical same-bot group IDs are sufficient. Do not require the groups to
+  // already have memory rows: grants may precede first memory, and revocation
+  // must survive deletion of a group's last row.
+  return { reader, source };
+}
+
+function selectedSceneFilter(url) {
+  const raw = String(url.searchParams.get("scenes") ?? "").trim();
+  if (!raw || raw === "all") return null;
+  return new Set(raw.split(",").map((value) => value.trim()).filter(Boolean).slice(0, 50));
+}
+
+function sceneFilterMemories(rows, selected) {
+  if (!selected) return rows;
+  return rows.filter((row) => selected.has(row.scene_scope ?? "legacy"));
+}
+
+function graphScopes(deps) {  const db = deps.store.db;
+  const rows = db.prepare(
+    `SELECT scene_scope AS scope,
+            COUNT(*) AS total,
+            SUM(CASE WHEN forgotten = 0 AND archived = 0 THEN 1 ELSE 0 END) AS active
+       FROM memories
+      GROUP BY scene_scope
+      ORDER BY active DESC, total DESC, scene_scope ASC
+      LIMIT 200`
+  ).all();
+  const items = rows.map((row) => ({
+    scope: row.scope ?? "legacy",
+    label: row.scope ?? "legacy (unscoped)",
+    legacy: row.scope == null,
+    total: Number(row.total) || 0,
+    active: Number(row.active) || 0
+  }));
+  return { items, bounded: rows.length >= 200 };
+}
+
+function graphForScope(deps, scope, limitEdges = 120, limitNodes = 80) {
+  const db = deps.store.db;
+  const clause = graphScopeClause(scope);
+  const params = graphScopeParams(scope);
+  const present = db.prepare(
+    `SELECT 1 AS present FROM memories m WHERE ${clause} LIMIT 1`
+  ).get(...params);
+  if (!present) return null;
+
+  const edgeLimit = Math.min(200, Math.max(1, Number(limitEdges) || 120));
+  const nodeLimit = Math.min(100, Math.max(1, Number(limitNodes) || 80));
+  const edgeTotal = Number(db.prepare(
+    `SELECT COUNT(*) AS c FROM entity_relations r
+       JOIN memories m ON m.id = r.memory_id
+      WHERE m.forgotten = 0 AND m.archived = 0 AND ${clause}`
+  ).get(...params).c) || 0;
+  const edgeRows = db.prepare(
+    `SELECT r.id, r.from_entity, r.to_entity, r.relation_type, r.weight, r.source,
+            r.memory_id
+       FROM entity_relations r
+       JOIN memories m ON m.id = r.memory_id
+      WHERE m.forgotten = 0 AND m.archived = 0 AND ${clause}
+      ORDER BY r.created_at DESC, r.id ASC
+      LIMIT ?`
+  ).all(...params, edgeLimit + 1);
+  const edgesTruncated = edgeRows.length > edgeLimit;
+  const edges = edgesTruncated ? edgeRows.slice(0, edgeLimit) : edgeRows;
+
+  const attrLimit = Math.min(400, nodeLimit * 4);
+  const attrTotal = Number(db.prepare(
+    `SELECT COUNT(DISTINCT ea.entity_id) AS c
+       FROM entity_attrs ea JOIN memories m ON m.id = ea.memory_id
+      WHERE ea.valid_until IS NULL AND m.forgotten = 0 AND m.archived = 0 AND ${clause}`
+  ).get(...params).c) || 0;
+  const attrRows = db.prepare(
+    `SELECT ea.entity_id, ea.memory_id
+       FROM entity_attrs ea JOIN memories m ON m.id = ea.memory_id
+      WHERE ea.valid_until IS NULL AND m.forgotten = 0 AND m.archived = 0 AND ${clause}
+      ORDER BY ea.valid_from DESC, ea.id ASC
+      LIMIT ?`
+  ).all(...params, attrLimit);
+  const attrsTruncated = attrTotal > new Set(attrRows.map((row) => row.entity_id)).size;
+
+  const memoryByEntity = new Map();
+  const nodeIds = new Set();
+  const addEvidence = (entityId, memoryId) => {
+    if (!entityId || !memoryId) return;
+    nodeIds.add(entityId);
+    const set = memoryByEntity.get(entityId) ?? new Set();
+    set.add(memoryId);
+    memoryByEntity.set(entityId, set);
+  };
+  for (const edge of edges) {
+    nodeIds.add(edge.from_entity);
+    nodeIds.add(edge.to_entity);
+    addEvidence(edge.from_entity, edge.memory_id);
+    addEvidence(edge.to_entity, edge.memory_id);
+  }
+  // Relation endpoints get first claim on the bounded node slots. Attribute
+  // entities fill whatever remains, so a large attr set cannot crowd out every
+  // returned edge's endpoints.
+  for (const row of attrRows) addEvidence(row.entity_id, row.memory_id);
+  const nodeIdsAll = [...nodeIds];
+  const selectedIds = nodeIdsAll.slice(0, nodeLimit);
+  const selected = new Set(selectedIds);
+  const nodesTruncated = nodeIdsAll.length > nodeLimit;
+  let nodes = [];
+  if (selectedIds.length) {
+    const placeholders = selectedIds.map(() => "?").join(",");
+    const rows = db.prepare(
+      `SELECT id, name, type FROM entities WHERE id IN (${placeholders})`
+    ).all(...selectedIds);
+    nodes = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      type: row.type ?? "concept",
+      related_memories: memoryByEntity.get(row.id)?.size ?? 0,
+      degree: 0
+    }));
+  }
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const visibleEdges = edges.filter((edge) => nodeById.has(edge.from_entity) && nodeById.has(edge.to_entity));
+  for (const edge of visibleEdges) {
+    nodeById.get(edge.from_entity).degree += 1;
+    nodeById.get(edge.to_entity).degree += 1;
+  }
+  nodes.sort((a, b) => b.degree - a.degree || b.related_memories - a.related_memories || a.name.localeCompare(b.name));
+  visibleEdges.sort((a, b) => String(a.relation_type).localeCompare(String(b.relation_type)) || String(a.id).localeCompare(String(b.id)));
+  const truncated = edgesTruncated || attrsTruncated || nodesTruncated;
+  return {
+    scope,
+    scope_label: scope === "legacy" ? "legacy (unscoped)" : scope,
+    nodes,
+    edges: visibleEdges.map((edge) => ({
+      id: edge.id,
+      from: edge.from_entity,
+      to: edge.to_entity,
+      relation_type: edge.relation_type,
+      weight: edge.weight ?? 1,
+      source: edge.source ?? "unknown"
+    })),
+    counts: {
+      nodes: nodes.length,
+      edges: visibleEdges.length,
+      total_edges: edgeTotal,
+      attr_entities: attrTotal
+    },
+    limits: { nodes: nodeLimit, edges: edgeLimit, attrs: attrLimit },
+    truncated
+  };
+}
+
+function graphForScopes(deps, scopes, limitEdges = 120, limitNodes = 80) {
+  const selected = Array.isArray(scopes) ? scopes.filter(Boolean).slice(0, 50) : [];
+  if (selected.length === 0) {
+    return { scope: "all", scope_label: "all Scenes", scopes: [], nodes: [], edges: [], counts: { nodes: 0, edges: 0 }, truncated: false };
+  }
+  const nodeMap = new Map();
+  const edgeMap = new Map();
+  let truncated = false;
+  for (const scope of selected) {
+    const graph = graphForScope(deps, scope, 200, 100);
+    if (!graph) continue;
+    truncated ||= graph.truncated === true;
+    for (const node of graph.nodes) {
+      const existing = nodeMap.get(node.id);
+      if (existing) {
+        existing.related_memories += node.related_memories;
+        if (!existing.scopes.includes(scope)) existing.scopes.push(scope);
+      } else {
+        nodeMap.set(node.id, { ...node, degree: 0, scopes: [scope] });
+      }
+    }
+    for (const edge of graph.edges) {
+      if (!edgeMap.has(edge.id)) edgeMap.set(edge.id, { ...edge, scopes: [scope] });
+      else if (!edgeMap.get(edge.id).scopes.includes(scope)) edgeMap.get(edge.id).scopes.push(scope);
+    }
+  }
+  let nodes = [...nodeMap.values()]
+    .sort((a, b) => b.related_memories - a.related_memories || a.name.localeCompare(b.name));
+  if (nodes.length > limitNodes) { nodes = nodes.slice(0, limitNodes); truncated = true; }
+  const visible = new Set(nodes.map((node) => node.id));
+  let edges = [...edgeMap.values()].filter((edge) => visible.has(edge.from) && visible.has(edge.to));
+  for (const edge of edges) {
+    const from = nodes.find((node) => node.id === edge.from);
+    const to = nodes.find((node) => node.id === edge.to);
+    if (from) from.degree += 1;
+    if (to) to.degree += 1;
+  }
+  if (edges.length > limitEdges) { edges = edges.slice(0, limitEdges); truncated = true; }
+  return {
+    scope: selected.length === 1 ? selected[0] : "multi",
+    scope_label: selected.length === 1 ? selected[0] : `${selected.length} selected Scenes`,
+    scopes: selected,
+    nodes,
+    edges,
+    counts: { nodes: nodes.length, edges: edges.length },
+    truncated
+  };
+}
+
 function memoryFull(service, id) {
   const row = service.getById(id);
   if (!row) {
@@ -294,15 +581,20 @@ function safeEmbedderStatus(embedder, config, settings, vectorIndex, service, re
   };
 }
 
+function safeDreamRun(row) {
+  if (!row) return null;
+  return {
+    run_type: row.run_type ?? null,
+    status: row.status ?? null,
+    created_at: row.created_at ?? null,
+    error: row.error ?? null,
+    summary: row.summary ?? null
+  };
+}
+
 function lastDreamRuns(store) {
   try {
-    return store.listDreamRuns({ limit: 5 }).map((row) => ({
-      run_type: row.run_type ?? null,
-      status: row.status ?? null,
-      created_at: row.created_at ?? null,
-      error: row.error ?? null,
-      summary: row.summary ?? null
-    }));
+    return store.listDreamRuns({ limit: 5 }).map(safeDreamRun);
   } catch {
     return [];
   }
@@ -325,6 +617,12 @@ function overview({ store, service, settings, config, embedder, vectorIndex, rer
     quickCheck = Object.values(row ?? {})[0] ?? "unknown";
   } catch { /* reported as unknown */ }
   const dreamRuns = lastDreamRuns(store);
+  const latestDream = safeDreamRun((() => {
+    try { return store.latestDreamRun("auto"); } catch { return null; }
+  })());
+  const latestSleep = safeDreamRun((() => {
+    try { return store.latestDreamRun("sleep"); } catch { return null; }
+  })());
   const flags = featureState(settings, config);
   return {
     package: packageInfo(),
@@ -354,8 +652,8 @@ function overview({ store, service, settings, config, embedder, vectorIndex, rer
     },
     semantic: safeEmbedderStatus(embedder, config, settings, vectorIndex, service, reranker),
     features: flags,
-    last_dream: dreamRuns.find((row) => row.run_type === "auto") ?? null,
-    last_sleep: dreamRuns.find((row) => row.run_type === "sleep") ?? null,
+    last_dream: latestDream,
+    last_sleep: latestSleep,
     recent_runs: dreamRuns,
     config: {
       language: config?.language ?? null,
@@ -405,6 +703,25 @@ async function handle(req, res, deps) {
   const path = url.pathname.slice(PREFIX.length) || "/";
   if (req.method === "GET") {
     if (path === "/overview") return send(res, 200, { ok: true, data: overview(deps) });
+    if (path === "/graph/scopes") {
+      return send(res, 200, { ok: true, data: graphScopes(deps) });
+    }
+    if (path === "/graph") {
+      const scopesRaw = String(url.searchParams.get("scopes") ?? "").trim();
+      const edgeLimit = Number(url.searchParams.get("edge_limit") ?? 120);
+      const nodeLimit = Number(url.searchParams.get("node_limit") ?? 80);
+      if (scopesRaw) {
+        const selected = scopesRaw === "all"
+          ? graphScopes(deps).items.map((row) => row.scope)
+          : scopesRaw.split(",").map((value) => value.trim()).filter(Boolean).slice(0, 50);
+        return send(res, 200, { ok: true, data: graphForScopes(deps, selected, edgeLimit, nodeLimit) });
+      }
+      const scope = String(url.searchParams.get("scope") ?? "").trim();
+      if (!scope) return send(res, 400, { ok: false, error: "scope is required" });
+      const graph = graphForScope(deps, scope, edgeLimit, nodeLimit);
+      if (graph === null) return send(res, 400, { ok: false, error: "unknown scope" });
+      return send(res, 200, { ok: true, data: graph });
+    }
     if (path === "/scene") {
       const policy = scenePolicy();
       const current = currentScene();
@@ -448,22 +765,50 @@ async function handle(req, res, deps) {
       const archived = url.searchParams.get("archived") === "1";
       const limit = Math.min(50, Math.max(1, Number(url.searchParams.get("limit") ?? 20) || 20));
       const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+      const selected = selectedSceneFilter(url);
+      const typeFilter = String(url.searchParams.get("type") ?? "").trim();
+      const minImportance = Number(url.searchParams.get("min_importance") ?? 0) || 0;
+      const updatedFrom = String(url.searchParams.get("updated_from") ?? "").trim();
+      const order = String(url.searchParams.get("order") ?? "").trim();
+      const sceneScopes = selected ? [...selected] : null;
+      const options = {
+        limit, offset,
+        includeArchived: archived, onlyArchived: archived, includeForgotten: false,
+        ...(typeFilter ? { type: typeFilter } : {}),
+        ...(minImportance ? { minImportance } : {}),
+        ...(updatedFrom ? { updatedFrom } : {}),
+        ...(order === "chrono" ? { order } : {}),
+        ...(sceneScopes ? { sceneScopes } : {})
+      };
       let rows;
+      let total;
       if (q) {
-        rows = service.search(q, {
-          limit: Math.min(100, limit + offset),
-          includeArchived: archived
-        });
-        rows = rows.slice(offset, offset + limit);
+        const searchOptions = {
+          limit, offset,
+          onlyArchived: archived,
+          ...(typeFilter ? { type: typeFilter } : {}),
+          ...(minImportance ? { minImportance } : {}),
+          ...(updatedFrom ? { updatedFrom } : {}),
+          ...(sceneScopes ? { sceneScopes } : {})
+        };
+        rows = deps.store.search(q, searchOptions);
+        total = deps.store.countSearch(q, searchOptions);
       } else {
-        rows = service.list({
-          limit, offset, includeArchived: archived, onlyArchived: archived, includeForgotten: false
+        rows = deps.store.list(options);
+        total = deps.store.count(typeFilter || undefined, {
+          includeArchived: archived, onlyArchived: archived, includeForgotten: false,
+          ...(minImportance ? { minImportance } : {}),
+          ...(updatedFrom ? { updatedFrom } : {}),
+          ...(sceneScopes ? { sceneScopes } : {})
         });
       }
       const byId = new Map(rows.map((row) => [row.id, row]));
       const items = service.toApiList(rows, { includePreference: false })
         .map((row) => memorySummary(row, byId.get(row.id)));
-      return send(res, 200, { ok: true, data: { items, archived, limit, offset, q } });
+      return send(res, 200, {
+        ok: true,
+        data: { items, total, archived, limit, offset, q, scenes: selected ? [...selected] : "all" }
+      });
     }
     if (path === "/memory") {
       const id = String(url.searchParams.get("id") ?? "").trim();
@@ -489,10 +834,67 @@ async function handle(req, res, deps) {
       });
     }
     if (path === "/features") return send(res, 200, { ok: true, data: featureState(deps.settings, deps.config) });
+    if (path === "/acl") return send(res, 200, { ok: true, data: sceneAclState(deps) });
+    if (path === "/personalization") {
+      const agentId = url.searchParams.get("agent") || null;
+      return send(res, 200, {
+        ok: true,
+        data: {
+          profile: deps.settings.getProfile(),
+          persona: deps.settings.getPersona(),
+          preview: renderUserSettingsBlock({ settings: deps.settings, config: deps.config, agentId })
+        }
+      });
+    }
+    if (path === "/status") {
+      const ov = overview(deps);
+      const audit = typeof service.getLlmAuditStats === "function"
+        ? service.getLlmAuditStats({ days: 7 })
+        : null;
+      return send(res, 200, {
+        ok: true,
+        data: {
+          overview: ov,
+          audit,
+          dreams: typeof service.listDreamRuns === "function" ? service.listDreamRuns({ limit: 10 }) : [],
+          conflicts: typeof service.countConflictPending === "function" ? service.countConflictPending() : null
+        }
+      });
+    }
     return send(res, 404, { ok: false, error: "unknown admin endpoint" });
   }
   if (req.method !== "POST") return send(res, 405, { ok: false, error: "method not allowed" });
   const body = await readJson(req);
+  if (path === "/personalization/profile") {
+    if (typeof body.profile !== "string") return send(res, 400, { ok: false, error: "profile must be a string" });
+    deps.settings.setProfile(body.profile);
+    return send(res, 200, { ok: true, data: { profile: deps.settings.getProfile() } });
+  }
+  if (path === "/personalization/persona") {
+    if (!body.persona || typeof body.persona !== "object" || Array.isArray(body.persona)) {
+      return send(res, 400, { ok: false, error: "persona must be an object" });
+    }
+    deps.settings.setPersona(body.persona);
+    return send(res, 200, { ok: true, data: { persona: deps.settings.getPersona() } });
+  }
+  if (path === "/acl/grant") {
+    try {
+      const pair = validateAclPair(deps, body);
+      const result = deps.store.grantSceneRead(pair.reader, pair.source, { actor: "owner:settings", note: body.note });
+      return send(res, 200, { ok: true, data: { ...result, state: sceneAclState(deps) } });
+    } catch (error) {
+      return send(res, Number(error?.status) || 400, { ok: false, error: error.message });
+    }
+  }
+  if (path === "/acl/revoke") {
+    try {
+      const pair = validateAclPair(deps, body);
+      const result = deps.store.revokeSceneRead(pair.reader, pair.source);
+      return send(res, 200, { ok: true, data: { ...result, state: sceneAclState(deps) } });
+    } catch (error) {
+      return send(res, Number(error?.status) || 400, { ok: false, error: error.message });
+    }
+  }
   if (path === "/memory") {
     const type = memoryType(body.type);
     if (typeof body.title !== "string" || !body.title.trim()) {

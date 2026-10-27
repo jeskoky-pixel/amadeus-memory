@@ -14,14 +14,15 @@ import { createInjector } from "./inject.js";
 import { createPreInjectGate } from "./pre-inject-gate.js";
 import { createContinuityRescue } from "./continuity.js";
 import { createSummarizer } from "./summarize.js";
-import { createDreamScheduler, describeStreamFailure } from "./dream.js";
+import { createDreamScheduler, describeStreamFailure, recordScopedDreamBaseline } from "./dream.js";
 import { createSleepScheduler, runSleep } from "./dream/sleep.js";
 import { createApi } from "./api.js";
 import { createStandaloneApi } from "./api-standalone.js";
 // #275 存储生命周期第一批：无损回收（手动入口，不挂启动路径）。
 import { createMaintenance } from "./maintenance.js";
 import { createSettings } from "./settings.js";
-import { configureScene } from "./scene.js";
+import { configureScene, setSceneReadAclReader } from "./scene.js";
+import { runWithSceneJob, LEGACY_SCENE_JOB, scopedSleepOutcome } from "./scene-job.js";
 import { configureRecentContext } from "./recent-context.js";
 import { mountAdminApi } from "./admin-api.js";
 import { applyStagedRestore } from "./backup.js";
@@ -226,6 +227,50 @@ function createLiveConfig(rawCfg, flatFlags, nestedFlags) {
   });
 }
 
+const TRUSTED_SCENE_ACL_CONTRACT = "amadeus-memory/trusted-scene-acl-read";
+const TRUSTED_SCENE_ACL_TOOLS = Object.freeze(["memory_search", "memory_list", "memory_get"]);
+
+/**
+ * Optional cross-plugin handshake. This is a synchronous capability declaration,
+ * not an authorization input: callers cannot ask for it with arguments, and the
+ * Host binding must already be present. It returns null unless strict QQ Scene
+ * isolation is effective in this running instance.
+ */
+export function sceneAclReadDeclaration(ctx, cfg) {
+  try {
+    if (cfg?.sceneIsolationEnabled !== true || cfg?.sceneStrictQQ !== true) return null;
+    const qq = ctx?.reflect?.get?.("qq");
+    if (typeof qq?.resolveTrustedSessionScene !== "function") return null;
+    return Object.freeze({
+      contract: TRUSTED_SCENE_ACL_CONTRACT,
+      version: 1,
+      trustedSceneAcl: true,
+      strictQQ: true,
+      tools: TRUSTED_SCENE_ACL_TOOLS
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function provideSceneAclRead(ctx, cfg) {
+  if (typeof ctx?.provide !== "function") return () => {};
+  try {
+    let disposed = false;
+    const dispose = ctx.provide("amadeus.memory", Object.freeze({
+      sceneAclRead: () => sceneAclReadDeclaration(ctx, cfg)
+    }));
+    return async () => {
+      if (disposed) return;
+      disposed = true;
+      if (typeof dispose === "function") await dispose();
+    };
+  } catch (error) {
+    ctx.logger?.warn?.(`[dsh-mneme] optional amadeus.memory handshake unavailable: ${String(error?.message ?? error)}`);
+    return () => {};
+  }
+}
+
 export const apply = (ctx, config) => {
   // Cordis/DSH may hand apply() an already-validated Config whose volatile
   // fields are stable references. Re-parsing that object through Config() would
@@ -261,6 +306,9 @@ export const apply = (ctx, config) => {
   }
 
   const store = createStore(join(memoryDir, "memory.db"));
+  // Scene reads consult the persisted directional group ACL. Owner-private
+  // read-all is a Host capability handled inside Scene policy, not a DB grant.
+  setSceneReadAclReader((reader, source) => store.hasSceneReadGrant(reader, source));
 
   // User-configurable settings (profile, rules, panel mode, standalone API
   // token) share the same SQLite file in dedicated tables, isolated from
@@ -313,6 +361,7 @@ export const apply = (ctx, config) => {
     strictQQ: cfg.sceneStrictQQ === true,
     hostContract: false
   });
+  const disposeSceneAclHandshake = provideSceneAclRead(ctx, cfg);
   configureRecentContext({
     enabled: cfg.recentContextEnabled === true,
     ttlMs: cfg.recentContextTtlMs,
@@ -527,8 +576,61 @@ export const apply = (ctx, config) => {
   // rows, even if the user turned the flags off afterwards. Runtime guards below
   // also cover tagged rows arriving after startup.
   const sceneUnsafeDerivation = () => cfg.sceneIsolationEnabled === true || store.hasSceneScopedRows() === true;
+
+  // Background jobs are partitioned by persisted scene_scope only. The scope
+  // list is internal store metadata, never model/HTTP input; pagination keeps
+  // the enumeration bounded. "legacy" is its own isolated null bucket.
+  function listBackgroundSceneScopes() {
+    const out = [];
+    const pageSize = 200;
+    for (let offset = 0; ; offset += pageSize) {
+      const batch = store.listSceneScopes({ limit: pageSize, offset });
+      out.push(...batch.map((row) => (row.null_scope ? LEGACY_SCENE_JOB : row.scope)));
+      if (batch.length < pageSize) break;
+    }
+    return out;
+  }
+
+  function globalDreamBaseline() {
+    return store.activeSize();
+  }
+
+  async function runScopedDreams() {
+    const scopes = listBackgroundSceneScopes();
+    if (!scopes.length) return { ok: true, skipped: true, reason: "no-scenes", baseline: globalDreamBaseline() };
+    let ok = true;
+    let last = { ok: true, skipped: true };
+    const results = [];
+    for (const scope of scopes) {
+      const result = await runWithSceneJob(scope, () => dream.runDream(ctx, service, cfg));
+      last = result ?? last;
+      results.push(result ?? { ok: false });
+      if (!result?.ok) ok = false;
+    }
+    const recorded = ok ? recordScopedDreamBaseline(store, service, cfg, results) : null;
+    return { ...last, ok, baseline: recorded ?? globalDreamBaseline() };
+  }
+
+  async function runScopedSleep(signal) {
+    const scopes = listBackgroundSceneScopes();
+    if (!scopes.length) return { ok: true, skipped: true, reason: "no-scenes" };
+    let ok = true;
+    let last = { ok: true, skipped: true };
+    let processed = 0;
+    for (const scope of scopes) {
+      if (signal?.aborted) break;
+      const result = await runWithSceneJob(scope, () => runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal));
+      processed += 1;
+      last = result ?? last;
+      if (!result?.ok) ok = false;
+    }
+    const outcome = scopedSleepOutcome({
+      last, ok, processed, total: scopes.length, aborted: Boolean(signal?.aborted)
+    });
+    return outcome;
+  }
   let dream = null;
-  if (cfg.autoDream && !sceneUnsafeDerivation()) {
+  if (cfg.autoDream) {
     dream = createDreamScheduler({
       thresholdCount: cfg.dreamThresholdCount,
       thresholdChars: cfg.dreamThresholdChars,
@@ -570,9 +672,7 @@ export const apply = (ctx, config) => {
           metadata: JSON.stringify({ count, chars })
         });
       },
-      onRun: () => (dream && !sceneUnsafeDerivation()
-        ? dream.runDream(ctx, service, cfg)
-        : Promise.resolve({ ok: true, skipped: true, reason: "scene-isolation" }))
+      onRun: () => (dream ? runScopedDreams() : Promise.resolve({ ok: true, skipped: true, reason: "dream-disposed" }))
     });
     service.setDreamHook(() => dream.maybeSchedule(service));
   }
@@ -583,15 +683,13 @@ export const apply = (ctx, config) => {
   // service.enqueue so they serialize with autoDream — the two never overlap.
   // Abortable on user activity; audited into dream_runs with run_type='sleep'.
   let sleep = null;
-  if (cfg.sleepModeEnabled && !sceneUnsafeDerivation()) {
+  if (cfg.sleepModeEnabled) {
     sleep = createSleepScheduler({
       service,
       config: cfg,
       logger: ctx.logger,
       lastRunAtSeed: store.lastDreamRunAt("sleep"),
-      onRun: (signal) => (sleep && !sceneUnsafeDerivation()
-        ? runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal)
-        : Promise.resolve({ ok: true, skipped: true, reason: "scene-isolation" }))
+      onRun: (signal) => (sleep ? runScopedSleep(signal) : Promise.resolve({ ok: true, skipped: true, reason: "sleep-disposed" }))
     });
     service.setSleepHook(() => sleep.noteWrite());
   }
@@ -663,7 +761,10 @@ export const apply = (ctx, config) => {
     disposers.push(createTools(toolsCtx, service, cfg, embedder));
   });
 
-  const summarizer = sceneUnsafeDerivation() ? { dispose() {} } : createSummarizer(ctx, service, cfg);
+  const strictQQScene = cfg.sceneIsolationEnabled === true && cfg.sceneStrictQQ === true;
+  const summarizer = (!strictQQScene && sceneUnsafeDerivation())
+    ? { dispose() {} }
+    : createSummarizer(ctx, service, cfg);
   disposers.push(summarizer.dispose);
 
   // #275 存储生命周期第一批：无损回收的手动入口。刻意不挂启动路径、不接定时器——
@@ -738,6 +839,7 @@ export const apply = (ctx, config) => {
     recorder?.dispose();
     if (dream) await dream.dispose();
     if (sleep) sleep.dispose();
+    await disposeSceneAclHandshake();
     store.close();
   };
 };

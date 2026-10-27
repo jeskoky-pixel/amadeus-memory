@@ -132,6 +132,34 @@ test("overview reports truthful bounded status without secrets or memory bodies"
   }
 });
 
+test("overview resolves last_dream and last_sleep independently beyond the 5-row recent slice", async () => {
+  const h = setup();
+  try {
+    h.service.saveDreamRun({
+      id: "sleep-old", run_type: "sleep", status: "ok",
+      created_at: "2026-01-01T00:00:00.000Z", snapshot_hash: "sleep-hash",
+      input_count: 0, receipt: "sleep-receipt", input: { private: "SLEEP_PRIVATE_INPUT" }
+    });
+    for (let i = 0; i < 6; i += 1) {
+      h.service.saveDreamRun({
+        id: `dream-${i}`, run_type: "auto", status: "ok",
+        created_at: `2026-02-0${i + 1}T00:00:00.000Z`, snapshot_hash: `d${i}`,
+        input_count: 0, receipt: `r${i}`, input: { private: `DREAM_PRIVATE_${i}` }
+      });
+    }
+    const out = await call(h.route, { url: "/api/amadeus-memory/admin/overview" });
+    assert.equal(out.status, 200);
+    assert.equal(out.json.data.last_sleep.created_at, "2026-01-01T00:00:00.000Z");
+    assert.equal(out.json.data.last_dream.created_at, "2026-02-06T00:00:00.000Z");
+    assert.equal(out.json.data.recent_runs.length, 5);
+    assert.equal(out.json.data.recent_runs.some((row) => row.run_type === "sleep"), false);
+    assert.equal(JSON.stringify(out.json.data).includes("SLEEP_PRIVATE_INPUT"), false);
+    assert.equal(JSON.stringify(out.json.data).includes("DREAM_PRIVATE"), false);
+  } finally {
+    h.close();
+  }
+});
+
 test("features endpoint validates and returns effective values and pending restart", async () => {
   const h = setup();
   try {

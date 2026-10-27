@@ -7,7 +7,7 @@ import { adaptiveInjectBudget } from "./search/adaptive.js";
 import { injectChildEnabled } from "./config.js";
 import { safeSlice } from "./safe-slice.js";
 import { readRecentContext } from "./recent-context.js";
-import { scenePolicy, currentScene } from "./scene.js";
+import { scenePolicy, currentScene, mintTrustedScene, runWithTrustedScene } from "./scene.js";
 
 // Issue #179：注入预览的数据底座。systemPrompt 渲染是同步回调，面板只能事后
 // 拉取，所以在这里旁路缓存「最近一帧组装」——快照就是本次渲染用过的同一份
@@ -362,6 +362,39 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     }
   }
 
+  const QQ_PRESETS = new Set([
+    "amadeus-qq",
+    "amadeus-qq-search",
+    "amadeus-qq-media",
+    "amadeus-qq-media-search",
+    "amadeus-qq-owner"
+  ]);
+  function isQQSession(ctx) {
+    return QQ_PRESETS.has(sessionAgentId(ctx));
+  }
+
+  function renderForQQScene(renderCtx, render) {
+    if (!isQQSession(renderCtx)) return render();
+    const policy = scenePolicy();
+    if (!policy.enabled || !policy.strictQQ) {
+      injectionSnapshot = null;
+      return "";
+    }
+    try {
+      const sessionId = renderCtx?.agent?.session?.id;
+      if (typeof sessionId !== "string" || !sessionId) throw new Error("QQ_SESSION_REQUIRED");
+      // The active QQ plugin resolves its own durable Session binding. Neither
+      // model text nor HTTP parameters can assert this in-process Host result.
+      const qq = ctx.reflect?.get?.("qq");
+      if (typeof qq?.resolveTrustedSessionScene !== "function") throw new Error("QQ_HOST_UNAVAILABLE");
+      const scene = mintTrustedScene(qq.resolveTrustedSessionScene(sessionId));
+      return runWithTrustedScene(scene, render);
+    } catch {
+      injectionSnapshot = null;
+      return "";
+    }
+  }
+
   // User profile + rules: injected ahead of the memory block because they are
   // always-relevant instructions the agent should follow every turn.
   // 渲染整体搬到 src/user-settings.js（与面板预览共用一份，见那里的模块头注释）。
@@ -390,7 +423,7 @@ export function createInjector(ctx, service, settings, config, gate = null) {
     ctx.systemPrompt.context({
       name: "memory",
       order: 90,
-      text: (ctx) => {
+      text: (ctx) => renderForQQScene(ctx, () => {
         // Bug4: pass the latest user query so injection prefers semantically
         // relevant memories; lastUserQuery is best-effort (empty → legacy).
         // The query vector is prefetched asynchronously (cached) because the
@@ -469,12 +502,14 @@ export function createInjector(ctx, service, settings, config, gate = null) {
           totalChars: finalBody.length
         };
         return finalBody;
-      }
+      })
     }),
     ctx.systemPrompt.context({
       name: "user-settings",
       order: 85,
-      text: (ctx) => renderUserSettings(ctx)
+      // User settings contain unscoped profile/rules. Until they carry an
+      // audience label, never send them into an external QQ Session.
+      text: (ctx) => isQQSession(ctx) ? "" : renderUserSettings(ctx)
     })
   ];
 

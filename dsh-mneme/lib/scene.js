@@ -9,7 +9,26 @@ import { AsyncLocalStorage } from "node:async_hooks";
 const storage = new AsyncLocalStorage();
 const trustedScenes = new WeakSet();
 let policy = { enabled: false, strictQQ: false, hostContract: false };
-const grants = new Map(); // output admin private sceneId -> Set(source sceneId)
+const grants = new Map(); // legacy in-process test grants: admin private -> Set(source)
+let aclReader = null;
+
+export function setSceneReadAclReader(reader) {
+  aclReader = typeof reader === "function" ? reader : null;
+}
+
+function sceneParts(sceneId) {
+  const text = String(sceneId ?? "");
+  const match = /^(qq|test):(group|private):(.+)$/.exec(text);
+  return match ? { platform: match[1], kind: match[2], id: match[3] } : null;
+}
+
+function sameQQBot(readerId, sourceId) {
+  const reader = sceneParts(readerId);
+  const source = sceneParts(sourceId);
+  return Boolean(reader && source && reader.platform === "qq" && source.platform === "qq"
+    && reader.kind === "group" && source.kind === "group"
+    && reader.id.split(":")[0] === source.id.split(":")[0]);
+}
 
 function validateSceneInput(scene) {
   if (!scene || typeof scene !== "object") return null;
@@ -77,7 +96,7 @@ export function runWithTrustedScene(scene, fn) {
   return storage.run(trusted, fn);
 }
 
-export function sceneAllows(outputScene, sourceSceneId) {
+export function sceneAllowsMemory(outputScene, sourceSceneId) {
   if (!policy.enabled) {
     // Independent switches: recent context can be on while scene isolation is
     // off. Tagged sources still obey direction/same-scene rules; only genuinely
@@ -90,12 +109,41 @@ export function sceneAllows(outputScene, sourceSceneId) {
   const output = normalizeScene(outputScene);
   if (!output) return false;
   if (output.platform !== "qq") return !String(sourceSceneId ?? "").startsWith("qq:");
+  // A verified Host-minted owner private scene is the owner/admin capability.
+  // It may read every scope; writes are still attributed to this private scene.
+  if (output.kind === "private" && output.admin) return true;
   if (!sourceSceneId) return false;
   if (sourceSceneId === output.sceneId) return true;
-  if (output.kind === "private" && output.admin && policy.hostContract) {
-    return grants.get(output.sceneId)?.has(sourceSceneId) === true;
+  if (output.kind === "private") return false; // non-owner private never crosses scenes
+  if (output.kind !== "group") return false;
+  const source = sceneParts(sourceSceneId);
+  if (!source || source.platform !== "qq" || source.kind !== "group") return false;
+  if (!sameQQBot(output.sceneId, sourceSceneId)) return false;
+  // Directional, read-only group grant. Private, legacy and malformed sources
+  // never qualify; the persisted ACL is the only source of truth.
+  if (aclReader && aclReader(output.sceneId, sourceSceneId) === true) return true;
+  return grants.get(output.sceneId)?.has(sourceSceneId) === true;
+}
+
+export function sceneAllowsRecent(outputScene, sourceSceneId) {
+  if (!policy.enabled) {
+    if (!sourceSceneId) return true;
+    const output = normalizeScene(outputScene);
+    if (!output) return false;
+    return sourceSceneId === output.sceneId;
   }
-  return false;
+  const output = normalizeScene(outputScene);
+  if (!output) return false;
+  if (output.platform !== "qq") return !String(sourceSceneId ?? "").startsWith("qq:");
+  // Raw ephemeral transcript is never shared by the long-term memory group
+  // allowlist. Only the same trusted Scene, or the verified owner capability,
+  // may read it.
+  if (output.kind === "private" && output.admin) return true;
+  return Boolean(sourceSceneId) && sourceSceneId === output.sceneId;
+}
+
+export function sceneAllows(outputScene, sourceSceneId) {
+  return sceneAllowsMemory(outputScene, sourceSceneId);
 }
 
 export function sceneFilterRows(rows) {
@@ -156,5 +204,6 @@ export function listSceneGrants() {
 
 export function resetSceneStateForTests() {
   grants.clear();
+  aclReader = null;
   policy = { enabled: false, strictQQ: false, hostContract: false };
 }

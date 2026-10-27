@@ -6,6 +6,28 @@ import { STR, langOf } from "./lang.js";
 import { withEffortFallback, describeStreamFailure, EFFORT_REJECT_RE } from "./dream.js";
 // v0.9.0（M.O. 项目记忆）：蒸馏写入复用工具路径那把作用域解析器，见 createSummarizer。
 import { createScopeResolver } from "./scope.js";
+import { mintTrustedScene, runWithTrustedScene } from "./scene.js";
+
+const QQ_SCENE_PRESETS = new Set([
+  "amadeus-qq",
+  "amadeus-qq-search",
+  "amadeus-qq-media",
+  "amadeus-qq-media-search",
+  "amadeus-qq-owner"
+]);
+// In strict QQ mode, an unbound Session may use the legacy path only for
+// built-in ordinary DSH presets. An arbitrary/custom preset is not proof that
+// the Session is non-QQ when the QQ Host temporarily loses its binding.
+const ORDINARY_DSH_PRESETS = new Set(["standard", "minimal", "creator", "creative", "default"]);
+
+function sessionAgentPreset(session) {
+  try {
+    const preset = session?.header?.agentPreset;
+    return typeof preset === "string" && preset.trim() ? preset.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 // 编码记忆蒸馏 prompt（codingRetrospect 开启时启用）：在通用记忆之外，额外提取
 // 三类编码专属记忆，专治重复踩坑 / 遗忘被否决方案 / 丢失工程约束。字段仍沿用
@@ -555,7 +577,76 @@ export function createSummarizer(ctx, service, config, deps = {}) {
   // 失败下会被每个 turn/end 重试一次、且窗口只会越攒越大——没有出口。成功即
   // 清零；dispose 一并清理（与 runsUsed / lastRunAt 同生命周期）。
   const parseFailureStreak = new Map();
+  // Strict Scene mode: remember the last Host-resolved scene per Session so an
+  // observed A→B move cannot feed the A window into B. A move is handled by
+  // consuming that window without an LLM call.
+  const lastSceneBySession = new Map();
   let disposed = false;
+
+  function resolveHostScene(session) {
+    try {
+      if (!session || typeof session.id !== "string" || !session.id) return null;
+      const qq = ctx.reflect?.get?.("qq");
+      if (typeof qq?.resolveTrustedSessionScene !== "function") return null;
+      const scene = mintTrustedScene(qq.resolveTrustedSessionScene(session.id));
+      return scene.platform === "qq" ? scene : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function sceneDecision(session, expectedSceneId = null) {
+    const isolation = config.sceneIsolationEnabled === true;
+    const tagged = service.hasSceneScopedRows?.() === true;
+    if (!isolation && !tagged) return { kind: "legacy" };
+    if (!isolation) return { kind: "deny" }; // tagged rows without isolation keep the old gate
+    if (config.sceneStrictQQ !== true) return { kind: "deny" };
+    const preset = sessionAgentPreset(session);
+    // Host binding is stronger evidence than a preset name: a QQ Scene returned
+    // by the in-process Host is authoritative even when the preset is custom or
+    // renamed. Without a binding, only known ordinary DSH presets may fall
+    // back to the legacy path; unknown/custom provenance fails closed.
+    const scene = resolveHostScene(session);
+    if (scene) {
+      if (expectedSceneId && scene.sceneId !== expectedSceneId) return { kind: "deny" };
+      return { kind: "scene", scene };
+    }
+    if (!preset) return { kind: "deny" }; // unknown session provenance fails closed
+    if (QQ_SCENE_PRESETS.has(preset)) return { kind: "deny" }; // known QQ without Host binding
+    return ORDINARY_DSH_PRESETS.has(preset) ? { kind: "legacy" } : { kind: "deny" };
+  }
+
+  function latestSessionSeq(session) {
+    try {
+      const events = typeof session?.snapshotEvents === "function" ? session.snapshotEvents() : session?.events;
+      if (!Array.isArray(events)) return undefined;
+      return events.reduce((max, event) => {
+        const seq = eventSeq(event);
+        return Number.isFinite(seq) ? Math.max(max, seq) : max;
+      }, Number.NEGATIVE_INFINITY);
+    } catch {
+      return undefined;
+    }
+  }
+
+  function skipWindowForSceneChange(session, triggerEvent) {
+    const triggerSeq = eventSeq(triggerEvent);
+    const seq = Number.isFinite(triggerSeq) ? triggerSeq : latestSessionSeq(session);
+    if (!Number.isFinite(seq)) return;
+    const cursor = typeof service.getDistillCursor === "function"
+      ? service.getDistillCursor(session.id)?.last_seq
+      : undefined;
+    const previous = cursor ?? lastDistilledSeq.get(session.id);
+    if (previous === undefined || seq > previous) commitCursor(session.id, seq);
+  }
+
+  function assertSceneStable(session, sceneGuard) {
+    if (!sceneGuard) return;
+    const current = resolveHostScene(session);
+    if (!current || current.sceneId !== sceneGuard.sceneId) {
+      throw new Error("SCENE_CHANGED");
+    }
+  }
 
   /** 写一条 autoSummarize 的 LLM 审计行（审计失败绝不阻塞蒸馏本身）。 */
   function writeAudit(entry) {
@@ -595,8 +686,9 @@ export function createSummarizer(ctx, service, config, deps = {}) {
    * 一个定时器（重复触发不叠加）；被 summarizePeakMaxDeferMinutes 截断时到点照跑
    * （bypassPeak），长高峰不会把蒸馏饿死。定时器 unref——不阻止宿主退出。
    */
-  function scheduleDeferredRun(session) {
+  function scheduleDeferredRun(session, sceneGuard = null) {
     if (disposed || deferredRuns.has(session.id)) return;
+    const expectedSceneId = sceneGuard?.sceneId ?? null;
     const at = nextOffPeakAt(new Date(now()), config.summarizePeakHours ?? "");
     if (!at) return;
     const maxDeferMs = (config.summarizePeakMaxDeferMinutes ?? 0) * 60000;
@@ -608,7 +700,7 @@ export function createSummarizer(ctx, service, config, deps = {}) {
       if (disposed) return;
       // 不传触发事件：补跑要蒸的是「累积后的整窗」（从上次成功游标到最新事件），
       // 拿老 triggerEvent 反而会把窗口卡在它那个 seq 上。
-      summarize(session, undefined, { bypassPeak: capped }).catch((error) => {
+      summarize(session, undefined, { bypassPeak: capped, expectedSceneId }).catch((error) => {
         if (disposed || error?.name === "AbortError") return;
         ctx.logger?.warn?.(`dsh-mneme: deferred summarization failed: ${String(error)}`);
       });
@@ -619,10 +711,24 @@ export function createSummarizer(ctx, service, config, deps = {}) {
 
   async function summarize(session, triggerEvent, opts = {}) {
     if (disposed || inFlight.has(session.id)) return;
-    // Background summarization cannot safely propagate per-scene visibility.
-    // Skip whenever isolation is enabled or tagged rows exist, including rows
-    // that appeared after startup.
-    if (config.sceneIsolationEnabled === true || service.hasSceneScopedRows?.() === true) return;
+    const decision = sceneDecision(session, opts.expectedSceneId ?? null);
+    if (decision.kind === "deny") return;
+    const run = () => summarizeInner(session, triggerEvent, opts, decision.kind === "scene" ? decision.scene : null);
+    if (decision.kind !== "scene") return run();
+    const previous = lastSceneBySession.get(session.id);
+    if (previous && previous !== decision.scene.sceneId) {
+      // The session moved between observed runs. Consume the ambiguous window
+      // without an LLM call; future same-scene windows can summarize again.
+      lastSceneBySession.set(session.id, decision.scene.sceneId);
+      skipWindowForSceneChange(session, triggerEvent);
+      return;
+    }
+    lastSceneBySession.set(session.id, decision.scene.sceneId);
+    return runWithTrustedScene(decision.scene, run);
+  }
+
+  async function summarizeInner(session, triggerEvent, opts = {}, sceneGuard = null) {
+    if (disposed || inFlight.has(session.id)) return;
 
     const header = session.requestHeader?.()?.config;
     // Config override takes priority, then session header, then nothing.
@@ -664,7 +770,7 @@ export function createSummarizer(ctx, service, config, deps = {}) {
         status: "skipped",
         error_message: "peak-hours"
       });
-      scheduleDeferredRun(session);
+      scheduleDeferredRun(session, sceneGuard);
       return;
     }
     const prevRuns = runsUsed.get(session.id);
@@ -694,6 +800,8 @@ export function createSummarizer(ctx, service, config, deps = {}) {
         : undefined;
       const previousSeq = persistedCursor?.last_seq ?? lastDistilledSeq.get(session.id);
       const triggerSeq = eventSeq(triggerEvent);
+      // Read-side scene check immediately before the transcript is materialized.
+      assertSceneStable(session, sceneGuard);
       // 只读取上次成功游标之后、当前 turn/end 之前的事件。旧版 snapshotEvents
       // 即使忽略范围参数，collectMessages 仍会按事件 seq 二次过滤。
       const collected = collectMessages(
@@ -703,6 +811,9 @@ export function createSummarizer(ctx, service, config, deps = {}) {
         previousSeq,
         triggerSeq
       );
+      // The binding may have changed during collection; do not send this window
+      // to the LLM if it is no longer the same Scene.
+      assertSceneStable(session, sceneGuard);
       const hasNewEvents = collected.hasEvents
         || (triggerSeq !== undefined && (previousSeq === undefined || triggerSeq > previousSeq));
       if (!hasNewEvents) return;
@@ -813,6 +924,9 @@ export function createSummarizer(ctx, service, config, deps = {}) {
           let text = "";
           let aborted = false;
           try {
+            // Re-check at the LLM boundary; a scene switch must not let the
+            // collected window enter the model.
+            assertSceneStable(session, sceneGuard);
             for await (const chunk of ctx.llm.stream(callOptions)) {
               if (STREAM_CHUNK_TYPES.has(chunk.type)) assembler.push(toProtocolChunk(chunk));
               if (chunk.type === "text-delta") {
@@ -994,6 +1108,9 @@ export function createSummarizer(ctx, service, config, deps = {}) {
         ? collectTranscriptRecords(session, previousSeq, triggerSeq, distilledAt)
         : null;
       const writeWindow = () => {
+        // Write-side scene check: reject the entire atomic write if the binding
+        // moved while the LLM was running.
+        assertSceneStable(session, sceneGuard);
         const savedIds = [];
         for (const { entry, source, dup } of writes) {
           const outcome = service.saveWithDedupe({
@@ -1042,6 +1159,7 @@ export function createSummarizer(ctx, service, config, deps = {}) {
         if (typeof service.transaction !== "function") {
           throw new Error("dsh-mneme: atomic summarization writes require service.transaction");
         }
+        assertSceneStable(session, sceneGuard);
         service.transaction(writeWindow);
       } else {
         // 空数组是合法成功：没有记忆写入，但本次事件窗口仍然应被持久消费。

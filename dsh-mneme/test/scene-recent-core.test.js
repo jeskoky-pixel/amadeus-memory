@@ -7,7 +7,7 @@ import { createStore } from "../src/store.js";
 import { createService } from "../src/service.js";
 import { assertIsolatedMemoryDir } from "../src/qa-guard.js";
 import {
-  mintTrustedScene, runWithTrustedScene, configureScene, grantSceneRead, revokeSceneRead,
+  mintTrustedScene, runWithTrustedScene, configureScene, grantSceneRead,
   resetSceneStateForTests, sceneIdOf, normalizeScene, isExplicitCoreRequest
 } from "../src/scene.js";
 import {
@@ -88,7 +88,7 @@ test("group B secret never reaches group A through search, inject, graph attr, o
     assert.equal((await runWithTrustedScene(groupA, () => h.service.searchMemories("小雨"))).length, 0);
     assert.equal((await runWithTrustedScene(groupA, () => h.service.searchMemories("管理员"))).length, 0);
     assert.ok((await runWithTrustedScene(groupA, () => h.service.injectCandidates({ query: "管理员喜欢谁", maxItems: 5 }))).every((row) => row.id !== secret.memory.id));
-    assert.equal((await runWithTrustedScene(admin, () => h.service.searchMemories("小雨"))).length, 0, "no grant yet");
+    assert.equal((await runWithTrustedScene(admin, () => h.service.searchMemories("小雨"))).length, 1, "verified owner admin reads all Scenes");
 
     // Graph attrs do not expire across scenes, and attr search is scene filtered.
     const entity = h.store.createEntity({ name: "管理员", type: "person" });
@@ -104,14 +104,10 @@ test("group B secret never reaches group A through search, inject, graph attr, o
     assert.equal((await runWithTrustedScene(groupA, () => h.service.searchMemories("attr:喜欢"))).length, 1);
     assert.ok((await runWithTrustedScene(groupA, () => h.service.searchMemories("attr:喜欢"))).every((row) => row.scene_scope === groupA.sceneId));
 
-    // Admin private needs an explicit directional grant; revocation is per-request.
-    assert.equal((await runWithTrustedScene(admin, () => h.service.searchMemories("小雨"))).length, 0);
-    grantSceneRead(admin, groupB);
+    // Admin private is a Host capability: it reads group B without a grant.
     assert.equal((await runWithTrustedScene(admin, () => h.service.searchMemories("小雨"))).length, 1);
     assert.equal((await runWithTrustedScene(groupA, () => h.service.searchMemories("小雨"))).length, 0,
-      "admin speaking in group A does not inherit admin private grant");
-    revokeSceneRead(admin, groupB);
-    assert.equal((await runWithTrustedScene(admin, () => h.service.searchMemories("小雨"))).length, 0);
+      "group A does not inherit owner access");
     assert.throws(() => grantSceneRead(admin, { platform: "qq", kind: "group", id: "group-b", verified: true }), /SCENE_UNVERIFIED/);
   } finally {
     h.close();
@@ -134,10 +130,8 @@ test("Recent Context is bounded, deduped, directional, expiring and in-memory on
     assert.equal(recordTrustedRecentEvent({ eventId: "b4", scene: groupB, text: "群 B 第四件事", at: t0 + 3 }).ok, true);
 
     assert.equal(readRecentContext({ outputScene: groupA, now: t0 + 4 }).length, 0);
-    assert.equal(readRecentContext({ outputScene: admin, now: t0 + 4 }).length, 0, "untrusted grant absent");
-    grantSceneRead(admin, groupB);
     const seen = readRecentContext({ outputScene: admin, now: t0 + 4 });
-    assert.equal(seen.length, 3, "maxEvents=3 evicts the oldest");
+    assert.equal(seen.length, 3, "verified owner admin reads all Recent Scenes; maxEvents=3 evicts the oldest");
     assert.equal(new Set(seen.map((e) => e.eventId)).size, 3);
     assert.equal(seen.some((e) => e.eventId === "b1"), false);
     assert.equal(readRecentContext({ outputScene: admin, now: t0 + 1005 }).length, 0, "TTL expires");
