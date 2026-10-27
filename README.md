@@ -2,13 +2,13 @@
 
 Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权的长期信息，在对话时检索相关记忆，并提供可视化的记忆、标签权重、实体关系和备份管理。此版本继承 Mneme 的插件 ID 与数据格式，方便已有用户升级。
 
-> 当前增强版 `0.9.5-amadeus.2` 已通过 [PR #2](https://github.com/jeskoky-pixel/amadeus-memory/pull/2) 合并到 `main`，尚未公开发行或部署到生产 DSH。
+> `0.9.5-amadeus.2` 已通过 [PR #2](https://github.com/jeskoky-pixel/amadeus-memory/pull/2) 合并到 `main`；`0.9.5-amadeus.3` 是 [PR #3](https://github.com/jeskoky-pixel/amadeus-memory/pull/3) 的开发候选。尚未公开发行或部署到生产 DSH。
 
 ## 日常使用
 
-在 DSH 设置中打开 **Amadeus 记忆**，可以看到记忆库状态，创建、搜索、编辑、归档和删除记忆；调整自动记忆、注入和 Embedding 参数；设置标签及实体权重；创建、校验并确认恢复备份。复杂图谱与审计仍可从“打开完整记忆管理”进入原 Mneme 面板。若向量服务未配置，关键词检索继续可用；页面会明确显示降级状态。安装前请先阅读 [中文用户指南](dsh-mneme/docs/USER_GUIDE.zh.md) 和 [安装与升级说明](dsh-mneme/docs/INSTALL.md)。
+在 DSH 设置中打开 **Amadeus 记忆**，按 **记忆 / 实体 / 状态 / 设置** 浏览。记忆页区分长期记忆和近期上下文；实体页提供按单一 Scene 选择的只读图谱；设置页再分基础、检索、场景和备份。记忆可创建、搜索、编辑、归档和删除，核心记忆可受保护。原 Mneme 面板在没有 Scene 数据且未启用严格模式时仍可用；严格模式下旧图谱与身份接口安全关闭。若向量服务未配置，关键词检索继续可用。安装前请阅读 [中文用户指南](dsh-mneme/docs/USER_GUIDE.zh.md) 和 [安装与升级说明](dsh-mneme/docs/INSTALL.md)。
 
-[![tests](https://img.shields.io/badge/tests-512%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/2)
+[![tests](https://img.shields.io/badge/tests-523%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
 
 This repository packages a separately installable Mneme bundle in [`dsh-mneme/`](dsh-mneme/). It extends the existing SQLite memory store, retrieval, graph and Desktop panel with stable typed identities, reviewed aliases and canonical links, Tag/entity ranking preferences, controlled Life experience intake, Scene-aware isolation, Recent Context and Core Memories. The upstream import and license are recorded in [`UPSTREAM.md`](UPSTREAM.md).
 
@@ -16,8 +16,8 @@ The enhancement was merged into `main` through [Memory PR #1](https://github.com
 
 ## Package and installation
 
-- Source package: `dsh-mneme/`, package name `@modusensus/dsh-mneme`, enhanced version `0.9.5-amadeus.2` (same plugin ID/data path as upstream 0.9.4).
-- Verified installation archive: `dist/modusensus-dsh-mneme-0.9.5-amadeus.2.tgz`. Its SHA-256 and isolated Desktop acceptance are recorded in [`SCENE_RECENT_CORE_ACCEPTANCE.md`](docs/verification/SCENE_RECENT_CORE_ACCEPTANCE.md).
+- Source package: `dsh-mneme/`, package name `@modusensus/dsh-mneme`, candidate version `0.9.5-amadeus.3` (same plugin ID/data path as upstream 0.9.4).
+- The released baseline archive is `dist/modusensus-dsh-mneme-0.9.5-amadeus.2.tgz`; its SHA-256 and isolated Desktop acceptance are recorded in [`SCENE_RECENT_CORE_ACCEPTANCE.md`](docs/verification/SCENE_RECENT_CORE_ACCEPTANCE.md). PR #3 adds a separate candidate package and acceptance record.
 - Native DSH Settings entry: **Amadeus 记忆 / Amadeus Memory** (overview, automatic memory, Embedding, Tag/entity preferences, link to the full Memory panel).
 - In an isolated DSH Desktop Profile, choose and verify a dedicated `memoryDir` **before enabling** the bundle, then use Plugin Manager **Install bundle** with this archive. Set `apiToken` only if the optional trusted intake API is needed. The source package can also be linked during development.
 - Keep only one Memory bundle enabled; the same plugin ID must not run twice. Keep the old Mneme package and a SQLite consistent backup for rollback. Do not point a development Profile at a live memory database.
@@ -28,13 +28,13 @@ The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack
 
 ```powershell
 cd dsh-mneme
-npm test        # 运行 512 个测试
+npm test        # 运行 523 个测试
 npm run test:all              # 完整套件，含上游发行专用测试
 npm run test:upstream-release # 单独运行上游发行专用测试
 npm run test:compat-windows   # Windows symlink/spawn capability probe
 ```
 
-`npm test` is the green product gate (512 tests): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
+`npm test` is the product gate (523 tests at the `.3` candidate): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
 
 ## Documentation
 
@@ -49,6 +49,7 @@ npm run test:compat-windows   # Windows symlink/spawn capability probe
 - [Initial and focused quality acceptance](docs/verification/MEMORY_ENHANCER_ACCEPTANCE.md)
 - [Real isolated DSH Desktop acceptance](docs/verification/REAL_DSH_ACCEPTANCE_2026-10-25.md)
 - [Scene / Recent / Core final acceptance](docs/verification/SCENE_RECENT_CORE_ACCEPTANCE.md)
+- [QQ Scene graph and 1.0 readiness](docs/verification/MEMORY_QQ_SCENE_GRAPH_ACCEPTANCE.md)
 
 ## 路线图
 
@@ -57,6 +58,7 @@ npm run test:compat-windows   # Windows symlink/spawn capability probe
 | **v0.7** | 记忆核心与面板 | ✅ 已发布 |
 | **v0.8** | 实体与身份增强 | ✅ 已发布 |
 | **v0.9** | Amadeus Memory 产品化（0.9.5-amadeus.2） | 已合并 `main`，未公开发行或生产部署 |
+| **v1.0** | QQ Scene 安全运行与图谱（0.9.5-amadeus.3 候选） | PR #3 开发验收中；尚未宣布 1.0 |
 
 ## Roadmap
 
@@ -65,8 +67,9 @@ npm run test:compat-windows   # Windows symlink/spawn capability probe
 | **v0.7** | Memory core and panel | ✅ Released |
 | **v0.8** | Entity and identity enhancement | ✅ Released |
 | **v0.9** | Amadeus Memory productization (0.9.5-amadeus.2) | Merged into `main`; not publicly released or deployed |
+| **v1.0** | QQ Scene safety and graph (`0.9.5-amadeus.3` candidate) | PR #3 acceptance in progress; not declared 1.0 |
 
-The isolated Desktop acceptance exercises only synthetic memories. Mouse-driven GUI operation and live QQ Host Scene integration remain unverified. PR #1 and PR #2 are merged; production deployment remains a separate decision.
+The `.3` Scene graph has been exercised through a real isolated Desktop GUI with synthetic memories. The earlier QQ Host test also exercised real model requests through isolated QQ Sessions; production recall quality and latency remain unmeasured. PR #1 and PR #2 are merged; PR #3 remains open, and production deployment is a separate decision.
 
 ## 隐私承诺
 

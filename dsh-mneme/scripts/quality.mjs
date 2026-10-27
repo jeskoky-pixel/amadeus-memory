@@ -27,6 +27,7 @@ const files = [
   "test/release-package-workflow.test.js",
   "test/scene-recent-core.test.js",
   "test/summarize-scene-gate.test.js",
+  "test/summarize-scene-contract.test.js",
   "test/backup.test.js",
   "test/memory-management-api.test.js",
   "test/lifecycle-productization.test.js",

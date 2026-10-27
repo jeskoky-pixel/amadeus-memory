@@ -101,7 +101,7 @@ export function runPrivacyCheck({ root = process.cwd(), sourceOnly = false, dist
   if (existsSync(pkgJson)) {
     pkg = JSON.parse(readFileSync(pkgJson, "utf8"));
     if (pkg.name !== "@modusensus/dsh-mneme") problems.push(`unexpected package name: ${pkg.name}`);
-    if (pkg.version !== "0.9.5-amadeus.2") problems.push(`unexpected package version: ${pkg.version}`);
+    if (pkg.version !== "0.9.5-amadeus.3") problems.push(`unexpected package version: ${pkg.version}`);
     if (pkg.amadeus?.edition !== "enhanced") problems.push("amadeus.edition must be enhanced");
     for (const required of ["src/qa-guard.js", "src/backup.js", "lib/qa-guard.js", "lib/backup.js", "docs/BACKUP_ROLLBACK.md"]) {
       if (!existsSync(join(root, required))) problems.push(`missing required file: ${required}`);

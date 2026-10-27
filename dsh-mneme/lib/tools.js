@@ -1,5 +1,5 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { createScopeResolver, normalizeExplicitScope, sessionKeyOf } from "./scope.js";
+import { createScopeResolver, normalizeExplicitScope, sessionKeyOf, sessionOf } from "./scope.js";
 import { describeLocalRuntime, resolveRuntimeEntry } from "./runtime/loader.js";
 import { defaultRuntimeDir } from "./runtime/layout.js";
 import { hostModulesDir, loadRuntimeManifest, provisionRuntime } from "./runtime/provision.js";
@@ -10,7 +10,7 @@ import { injectChildEnabled } from "./config.js";
 import { normalizeScopeStateDimension, normalizeScopeStateValue, normalizeScopeStateState } from "./scope-state.js";
 import { lastUserQuery } from "./inject.js";
 import { normalizeIdentityKey } from "./identity.js";
-import { sceneFilterRows, currentScene, isAdminPrivateScene, isExplicitCoreRequest } from "./scene.js";
+import { sceneFilterRows, currentScene, isAdminPrivateScene, isExplicitCoreRequest, mintTrustedScene, runWithTrustedScene, scenePolicy } from "./scene.js";
 
 const TEXT_OUTPUT = (text) => [{ type: "text", text }];
 // Read-only enhancer tools stay small and bounded even when the underlying
@@ -24,6 +24,64 @@ const IDENTITY_MAX_RELATIONS = 20;
 // live patch reload (DSH Desktop `patchReload: "live"`) where a plugin may be
 // re-applied on the same tools registry without an intervening unregister.
 const REGISTERED_TOOLS = new WeakMap();
+const QQ_SCENE_PRESETS = new Set([
+  "amadeus-qq",
+  "amadeus-qq-search",
+  "amadeus-qq-media",
+  "amadeus-qq-media-search",
+  "amadeus-qq-owner"
+]);
+
+function toolSessionPreset(exec) {
+  try {
+    const session = sessionOf(exec);
+    const preset = session?.header?.agentPreset;
+    return typeof preset === "string" && preset.trim() ? preset.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function toolTrustedScene(ctx, exec, config) {
+  if (config?.sceneIsolationEnabled !== true || config?.sceneStrictQQ !== true) return { wrap: false };
+  const preset = toolSessionPreset(exec);
+  if (!preset) throw new Error("SCENE_UNVERIFIED: Session provenance is unavailable");
+  // The Host binding is authoritative. Consult it before trusting any preset:
+  // a forged/renamed QQ preset must not let a QQ Session run unbound.
+  let hostScene = null;
+  let hostError = null;
+  try {
+    const sessionId = sessionOf(exec)?.id;
+    if (typeof sessionId !== "string" || !sessionId) throw new Error("QQ_SESSION_REQUIRED");
+    const qq = ctx.reflect?.get?.("qq");
+    if (typeof qq?.resolveTrustedSessionScene !== "function") throw new Error("QQ_HOST_UNAVAILABLE");
+    const raw = qq.resolveTrustedSessionScene(sessionId);
+    hostScene = mintTrustedScene(raw);
+    if (hostScene.platform !== "qq") throw new Error("QQ_SCENE_REQUIRED");
+  } catch (error) {
+    hostError = error;
+  }
+  if (hostScene) return { wrap: true, scene: hostScene };
+  if (QQ_SCENE_PRESETS.has(preset)) {
+    throw new Error(`SCENE_UNVERIFIED: ${String(hostError?.message ?? hostError ?? "QQ_HOST_UNAVAILABLE")}`);
+  }
+  return { wrap: false };
+}
+
+function toolSceneSelection(args, service) {
+  if (scenePolicy().enabled !== true) return null;
+  const readable = typeof service.listReadableSceneScopes === "function"
+    ? service.listReadableSceneScopes()
+    : null;
+  if (!Array.isArray(args?.scenes)) return readable;
+  const requested = [...new Set(args.scenes
+    .filter((scope) => typeof scope === "string" && scope.trim())
+    .map((scope) => scope.trim()))].slice(0, 20);
+  // `null` means the verified owner may read all Scenes; explicit selection is
+  // still only a narrowing filter over that all-set.
+  if (readable === null) return requested;
+  return requested.filter((scope) => readable.includes(scope));
+}
 
 // Wire shape emitted by service.toApiList: shared by memory_search and
 // memory_list so their output schemas always declare every key the runtime
@@ -195,6 +253,9 @@ function occurredWindow(args) {
 // flag 关或会话 scope 未解析出（flag 关时解析器返回 null）→ 空对象不过滤；
 // scope 为 {null,null}（匿名会话）时照传——store 侧 fail-closed 只放行未标注行。
 function strictVisibility(config, scope) {
+  // Same explicit owner exception as service.gateByScope: verified admin-private
+  // reads see all active Scenes regardless of group agent/workspace labels.
+  if (isAdminPrivateScene(currentScene())) return {};
   if (config?.strictScope !== true || !scope) return {};
   return { visibility: { agentScope: scope.agent_scope, workspaceScope: scope.workspace_scope } };
 }
@@ -365,10 +426,28 @@ export function createTools(ctx, service, config, embedder) {
   // 关、或会话身份取不到（scope 为 null）时恒可见（与 get 的短路语义一致）。
   const visibleUnderStrictScope = (memory, exec) => {
     if (!memory) return false;
-    if (sceneFilterRows([memory]).length === 0) return false;
+    // Mutation path: reading every Scene as owner never grants a model write.
+    // Tagged rows are mutable only by the exact Scene that owns them.
+    if (scenePolicy().enabled === true) {
+      // Strict QQ model mutations are Scene-bound. Legacy untagged rows are
+      // owner-readable but never model-mutable; only the authenticated browser
+      // owner admin path may explicitly manage them.
+      if (!memory.scene_scope) return false;
+      const scene = currentScene();
+      if (!scene || memory.scene_scope !== scene.sceneId) return false;
+    } else if (sceneFilterRows([memory]).length === 0) {
+      return false;
+    }
     if (config?.strictScope !== true) return true;
     const scope = resolveSessionScope(exec);
     return !scope || service.isVisibleInScope(memory, scope);
+  };
+  // Read path: verified owner admin sees all active Scenes despite agent/workspace
+  // labels; non-owner behavior is unchanged.
+  const visibleForRead = (memory, exec) => {
+    if (!memory) return false;
+    if (isAdminPrivateScene(currentScene())) return sceneFilterRows([memory]).length === 1;
+    return visibleUnderStrictScope(memory, exec);
   };
   // 在调用点以「展开恒为 undefined」的形态前置校验（抛错即中止写入）。
   const assertVisibleForTool = (id, exec) => {
@@ -484,7 +563,8 @@ export function createTools(ctx, service, config, embedder) {
         semantic: { type: "boolean", description: "Shorthand: enable semantic (vector) recall (same as mode=vector when true)" },
         rerank: { type: "boolean", description: "Run cross-encoder rerank over candidates when a local reranker is configured (default true)" },
         occurred_from: { type: "string", description: "Optional ISO date/timestamp lower bound on when the remembered event happened (occurred_at, falling back to created_at). Date-only values are inclusive from that day's 00:00Z." },
-        occurred_to: { type: "string", description: "Optional ISO date/timestamp upper bound on occurred_at. Date-only values are inclusive through that day's 23:59:59.999Z." }
+        occurred_to: { type: "string", description: "Optional ISO date/timestamp upper bound on occurred_at. Date-only values are inclusive through that day's 23:59:59.999Z." },
+        scenes: { type: "array", items: { type: "string" }, description: "Optional owner/group-allowed Scene selection used only to NARROW reads (up to 20). Omit to use the ACL default. Never grants access." }
       },
       output: {
         schema: {
@@ -518,10 +598,12 @@ export function createTools(ctx, service, config, embedder) {
         const scope = resolveSessionScope(exec);
         const occurredFrom = args.occurred_from ?? null;
         const occurredTo = args.occurred_to ?? null;
+        const sceneScopes = toolSceneSelection(args, service);
         const rows = await service.searchMemories(args.query, {
           mode,
           topK: limit,
           useRerank: args.rerank !== false,
+          ...(sceneScopes !== null ? { sceneScopes } : {}),
           ...(scope ? { scope } : {}),
           ...(occurredFrom !== null || occurredTo !== null ? { occurredFrom, occurredTo } : {})
         });
@@ -538,7 +620,8 @@ export function createTools(ctx, service, config, embedder) {
         offset: { type: "integer", description: "Page offset (default 0)" },
         include_archived: { type: "boolean", description: "Include archived (hidden) entries so they can be found and restored (default false)" },
         occurred_from: { type: "string", description: "Optional ISO date/timestamp lower bound on when the remembered event happened (occurred_at, falling back to created_at). Date-only values are inclusive from that day's 00:00Z." },
-        occurred_to: { type: "string", description: "Optional ISO date/timestamp upper bound on occurred_at. Date-only values are inclusive through that day's 23:59:59.999Z." }
+        occurred_to: { type: "string", description: "Optional ISO date/timestamp upper bound on occurred_at. Date-only values are inclusive through that day's 23:59:59.999Z." },
+        scenes: { type: "array", items: { type: "string" }, description: "Optional owner/group-allowed Scene selection used only to NARROW reads (up to 20). Omit to use the ACL default. Never grants access." }
       },
       output: {
         schema: {
@@ -549,7 +632,8 @@ export function createTools(ctx, service, config, embedder) {
               type: "array", required: true,
               items: MEMORY_ITEM_SCHEMA
             },
-            total: { type: "integer", required: true }
+            total: { type: "integer", required: true },
+            truncated: { type: "boolean" }
           }
         },
         render: (_args, value) => {
@@ -561,19 +645,28 @@ export function createTools(ctx, service, config, embedder) {
           return TEXT_OUTPUT(`${items.length} memory entries (of ${value.total}):\n\n${body}`);
         }
       },
-      async execute(args) {
+      async execute(args, exec) {
         const includeArchived = args.include_archived === true;
-        const rows = service.toApiList(service.list({
+        const pageLimit = Math.min(100, Math.max(1, Number(args.limit) || 50));
+        const pageOffset = Math.max(0, Number(args.offset) || 0);
+        const sceneScopes = toolSceneSelection(args, service);
+        const visibility = strictVisibility(config, resolveSessionScope(exec));
+        const common = {
           type: args.type,
-          limit: args.limit ?? 50,
-          offset: args.offset ?? 0,
           includeArchived,
           ...occurredWindow(args),
-          // A3：strict 开启时按会话 scope 硬过滤（宿主按 (args, runContext) 调用，
-          // 从 arguments 取第二参）。
-          ...strictVisibility(config, resolveSessionScope(arguments[1]))
-        }).filter((row) => sceneFilterRows([row]).length === 1));
-        return { items: rows, total: rows.length };
+          ...visibility,
+          ...(sceneScopes !== null ? { sceneScopes } : {})
+        };
+        const rows = service.toApiList(service.list({
+          ...common,
+          limit: pageLimit,
+          offset: pageOffset
+        }), { includePreference: false });
+        const total = typeof service.count === "function"
+          ? service.count(args.type, common)
+          : rows.length;
+        return { items: rows, total, truncated: false };
       }
     }),
 
@@ -601,17 +694,11 @@ export function createTools(ctx, service, config, embedder) {
           return TEXT_OUTPUT(`${m.title}\nID: ${m.id} | type: ${m.type} | importance: ${m.importance}${doc}${MEMORY_PROVENANCE(m)}\n\n${m.content}`);
         }
       },
-      async execute(args) {
+      async execute(args, exec) {
         const memory = service.getById(args.id);
         if (memory === undefined) throw new Error("memory not found");
-        // v0.8.0 A3：strictScope 下他 scope 的行按不存在处理（无存在性泄漏）。
-        // 宿主注册表按 (args, runContext) 两参调用处理器，从 arguments 取第二参。
-        const runContext = arguments[1];
-        const scope = resolveSessionScope(runContext);
-        if (config.strictScope === true && scope && !service.isVisibleInScope(memory, scope)) {
-          throw new Error("memory not found");
-        }
-        if (sceneFilterRows([memory]).length === 0) throw new Error("memory not found");
+        // Owner read exception; non-owner strictScope still hides other scopes.
+        if (!visibleForRead(memory, exec)) throw new Error("memory not found");
         return { memory: service.toApiList([memory])[0] };
       }
     }),
@@ -1448,6 +1535,22 @@ export function createTools(ctx, service, config, embedder) {
   if (config?.organizeEnabled !== true) hiddenTools.add("memory_organize");
   if (config?.coreMemoryEnabled !== true) hiddenTools.add("memory_core_save");
 
+  // Resolve the trusted Scene at execution time from the Host's Session binding,
+  // then run the whole tool callback inside that capability. Prompt-render ALS
+  // does not survive a later tool invocation; without this wrapper, strict Scene
+  // reads would fail closed and writes would lose scene_scope.
+  const withTrustedSceneExecution = (tool) => {
+    if (typeof tool.execute !== "function") return tool;
+    return {
+      ...tool,
+      async execute(args, exec) {
+        const decision = toolTrustedScene(ctx, exec, config);
+        if (!decision.wrap) return tool.execute(args, exec);
+        return runWithTrustedScene(decision.scene, () => tool.execute(args, exec));
+      }
+    };
+  };
+
   for (const tool of tools) {
     if (hiddenTools.has(tool.name)) {
       ctx.logger?.info?.(`[dsh-mneme] tool "${tool.name}" hidden by config (disableMemorySearch/disableMemoryArchive/organizeEnabled)`);
@@ -1458,7 +1561,7 @@ export function createTools(ctx, service, config, embedder) {
         continue;
       }
       registeredTools.add(tool.name);
-      ctx.tools.register(tool);
+      ctx.tools.register(withTrustedSceneExecution(tool));
   }
 
   return tools;

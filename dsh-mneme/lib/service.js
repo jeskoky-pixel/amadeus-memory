@@ -17,7 +17,7 @@ import { createIdentityService } from "./identity.js";
 import { createPreferenceService } from "./preferences.js";
 import { createIntakeService } from "./intake.js";
 import { normalizeEventTag, stripEventTags, eventTagForKind, isEventTag } from "./trusted-events.js";
-import { currentScene, sceneFilterRows, sceneIdOf, isAdminPrivateScene, scenePolicy } from "./scene.js";
+import { currentScene, sceneFilterRows, sceneIdOf, isAdminPrivateScene, scenePolicy, sceneAllowsMemory } from "./scene.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
@@ -458,8 +458,30 @@ export function createService({ store, mirror, config, onWrite, logger, document
    */
   function gateByScope(rows, scope) {
     const gated = scopeStateGate.filter(rows);
+    // Explicit verified owner exception: the Host-minted admin-private scene
+    // reads all memory Scenes, so old agent/workspace labels on group memories
+    // must not silently hide them. This bypass is capability-based (WeakSet Scene
+    // object), never an agentPreset/argument check, and does not affect any
+    // non-owner read.
+    if (isAdminPrivateScene(currentScene())) return gated;
     if (config?.strictScope !== true || !scope) return gated;
     return gated.filter((m) => isVisibleInScope(m, scope));
+  }
+
+  function trustedReadableSceneScopes() {
+    if (scenePolicy().enabled !== true) return null;
+    const scene = currentScene();
+    if (!scene) return [];
+    // Verified owner default = all Scenes (including legacy). The SQL filter is
+    // omitted; explicit owner selection is handled by the tool layer.
+    if (isAdminPrivateScene(scene)) return null;
+    if (scene.platform === "qq" && scene.kind === "group") {
+      // Authorization comes from the canonical reader Scene plus its persisted
+      // grants, never from which Scenes happen to appear in the top 500 rows.
+      const sources = store.listSceneReadSources(scene.sceneId, { limit: 500 });
+      return [scene.sceneId, ...sources.filter((source) => sceneAllowsMemory(scene, source))];
+    }
+    return [scene.sceneId];
   }
 
   /**
@@ -488,6 +510,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const scorer = preferences.createScorer();
     const recallWindow = scorer.active ? Math.min(200, Math.max(lim * 8, 60)) : lim;
     const merged = new Map();
+    const readableScopes = trustedReadableSceneScopes();
     const groupSummaries = resolution.ambiguous
       ? groups.map((group) => ({
           id: group.id,
@@ -518,7 +541,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       for (const member of group.members) labels.add(member.name);
       const keywordLimit = scorer.active ? recallWindow : topK * 2;
       for (const label of labels) {
-        for (const mem of store.search(label, { limit: keywordLimit })) {
+        for (const mem of store.search(label, { limit: keywordLimit, sceneScopes: readableScopes })) {
           if (merged.has(mem.id)) continue;
           // A bare name shared by two unmerged people cannot attribute a
           // keyword-only row to one of them. Keep the row, but only stamp a
@@ -605,10 +628,10 @@ export function createService({ store, mirror, config, onWrite, logger, document
    * normalized to [0,1]. Failures degrade to [] — BM25 is a recall booster,
    * never a correctness gate.
    */
-  function bm25Recall(q, limit) {
+  function bm25Recall(q, limit, sceneScopes = trustedReadableSceneScopes()) {
     if (config?.bm25SearchEnabled === false) return [];
     try {
-      const docs = store.list({ limit: 500, includeForgotten: false }).filter((m) => !m.archived);
+      const docs = store.list({ limit: 500, includeForgotten: false, sceneScopes }).filter((m) => !m.archived);
       if (!docs.length) return [];
       return createBM25Index(docs).search(q, { limit });
     } catch {
@@ -987,6 +1010,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
       occurredFrom = null,
       occurredTo = null,
       publicOnly = false,
+      sceneScopes = null,
       recordRecall = options.recordRecall ?? (config?.recallRecordDefault ?? true)
     } = options;
     const q = String(query ?? "").trim();
@@ -1018,11 +1042,19 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const recallLimit = preferencePoolActive
       ? Math.min(200, Math.max(lim * 8, 60))
       : lim;
+    // Scene ACL is applied after fusion but before dedupe/rerank/top-K. Fetch a
+    // larger bounded candidate pool so disallowed high-rank rows cannot starve
+    // valid same-Scene/allowlisted recall.
+    const sceneRecallLimit = config?.sceneIsolationEnabled === true || sceneScopes !== null
+      ? Math.max(recallLimit, 200)
+      : recallLimit;
+    const effectiveRecallLimit = Math.max(recallLimit, sceneRecallLimit);
+    const effectiveSceneScopes = Array.isArray(sceneScopes) ? sceneScopes : trustedReadableSceneScopes();
 
     // Keyword results, decorated with a score so they can be weight-blended
     // with vector results and reported uniformly. source tracks where each
     // candidate came from for the recall layer receipt.
-    const rawKeyword = store.search(q, { limit: recallLimit });
+    const rawKeyword = store.search(q, { limit: effectiveRecallLimit, sceneScopes: effectiveSceneScopes });
     const keyword = rawKeyword.map((m) => ({ ...m, score: scoreKeyword(m, q), source: "keyword" }));
     const wantVector = mode === "vector" || mode === "hybrid" || (mode === "auto" && !!embedder);
     let vector = [];
@@ -1043,8 +1075,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
             ? Math.min(0.5, adaptiveThreshold(q))
             : (threshold ?? 0);
           const search = vectorIndex
-            ? vectorIndex.search(qv, { limit: recallLimit * 2, threshold: fetchThreshold })
-            : store.searchVector(qv, { limit: recallLimit * 2, threshold: fetchThreshold });
+            ? vectorIndex.search(qv, { limit: effectiveRecallLimit * 2, threshold: fetchThreshold, sceneScopes: effectiveSceneScopes })
+            : store.searchVector(qv, { limit: effectiveRecallLimit * 2, threshold: fetchThreshold, sceneScopes: effectiveSceneScopes });
           const finalThreshold = adaptive && threshold === undefined
             ? adaptiveThreshold(q, search)
             : (threshold ?? 0);
@@ -1058,7 +1090,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // BM25 third path (v0.5.0 1.1): IDF-weighted token overlap recalls rows
     // whose query terms are scattered — the gap LIKE substring matching
     // cannot close. Scores are already normalized to [0,1].
-    const bm25 = bm25Recall(q, recallLimit).map((m) => ({ ...m, source: "bm25" }));
+    const bm25 = bm25Recall(q, effectiveRecallLimit, effectiveSceneScopes).map((m) => ({ ...m, source: "bm25" }));
     // Loose blend weight: BM25 confirms and backfills, never dominates the
     // semantic signal. Same-memory overlap boosts, unseen ids backfill.
     const wb = 0.3;
@@ -1067,7 +1099,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // mentioned entities pull their linked memories into the pool. Keyword
     // mode stays text-only per the mode contract, so the axis is skipped
     // there even when enabled.
-    const entity = mode === "keyword" ? [] : entityRecall(q, recallLimit, { publicOnly });
+    const entity = mode === "keyword" ? [] : entityRecall(q, effectiveRecallLimit, { publicOnly });
     // Entity axis shares BM25's backfill weight (we = wb) until #217 recall
     // data justifies a distinct entity weight.
 
@@ -1075,7 +1107,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const wv = config?.hybridSearchVectorWeight ?? DEFAULT_HYBRID_WEIGHTS.vector;
     const wk = config?.hybridSearchKeywordWeight ?? DEFAULT_HYBRID_WEIGHTS.keyword;
 
-    const { merged: fusedMerged, signals } = fuseRecall({ keyword, vector, bm25, entity, lim: recallLimit, mode, wv, wk, wb, we: wb });
+    const { merged: fusedMerged, signals } = fuseRecall({ keyword, vector, bm25, entity, lim: effectiveRecallLimit, mode, wv, wk, wb, we: wb });
     let merged = fusedMerged;
     // v0.8.0 A3（issue #17）：strictScope 硬过滤——他 scope 的候选直接出局
     // （区别于 A2 的降权保留可见）；未标注行与命中行保留。strict 与 A2 加权
@@ -1092,6 +1124,10 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // merged and before rerank/receipt/cache. It is fail-closed in strict mode
     // when the trusted output scene is missing.
     merged = sceneFilterRows(merged);
+    if (Array.isArray(sceneScopes)) {
+      const selected = new Set(sceneScopes.map((scope) => String(scope)));
+      merged = merged.filter((row) => selected.has(row.scene_scope ?? "legacy"));
+    }
     // Signal transparency (#2): decorate each returned row with its per-source
     // scores and the final fused score. Purely additive — never changes rank.
     if (config?.signalTransparency === true) {
@@ -1108,7 +1144,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // scope/epistemic weighting; the final topK cut happens in rerankRows.
     const beforeFinalCut = preferencePoolActive ? merged : merged.slice(0, lim);
     const rerankWindow = preferencePoolActive
-      ? Math.min(recallLimit, Math.max(lim * 2, lim + 10))
+      ? Math.min(effectiveRecallLimit, Math.max(lim * 2, lim + 10))
       : lim;
     let result = useRerank && reranker && beforeFinalCut.length
       ? await rerankCandidates(q, beforeFinalCut, rerankWindow)
@@ -1464,6 +1500,18 @@ export function createService({ store, mirror, config, onWrite, logger, document
     } catch {
       return [];
     }
+  }
+
+  function normalizeTagUpdate(memoryId, patch, old) {
+    if (!patch || !Array.isArray(patch.tags) || !old || !Array.isArray(old.tags)) return patch;
+    return {
+      ...patch,
+      tags: [...new Set([
+        ...stripEventTags(patch.tags),
+        ...old.tags.filter((tag) => SIGNAL_TAGS.includes(tag)),
+        ...trustedEventTagsForMemory(memoryId)
+      ])]
+    };
   }
 
   /**
@@ -2641,10 +2689,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
   // 处置）共用的写路径：mirror 同步、写通知、嵌入调度全部同源，不能各写一份。
   function updateMemory(id, p, ctx = {}) {
     const old = store.getById(id);
-    if (old?.scene_scope && scenePolicy().enabled && sceneFilterRows([old]).length === 0) {
-      const error = new Error("SCENE_DENIED");
-      error.code = "SCENE_DENIED";
-      throw error;
+    if (old?.scene_scope && scenePolicy().enabled) {
+      const scene = currentScene();
+      if (!scene || old.scene_scope !== scene.sceneId) {
+        const error = new Error("SCENE_DENIED");
+        error.code = "SCENE_DENIED";
+        throw error;
+      }
     }
     // #230 写入权分离（与 saveWithDedupe 同款守卫）：document 行只能经
     // registerDocument 铸造。既有 document 行的摘要修复（memory_update 改
@@ -2652,21 +2703,10 @@ export function createService({ store, mirror, config, onWrite, logger, document
     if (p?.type === "document" && old?.type !== "document") {
       throw new Error("type 'document' is minted only via registerDocument (summary + doc_path + evidence)");
     }
-    // Issue #135 附属发现 2：质量过滤器把「为什么被降权/归档」写在系统信号标签
-    // 上（SIGNAL_TAGS，applyQualityDisposition 以并集写入），而这里整组替换
-    // tags——任何带 tags 的更新都会抹掉这条唯一的审计线索（报告实测 150 条低分
-    // 记忆里恰好缺的 2 条就是被 update 过的，并因此误判过归档来源）。把 existing
-    // 的系统信号标签并集保留；用户自传的标签照常生效。
-    let patch = (p && Array.isArray(p.tags) && old && Array.isArray(old.tags))
-      ? {
-          ...p,
-          tags: [...new Set([
-            ...stripEventTags(p.tags),
-            ...old.tags.filter((t) => SIGNAL_TAGS.includes(t)),
-            ...trustedEventTagsForMemory(id)
-          ])]
-        }
-      : p;
+    // Issue #135 附属发现 2 / P0 trusted events: only provenance-justified event
+    // tags survive a tag replacement; caller event:* tags are stripped, while
+    // ordinary custom tags remain accepted.
+    let patch = normalizeTagUpdate(id, p, old);
     // v0.8.1 底座（issue #170）：显式 scope 修正。patch 携带 agent_scope /
     // workspace_scope 键（undefined=该维不动）时归一化并盖 explicit 章 +
     // scope_decided_at，随后写 scope_changes 审计行（actor：tool=模型侧 /
@@ -2935,6 +2975,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
         .filter((row) => row.protected === true);
       return sceneFilterRows(rows);
     },
+    listReadableSceneScopes() {
+      return trustedReadableSceneScopes();
+    },
     removeCore(id) {
       if (config?.coreMemoryEnabled !== true) throw new Error("CORE_DISABLED");
       const scene = currentScene();
@@ -2981,7 +3024,8 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // concurrent read-modify-write (see scripts/stress-dsh.js axis 3).
     compareAndUpdate: (id, expectedUpdatedAt, patch, ctx = {}) => {
       const old = store.getById(id);
-      const updated = store.compareAndUpdate(id, expectedUpdatedAt, patch);
+      const normalized = normalizeTagUpdate(id, patch, old);
+      const updated = store.compareAndUpdate(id, expectedUpdatedAt, normalized);
       if (updated === undefined) return undefined; // CAS miss: no write, no side effects
       const hasMeaningfulChange = old && updated && (
         old.content !== updated.content ||

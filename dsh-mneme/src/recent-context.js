@@ -1,5 +1,5 @@
 // Bounded, in-memory Recent Context. No embedding, no LLM, no long-term write.
-import { currentScene, normalizeScene, sceneAllows } from "./scene.js";
+import { currentScene, normalizeScene, sceneAllowsRecent } from "./scene.js";
 import { estimateTokens } from "./hot-memory.js";
 
 let config = { enabled: false, ttlMs: 10 * 60 * 1000, maxEvents: 20, maxTokens: 500 };
@@ -65,7 +65,7 @@ export function readRecentContext({ outputScene = currentScene(), now = Date.now
   for (const list of byScene.values()) {
     for (const event of list) {
       if (now - event.at > config.ttlMs) continue;
-      if (!sceneAllows(output, event.scene.sceneId)) continue;
+      if (!sceneAllowsRecent(output, event.scene.sceneId)) continue;
       events.push(event);
     }
   }

@@ -21,7 +21,7 @@ import { createStandaloneApi } from "./api-standalone.js";
 // #275 存储生命周期第一批：无损回收（手动入口，不挂启动路径）。
 import { createMaintenance } from "./maintenance.js";
 import { createSettings } from "./settings.js";
-import { configureScene } from "./scene.js";
+import { configureScene, setSceneReadAclReader } from "./scene.js";
 import { configureRecentContext } from "./recent-context.js";
 import { mountAdminApi } from "./admin-api.js";
 import { applyStagedRestore } from "./backup.js";
@@ -226,6 +226,50 @@ function createLiveConfig(rawCfg, flatFlags, nestedFlags) {
   });
 }
 
+const TRUSTED_SCENE_ACL_CONTRACT = "amadeus-memory/trusted-scene-acl-read";
+const TRUSTED_SCENE_ACL_TOOLS = Object.freeze(["memory_search", "memory_list", "memory_get"]);
+
+/**
+ * Optional cross-plugin handshake. This is a synchronous capability declaration,
+ * not an authorization input: callers cannot ask for it with arguments, and the
+ * Host binding must already be present. It returns null unless strict QQ Scene
+ * isolation is effective in this running instance.
+ */
+export function sceneAclReadDeclaration(ctx, cfg) {
+  try {
+    if (cfg?.sceneIsolationEnabled !== true || cfg?.sceneStrictQQ !== true) return null;
+    const qq = ctx?.reflect?.get?.("qq");
+    if (typeof qq?.resolveTrustedSessionScene !== "function") return null;
+    return Object.freeze({
+      contract: TRUSTED_SCENE_ACL_CONTRACT,
+      version: 1,
+      trustedSceneAcl: true,
+      strictQQ: true,
+      tools: TRUSTED_SCENE_ACL_TOOLS
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function provideSceneAclRead(ctx, cfg) {
+  if (typeof ctx?.provide !== "function") return () => {};
+  try {
+    let disposed = false;
+    const dispose = ctx.provide("amadeus.memory", Object.freeze({
+      sceneAclRead: () => sceneAclReadDeclaration(ctx, cfg)
+    }));
+    return async () => {
+      if (disposed) return;
+      disposed = true;
+      if (typeof dispose === "function") await dispose();
+    };
+  } catch (error) {
+    ctx.logger?.warn?.(`[dsh-mneme] optional amadeus.memory handshake unavailable: ${String(error?.message ?? error)}`);
+    return () => {};
+  }
+}
+
 export const apply = (ctx, config) => {
   // Cordis/DSH may hand apply() an already-validated Config whose volatile
   // fields are stable references. Re-parsing that object through Config() would
@@ -261,6 +305,9 @@ export const apply = (ctx, config) => {
   }
 
   const store = createStore(join(memoryDir, "memory.db"));
+  // Scene reads consult the persisted directional group ACL. Owner-private
+  // read-all is a Host capability handled inside Scene policy, not a DB grant.
+  setSceneReadAclReader((reader, source) => store.hasSceneReadGrant(reader, source));
 
   // User-configurable settings (profile, rules, panel mode, standalone API
   // token) share the same SQLite file in dedicated tables, isolated from
@@ -313,6 +360,7 @@ export const apply = (ctx, config) => {
     strictQQ: cfg.sceneStrictQQ === true,
     hostContract: false
   });
+  const disposeSceneAclHandshake = provideSceneAclRead(ctx, cfg);
   configureRecentContext({
     enabled: cfg.recentContextEnabled === true,
     ttlMs: cfg.recentContextTtlMs,
@@ -663,7 +711,10 @@ export const apply = (ctx, config) => {
     disposers.push(createTools(toolsCtx, service, cfg, embedder));
   });
 
-  const summarizer = sceneUnsafeDerivation() ? { dispose() {} } : createSummarizer(ctx, service, cfg);
+  const strictQQScene = cfg.sceneIsolationEnabled === true && cfg.sceneStrictQQ === true;
+  const summarizer = (!strictQQScene && sceneUnsafeDerivation())
+    ? { dispose() {} }
+    : createSummarizer(ctx, service, cfg);
   disposers.push(summarizer.dispose);
 
   // #275 存储生命周期第一批：无损回收的手动入口。刻意不挂启动路径、不接定时器——
@@ -738,6 +789,7 @@ export const apply = (ctx, config) => {
     recorder?.dispose();
     if (dream) await dream.dispose();
     if (sleep) sleep.dispose();
+    await disposeSceneAclHandshake();
     store.close();
   };
 };

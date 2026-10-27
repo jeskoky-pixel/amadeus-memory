@@ -302,6 +302,19 @@ CREATE INDEX IF NOT EXISTS idx_memory_provenance_session ON memory_provenance(se
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_provenance_link
   ON memory_provenance(memory_id, session_id, seq_start, seq_end);
 
+-- Directional QQ group read grants. The reader may read the source group's
+-- memories for model retrieval; grants are non-transitive, read-only and never
+-- carry private/legacy scopes. Persisted so revocation survives restart.
+CREATE TABLE IF NOT EXISTS scene_read_grants (
+  reader_scene TEXT NOT NULL,
+  source_scene TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  created_by TEXT,
+  note TEXT,
+  PRIMARY KEY (reader_scene, source_scene)
+);
+CREATE INDEX IF NOT EXISTS idx_scene_read_grants_reader ON scene_read_grants(reader_scene);
+
 -- entity gene (v0.3.0): named entities mentioned across memories, with
 -- time-boxed attributes (valid_from → valid_until) and typed relations.
 -- Attributes follow the snapshot style: saveAttr invalidates the previous
@@ -1101,7 +1114,7 @@ export function createStore(path) {
     return getDistillCursor(sessionId);
   }
 
-  function count(type, { minImportance = null, source = null, includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null } = {}) {
+  function count(type, { minImportance = null, source = null, includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null, sceneScopes = null } = {}) {
     const clauses = [];
     const params = [];
     if (type !== undefined) {
@@ -1157,6 +1170,11 @@ export function createStore(path) {
       } else {
         clauses.push("(workspace_scope IS NULL OR workspace_scope_source IS NOT 'explicit')");
       }
+    }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) {
+      clauses.push(sceneSql.sql);
+      params.push(...sceneSql.params);
     }
     if (!includeForgotten) {
       clauses.push("forgotten = 0");
@@ -1650,7 +1668,104 @@ export function createStore(path) {
     return Boolean(db.prepare("SELECT 1 FROM memories WHERE scene_scope IS NOT NULL LIMIT 1").get());
   }
 
-  function list({ type, excludeTypes = null, limit = 50, offset = 0, order = "importance", includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, minImportance = null, source = null, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null } = {}) {
+  function listSceneScopes({ limit = 500 } = {}) {
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    return db.prepare(
+      `SELECT scene_scope AS scope, COUNT(*) AS total,
+              SUM(CASE WHEN forgotten = 0 AND archived = 0 THEN 1 ELSE 0 END) AS active
+         FROM memories
+        GROUP BY scene_scope
+        ORDER BY active DESC, total DESC, scene_scope ASC
+        LIMIT ?`
+    ).all(bounded).map((row) => ({
+      scope: row.scope ?? "legacy",
+      total: Number(row.total) || 0,
+      active: Number(row.active) || 0
+    }));
+  }
+
+  function normalizeAclScene(value) {
+    const text = String(value ?? "").trim();
+    if (!text || text.length > 200 || !/^[A-Za-z0-9_.:-]+$/.test(text)) {
+      throw new TypeError("invalid scene ACL identifier");
+    }
+    return text;
+  }
+
+  function listSceneReadGrants({ limit = 500 } = {}) {
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    return db.prepare(
+      `SELECT reader_scene, source_scene, created_at, created_by, note
+         FROM scene_read_grants
+        ORDER BY created_at DESC, reader_scene, source_scene
+        LIMIT ?`
+    ).all(bounded);
+  }
+
+  function listSceneReadSources(reader, { limit = 500 } = {}) {
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 500;
+    return db.prepare(
+      `SELECT source_scene FROM scene_read_grants
+        WHERE reader_scene = ?
+        ORDER BY source_scene
+        LIMIT ?`
+    ).all(String(reader), bounded).map((row) => row.source_scene);
+  }
+
+  function hasSceneReadGrant(reader, source) {
+    const row = db.prepare(
+      "SELECT 1 AS present FROM scene_read_grants WHERE reader_scene = ? AND source_scene = ?"
+    ).get(String(reader), String(source));
+    return row?.present === 1;
+  }
+
+  function grantSceneRead(reader, source, { actor = null, note = null } = {}) {
+    const readerScene = normalizeAclScene(reader);
+    const sourceScene = normalizeAclScene(source);
+    if (readerScene === sourceScene) throw new TypeError("self grant is not allowed");
+    const now = new Date().toISOString();
+    return runAtomically(() => {
+      const result = db.prepare(
+        `INSERT INTO scene_read_grants (reader_scene, source_scene, created_at, created_by, note)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(reader_scene, source_scene) DO NOTHING`
+      ).run(readerScene, sourceScene, now, actor == null ? null : String(actor).slice(0, 200), note == null ? null : String(note).slice(0, 500));
+      return {
+        reader_scene: readerScene,
+        source_scene: sourceScene,
+        created: result.changes > 0,
+        created_at: now
+      };
+    });
+  }
+
+  function revokeSceneRead(reader, source) {
+    const readerScene = normalizeAclScene(reader);
+    const sourceScene = normalizeAclScene(source);
+    return runAtomically(() => {
+      const result = db.prepare(
+        "DELETE FROM scene_read_grants WHERE reader_scene = ? AND source_scene = ?"
+      ).run(readerScene, sourceScene);
+      return { reader_scene: readerScene, source_scene: sourceScene, revoked: result.changes > 0 };
+    });
+  }
+
+  function sceneScopeSql(sceneScopes) {
+    if (!Array.isArray(sceneScopes)) return null;
+    const tagged = [...new Set(sceneScopes.filter((scope) => scope && scope !== "legacy"))];
+    const legacy = sceneScopes.includes("legacy");
+    if (tagged.length === 0 && !legacy) return { sql: "0 = 1", params: [] };
+    const parts = [];
+    const params = [];
+    if (tagged.length) {
+      parts.push(`scene_scope IN (${tagged.map(() => "?").join(", ")})`);
+      params.push(...tagged);
+    }
+    if (legacy) parts.push("scene_scope IS NULL");
+    return { sql: `(${parts.join(" OR ")})`, params };
+  }
+
+  function list({ type, excludeTypes = null, limit = 50, offset = 0, order = "importance", includeForgotten = false, includeArchived = false, onlyArchived = false, depositedOnly = false, minImportance = null, source = null, updatedFrom = null, updatedTo = null, occurredFrom = null, occurredTo = null, visibility = null, sceneScopes = null } = {}) {
     const clauses = [];
     const params = [];
     if (type) {
@@ -1718,6 +1833,11 @@ export function createStore(path) {
       } else {
         clauses.push("(workspace_scope IS NULL OR workspace_scope_source IS NOT 'explicit')");
       }
+    }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) {
+      clauses.push(sceneSql.sql);
+      params.push(...sceneSql.params);
     }
     if (!includeForgotten) {
       clauses.push("forgotten = 0");
@@ -1930,26 +2050,57 @@ export function createStore(path) {
     }, new Map());
   }
 
-  function search(query, { limit = 20, includeArchived = false } = {}) {
+  function search(query, { limit = 20, offset = 0, includeArchived = false, onlyArchived = false, type = null, minImportance = null, updatedFrom = null, updatedTo = null, sceneScopes = null } = {}) {
     const q = String(query).trim();
     if (!q) return [];
     // Plain LIKE substring scan over title/content/tags (wildcards escaped so
     // user input matches literally). No FTS5: CJK substring matching needs
     // LIKE, and typical memory stores are small enough that a scan is fine.
     const like = `%${escapeLike(q)}%`;
-    const { limit: lim } = sanitizePage(limit, 0, 20);
-    const archivedFilter = includeArchived ? "" : "archived = 0 AND ";
+    const { limit: lim, offset: off } = sanitizePage(limit, offset, 20);
+    const archivedFilter = onlyArchived ? "archived = 1 AND " : (includeArchived ? "" : "archived = 0 AND ");
+    const clauses = [];
+    const params = [];
+    if (type) { clauses.push("type = ?"); params.push(type); }
+    if (minImportance != null) { clauses.push("importance >= ?"); params.push(minImportance); }
+    const bounds = updatedAtBounds(updatedFrom, updatedTo);
+    if (bounds.from) { clauses.push("updated_at >= ?"); params.push(bounds.from); }
+    if (bounds.to) { clauses.push("updated_at <= ?"); params.push(bounds.to); }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) { clauses.push(sceneSql.sql); params.push(...sceneSql.params); }
+    const extra = clauses.length ? ` AND ${clauses.join(" AND ")}` : "";
     const rows = db.prepare(
       `SELECT * FROM memories
-       WHERE ${archivedFilter}forgotten = 0 AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')
+       WHERE ${archivedFilter}forgotten = 0${extra} AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')
        ORDER BY
          CASE WHEN title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END,
          importance DESC,
          updated_at DESC,
          id
-       LIMIT ?`
-    ).all(like, like, like, like, lim);
+       LIMIT ? OFFSET ?`
+    ).all(...params, like, like, like, like, lim, off);
     return rows.map(toRow);
+  }
+
+  function countSearch(query, { includeArchived = false, onlyArchived = false, type = null, minImportance = null, updatedFrom = null, updatedTo = null, sceneScopes = null } = {}) {
+    const q = String(query).trim();
+    if (!q) return 0;
+    const like = `%${escapeLike(q)}%`;
+    const archivedFilter = onlyArchived ? "archived = 1 AND " : (includeArchived ? "" : "archived = 0 AND ");
+    const clauses = [];
+    const params = [];
+    if (type) { clauses.push("type = ?"); params.push(type); }
+    if (minImportance != null) { clauses.push("importance >= ?"); params.push(minImportance); }
+    const bounds = updatedAtBounds(updatedFrom, updatedTo);
+    if (bounds.from) { clauses.push("updated_at >= ?"); params.push(bounds.from); }
+    if (bounds.to) { clauses.push("updated_at <= ?"); params.push(bounds.to); }
+    const sceneSql = sceneScopeSql(sceneScopes);
+    if (sceneSql) { clauses.push(sceneSql.sql); params.push(...sceneSql.params); }
+    const extra = clauses.length ? ` AND ${clauses.join(" AND ")}` : "";
+    return db.prepare(
+      `SELECT count(*) AS c FROM memories
+       WHERE ${archivedFilter}forgotten = 0${extra} AND (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')`
+    ).get(...params, like, like, like).c;
   }
 
   // --- vector search ------------------------------------------------------
@@ -1972,16 +2123,18 @@ export function createStore(path) {
    * Brute-force cosine similarity over embedded rows. Returns rows decorated
    * with a `score` (0..1). Only rows with a stored embedding participate.
    */
-  function searchVector(vector, { limit = 20, includeArchived = false, threshold = 0 } = {}) {
+  function searchVector(vector, { limit = 20, includeArchived = false, threshold = 0, sceneScopes = null } = {}) {
     if (!Array.isArray(vector) || !vector.length) return [];
     const archivedFilter = includeArchived ? "" : "archived = 0 AND ";
+    const sceneSql = sceneScopeSql(sceneScopes);
+    const sceneFilter = sceneSql ? ` AND ${sceneSql.sql}` : "";
     // Issue #202：只取 id 列（~40 KB）而非 SELECT *（~11 MB）——向量从缓存取，
     // 缓存未命中时按 id 点查 embedding 再解析回填。SQL 里保留 embedding 的
     // IS NOT NULL 过滤，保证「有向量的行」集合始终以库为准（删除/清空即时生效）。
     const rows = db.prepare(
       `SELECT id FROM memories
-       WHERE ${archivedFilter}forgotten = 0 AND embedding IS NOT NULL AND embedding != ''`
-    ).all();
+       WHERE ${archivedFilter}forgotten = 0${sceneFilter} AND embedding IS NOT NULL AND embedding != ''`
+    ).all(...(sceneSql?.params ?? []));
     const scored = [];
     for (const row of rows) {
       const v = getParsedEmbedding(row.id);
@@ -3505,9 +3658,17 @@ export function createStore(path) {
     list,
     all,
     hasSceneScopedRows,
+    listSceneScopes,
+    listSceneReadGrants,
+    listSceneReadSources,
+    hasSceneReadGrant,
+    grantSceneRead,
+    revokeSceneRead,
+    runAtomically,
     // #430：有界单列读，写路径（质量过滤）用。
     recentContents,
     search,
+    countSearch,
     setEmbedding,
     getEmbeddings,
     getParsedEmbedding,

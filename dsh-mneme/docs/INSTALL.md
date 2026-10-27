@@ -3,7 +3,7 @@
 本包是 **Amadeus Memory 增强发行版**，基于 Mneme 0.9.4，沿用上游 MIT 许可。发行身份是安全增强版而不是新包：
 
 - 包名：`@modusensus/dsh-mneme`
-- 版本：`0.9.5-amadeus.2`
+- 版本：`0.9.5-amadeus.3`（QQ Scene Host 与管理员场景图谱候选）
 - 插件 ID / Bundle ID：`dsh-mneme`（保持不变）
 - 上游：`@modusensus/dsh-mneme@0.9.4`
 - 数据目录 / 配置键 / SQLite 格式：与上游兼容，升级不迁移到第二套数据库。
@@ -34,7 +34,7 @@ node test/tools.test.js
 npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 ```
 
-产物：`dist/modusensus-dsh-mneme-0.9.5-amadeus.2.tgz`。SHA-256 记录在 `docs/RELEASE_NOTES.md` 与交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
+产物：`dist/modusensus-dsh-mneme-0.9.5-amadeus.3.tgz`。SHA-256 记录在交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
 
 ## 通过 Plugin Manager 安装
 
@@ -43,7 +43,7 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 3. 启用插件并让 Host 重载；确认只启用一个 Memory 插件实例。
 4. 打开 **设置**，左侧应出现 **Amadeus 记忆 / Amadeus Memory**。
 5. 页面首次加载会调用 owner 鉴权的 `/api/amadeus-memory/admin/overview`；它只返回运行状态、计数、公开模型信息和掩码后的凭据状态。
-6. 打开原 **Memory** 侧边栏入口，确认既有记忆、图谱与 Embedding 配置仍在。
+6. 在 **Amadeus 记忆** 中检查记忆 / 实体 / 状态 / 设置各页。原 **Memory** 侧边栏入口只在无 Scene 数据且严格模式关闭时用于旧图谱、别名和合并管理。
 
 如果设置入口不出现：
 
@@ -61,7 +61,7 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 - 页面的 **连通性测试** 只在用户点击时发起请求；远端 Provider 会产生一次真实 API 请求，页面有明确提示。
 - 独立页的 **记忆管理** 卡通过 owner 鉴权接口完成搜索、新建、编辑、归档和带确认的删除；编辑使用 `updated_at` 乐观并发检查，冲突时不会覆盖他人修改。
 - 独立页的 **备份与恢复** 卡生成一致性 SQLite 快照、校验 `quick_check`/表/checksum，并把恢复延后到下次启动；运行中的数据库不会被覆盖，恢复前自动保留 `pre-restore-*` 现场。
-- 记忆正文只在已认证 owner 打开列表/编辑器时返回给当前设置页；不会写入日志、备份元数据或公开端点。完整图谱、别名、合并、审计仍由原 Memory 面板承担。
+- 记忆正文只在已认证 owner 打开列表/编辑器时返回给当前设置页；不会写入日志、备份元数据或公开端点。Amadeus 实体页提供单 Scene 只读图谱。存在 Scene 数据或启用严格模式时，旧版面板的图谱/身份接口关闭；别名、合并和审计的在线管理仍需场景安全入口。
 
 ## 升级与回滚
 
@@ -70,7 +70,7 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 1. 记录当前 `@modusensus/dsh-mneme` 版本、tarball SHA-256、`memoryDir`、Embedding Provider/模型与 API Token 是否已配置（不要记录明文密钥）。
 2. 停用旧插件或停止 DSH 写入，创建 SQLite 一致性备份。
 3. 在 Plugin Manager 用新 tarball 替换旧版本；确认只启用一份。
-4. 硬重启 DSH，打开设置页与原 Memory 面板，验证记忆数、向量索引、偏好权重与工具。
+4. 硬重启 DSH，打开 Amadeus 设置页，验证记忆数、单 Scene 图谱、向量索引、偏好权重与工具。
 5. 旧 `memoryDir`、`vector` 设置和 `feature_flags` 均保留。
 
 回滚：
@@ -82,7 +82,7 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 
 ## 验收清单（Codex 实机）
 
-- [ ] Plugin Manager 显示 `@modusensus/dsh-mneme@0.9.5-amadeus.2`，启用成功。
+- [ ] Plugin Manager 显示 `@modusensus/dsh-mneme@0.9.5-amadeus.3`，启用成功。
 - [ ] 系统设置左侧出现 **Amadeus 记忆**，页面加载状态、记忆数、数据库和向量索引。
 - [ ] 记忆管理：搜索、新建、编辑、归档、取消归档、删除二次确认；并发编辑冲突会提示而不覆盖。
 - [ ] 备份：创建后列表显示 SHA-256；校验通过；暂存恢复需要确认，重启后应用且保留 `pre-restore-*` 现场。
@@ -91,7 +91,7 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 - [ ] 修改一个 feature 开关，页面提示重载；重载后运行时生效。
 - [ ] 修改一个 Config Forms 参数并保存，Plugin Manager 与独立页显示一致。
 - [ ] Embedding 连通性测试只在点击后发起；不返回明文密钥。
-- [ ] 打开原 Memory 面板，搜索/图谱正常；既有 Qwen3-Embedding-8B 配置无需重填。
+- [ ] 在实体页选取两个不同 Scene，各只显示自己的节点和关系；旧图谱在严格模式下仍拒绝读取。既有 Qwen3-Embedding-8B 配置无需重填。
 - [ ] 重启、禁用、启用、卸载后入口与后台任务正确撤销，数据保留。
 - [ ] 没有两个 Memory 实例同时自动注入/autoDream/写入。
 - [ ] 记录最终 tarball SHA-256 和实机截图/日志。

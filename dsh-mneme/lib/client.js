@@ -267,6 +267,21 @@ window.__ModuleLoader__.load({
       });
     }
 
+    // Shared owner-admin JSON helper. It must live at module scope: both the
+    // native settings section and the portaled full explorer (a sibling
+    // component) call it. Keeping it inside AmadeusMemorySettings caused
+    // ReferenceError: adminJson is not defined and crashed the slot entry.
+    async function adminJson(path, opts = {}) {
+      const res = await adminFetch(path, opts);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.ok === false) {
+        const err = new Error(body.error || `HTTP ${res.status}`);
+        err.candidates = Array.isArray(body.candidates) ? body.candidates : [];
+        throw err;
+      }
+      return body.data;
+    }
+
     // ⚠️ 'betterSidebar' 绝不能进模块级 inject（issue #88 实锤）：loader 对
     // inject 声明的服务是硬等待——未安装 better-sidebar 的环境里整个 entry
     // 永远 pending（"1 entry did not activate" → Failed to load plugins）。
@@ -287,7 +302,7 @@ window.__ModuleLoader__.load({
         "memory.tab.summary": "小结",
         "memory.am.nav": "Amadeus 记忆",
         "memory.am.title": "Amadeus Memory",
-        "memory.am.subtitle": "查看记忆库运行状态，调整常用记忆、自动整理与向量检索设置。完整图谱与审计仍在原记忆面板。",
+        "memory.am.subtitle": "查看记忆库运行状态，调整记忆与向量检索设置。严格场景模式下可在下方按场景查看图谱。",
         "memory.am.loading": "正在读取状态…",
         "memory.am.refresh": "刷新状态",
         "memory.am.openPanel": "打开完整记忆管理",
@@ -355,9 +370,10 @@ window.__ModuleLoader__.load({
         "memory.am.scene.current": "当前场景",
         "memory.am.scene.unknownPolicy": "无来源旧记忆：不视为公共；有场景标记的记忆默认隐藏",
         "memory.am.scene.legacyNote": "未标记来源的旧记忆提升为核心后仍保持未标记；在原有模式下可能被其他会话读取，不能视为私密记忆",
+        "memory.am.scene.legacy": "legacy/未标注",
         "memory.am.scene.grants": "已授权读取关系",
         "memory.am.scene.noGrants": "没有跨场景授权",
-        "memory.am.scene.degraded": "图谱/身份/偏好读取与后台派生已安全降级",
+        "memory.am.scene.degraded": "普通图谱/身份/偏好读取及 autoDream、Sleep 已安全暂停；管理员场景图谱可用",
         "memory.am.recent.title": "近期上下文",
         "memory.am.recent.enabled": "已启用",
         "memory.am.recent.disabled": "未启用",
@@ -365,6 +381,98 @@ window.__ModuleLoader__.load({
         "memory.am.recent.count": "缓冲事件数",
         "memory.am.recent.clear": "清空近期缓冲",
         "memory.am.recent.cleared": "近期缓冲已清空",
+        "memory.am.graph.title": "场景知识图谱（只读）",
+        "memory.am.graph.scope": "选择场景",
+        "memory.am.graph.choose": "请选择场景",
+        "memory.am.graph.chooseHint": "选择一个场景查看该场景的实体与关系；不会合并其他场景。",
+        "memory.am.graph.empty": "该场景没有可显示的实体证据",
+        "memory.am.graph.truncated": "结果已截断；请缩小场景或使用更小的范围。",
+        "memory.am.graph.nodes": "节点",
+        "memory.am.graph.edges": "关系",
+        "memory.am.graph.relations": "关系列表",
+        "memory.am.graph.noRelations": "没有关系证据",
+        "memory.am.graph.related": "相关记忆",
+        "memory.am.graph.overview": "图中展示前 {shown}/{total} 个节点；完整节点列表见下",
+        "memory.am.graph.nodesList": "节点列表（键盘可选择）",
+        "memory.am.graph.search": "搜索节点",
+        "memory.am.graph.searchPlaceholder": "按名称或类型筛选",
+        "memory.am.graph.searchClear": "清除搜索",
+        "memory.am.graph.searchEmpty": "没有匹配的节点",
+        "memory.am.graph.focused": "当前聚焦",
+        "memory.explorer.title": "完整记忆浏览器",
+        "memory.explorer.close": "关闭",
+        "memory.explorer.all": "全部",
+        "memory.explorer.allScenes": "全部场景",
+        "memory.explorer.scopeHint": "选择一个或多个场景会收窄结果；空选表示全部。",
+        "memory.explorer.keyword": "关键词搜索",
+        "memory.explorer.searchPlaceholder": "标题/内容/标签关键字",
+        "memory.explorer.type": "类型",
+        "memory.explorer.allTypes": "全部类型",
+        "memory.explorer.minImportance": "最低重要性",
+        "memory.explorer.date": "时间",
+        "memory.explorer.archived": "仅归档",
+        "memory.explorer.cards": "卡片",
+        "memory.explorer.scene": "场景",
+        "memory.explorer.editTitle": "标题",
+        "memory.explorer.editContent": "内容",
+        "memory.explorer.prev": "上一页",
+        "memory.explorer.next": "下一页",
+        "memory.explorer.hop1": "1 跳",
+        "memory.explorer.hop2": "2 跳",
+        "memory.explorer.hops": "跳数",
+        "memory.explorer.reset": "重置",
+        "memory.explorer.statusOverview": "运行概览",
+        "memory.explorer.conflicts": "待确认冲突",
+        "memory.explorer.dreamRuns": "Dream 运行",
+        "memory.explorer.audit7d": "近 7 天用量",
+        "memory.explorer.tokenShare": "按操作的 Token 占比",
+        "memory.explorer.requests": "请求",
+        "memory.explorer.tokens": "Token",
+        "memory.explorer.noData": "暂无真实数据",
+        "memory.explorer.acl": "读白名单（方向性）",
+        "memory.explorer.aclHint": "允许一个 QQ 群读取另一个同 bot 群的长记忆；只读、不传递、不含私聊/旧数据。浏览器选择不会直接授权。",
+        "memory.explorer.aclEmpty": "暂无手动授权",
+        "memory.explorer.revoke": "撤销",
+        "memory.explorer.reader": "读取方群",
+        "memory.explorer.grant": "授予读取",
+        "memory.explorer.bot": "机器人 QQ 号",
+        "memory.explorer.readerGroup": "读取方群号",
+        "memory.explorer.sourceGroup": "来源方群号",
+        "memory.explorer.aclDirection": "群 {reader} 可读取群 {source} 的长期记忆",
+        "memory.am.tabs.memory": "记忆",
+        "memory.am.tabs.entities": "实体",
+        "memory.am.tabs.status": "状态",
+        "memory.am.tabs.settings": "设置",
+        "memory.am.memoryView.longTerm": "长期记忆",
+        "memory.am.memoryView.recent": "近期上下文",
+        "memory.am.settings.general": "基础",
+        "memory.am.settings.personalization": "个性化",
+        "memory.personalization.profile": "用户画像",
+        "memory.personalization.profileHint": "画像与规则由当前 owner 设置直接读取；保存后下一次注入生效。",
+        "memory.personalization.defaultCard": "默认人格卡",
+        "memory.personalization.agentCards": "按 Agent 的人格卡",
+        "memory.personalization.name": "名称",
+        "memory.personalization.personality": "人格",
+        "memory.personalization.replyStyle": "回复风格",
+        "memory.personalization.enabled": "启用",
+        "memory.personalization.preview": "实际注入预览",
+        "memory.personalization.previewHint": "由服务端与注入器同一渲染函数产出；仅展示画像/人格/规则，不含跨场景记忆正文。",
+        "memory.personalization.saveProfile": "保存画像",
+        "memory.personalization.savePersona": "保存人格卡",
+        "memory.personalization.saved": "个性化设置已保存",
+        "memory.am.settings.retrieval": "检索",
+        "memory.am.settings.scene": "场景",
+        "memory.am.settings.backup": "备份",
+        "memory.am.settings.acl": "访问白名单",
+        "memory.am.recent.hotTitle": "Session 热记忆",
+        "memory.am.recent.hotHint": "当前 Session 最近几轮原文，仅存于内存并随 Session 生命周期消失；不是 SQLite 记忆，owner API 无法枚举或列出其内容。",
+        "memory.am.recent.hotState": "热记忆注入",
+        "memory.am.recent.trustedTitle": "可信 Scene 近期上下文",
+        "memory.am.recent.trustedHint": "10 分钟 TTL 的进程内缓冲；管理员可查看各 Scene 的事件数，不返回原文。",
+        "memory.am.entitiesHint": "单场景只读图谱，必须先选择场景；不会合并其他场景。",
+        "memory.am.entitiesFullHint": "存在 Scene 记忆或启用严格模式时，旧版面板的图谱与身份接口会停用；别名和规范实体管理须等场景安全入口补齐。",
+        "memory.am.entitiesOpenFull": "打开完整记忆/实体面板",
+        "memory.am.entitiesWeights": "标签/实体权重",
         "memory.am.memory.archivedDone": "已归档",
         "memory.am.memory.unarchivedDone": "已取消归档",
         "memory.am.memory.deleted": "已删除",
@@ -454,7 +562,7 @@ window.__ModuleLoader__.load({
         "memory.am.enabled": "已启用",
         "memory.am.disabled": "未启用",
         "memory.am.advancedTitle": "展开高级与诊断信息",
-        "memory.am.advancedHint": "更复杂的图谱、别名、合并、维护与审计请用「打开完整记忆管理」。",
+        "memory.am.advancedHint": "别名、合并、维护与审计请用「打开完整记忆管理」；严格场景模式下普通图谱会安全关闭，请使用上方场景图谱。",
         "memory.am.languageZh": "中文",
         "memory.am.languageEn": "English",
         "memory.am.field.language": "记忆语言",
@@ -768,7 +876,7 @@ window.__ModuleLoader__.load({
         "memory.features.sceneIsolationEnabled": "按 QQ 场景隔离记忆",
         "memory.features.sceneIsolationEnabled.hint": "开：来自可信 Host 的场景记忆只在该场景可见；关：保持原有行为。需要 Host 提供可信场景身份",
         "memory.features.sceneStrictQQ": "严格 QQ 场景模式",
-        "memory.features.sceneStrictQQ.hint": "开：跨场景普通记忆、图谱和普通 HTTP 内容接口全部拒绝；自动维护暂停。默认关",
+        "memory.features.sceneStrictQQ.hint": "开：跨场景普通记忆、图谱和普通 HTTP 内容接口全部拒绝；autoDream 与 Sleep 暂停，可信 QQ Session 的自动摘要仍可运行。默认关",
         "memory.features.recentContextEnabled": "近期上下文（10 分钟）",
         "memory.features.recentContextEnabled.hint": "开：在内存中保留有限近期事件，仅在授权方向注入；不调用嵌入/模型，不写长期记忆",
         "memory.features.coreMemoryEnabled": "核心记忆（受保护）",
@@ -1272,7 +1380,7 @@ window.__ModuleLoader__.load({
         "memory.tab.summary": "Summaries",
         "memory.am.nav": "Amadeus Memory",
         "memory.am.title": "Amadeus Memory",
-        "memory.am.subtitle": "Check memory health, tune everyday memory, consolidation and vector settings. The full graph and audit tools stay in the Memory panel.",
+        "memory.am.subtitle": "Check memory health and tune retrieval settings. In strict Scene mode, view the graph for one selected Scene below.",
         "memory.am.loading": "Loading status…",
         "memory.am.refresh": "Refresh status",
         "memory.am.openPanel": "Open full memory manager",
@@ -1340,9 +1448,10 @@ window.__ModuleLoader__.load({
         "memory.am.scene.current": "Current scene",
         "memory.am.scene.unknownPolicy": "Unknown-provenance memories are not public; scene-tagged memories are hidden by default",
         "memory.am.scene.legacyNote": "An unscoped legacy memory stays unscoped when promoted to Core. Legacy access may expose it to other sessions; do not treat it as private.",
+        "memory.am.scene.legacy": "legacy/unscoped",
         "memory.am.scene.grants": "Authorized read relationships",
         "memory.am.scene.noGrants": "No cross-scene grants",
-        "memory.am.scene.degraded": "Graph/identity/preference reads and background derivation are safely degraded",
+        "memory.am.scene.degraded": "Ordinary graph/identity/preference reads, autoDream and Sleep are safely paused; the owner Scene graph remains available",
         "memory.am.recent.title": "Recent context",
         "memory.am.recent.enabled": "Enabled",
         "memory.am.recent.disabled": "Disabled",
@@ -1350,6 +1459,98 @@ window.__ModuleLoader__.load({
         "memory.am.recent.count": "Buffered events",
         "memory.am.recent.clear": "Clear recent buffer",
         "memory.am.recent.cleared": "Recent buffer cleared",
+        "memory.am.graph.title": "Scene knowledge graph (read-only)",
+        "memory.am.graph.scope": "Select scene",
+        "memory.am.graph.choose": "Choose a scene",
+        "memory.am.graph.chooseHint": "Select one scene to view its entities and relations; scenes are never unioned.",
+        "memory.am.graph.empty": "No entity evidence in this scene",
+        "memory.am.graph.truncated": "Results are truncated; choose a narrower scene or range.",
+        "memory.am.graph.nodes": "nodes",
+        "memory.am.graph.edges": "relations",
+        "memory.am.graph.relations": "Relations",
+        "memory.am.graph.noRelations": "No relation evidence",
+        "memory.am.graph.related": "related memories",
+        "memory.am.graph.overview": "Overview shows {shown}/{total} nodes; the full list is below",
+        "memory.am.graph.nodesList": "Nodes (keyboard selectable)",
+        "memory.am.graph.search": "Search nodes",
+        "memory.am.graph.searchPlaceholder": "Filter by name or type",
+        "memory.am.graph.searchClear": "Clear search",
+        "memory.am.graph.searchEmpty": "No matching nodes",
+        "memory.am.graph.focused": "Focused",
+        "memory.explorer.title": "Amadeus Memory explorer",
+        "memory.explorer.close": "Close",
+        "memory.explorer.all": "All",
+        "memory.explorer.allScenes": "All Scenes",
+        "memory.explorer.scopeHint": "Select one or more Scenes to narrow results; empty means all.",
+        "memory.explorer.keyword": "Keyword search",
+        "memory.explorer.searchPlaceholder": "Title/content/tag keyword",
+        "memory.explorer.type": "Type",
+        "memory.explorer.allTypes": "All types",
+        "memory.explorer.minImportance": "Min importance",
+        "memory.explorer.date": "Date",
+        "memory.explorer.archived": "Only archived",
+        "memory.explorer.cards": "Cards",
+        "memory.explorer.scene": "Scene",
+        "memory.explorer.editTitle": "Title",
+        "memory.explorer.editContent": "Content",
+        "memory.explorer.prev": "Previous",
+        "memory.explorer.next": "Next",
+        "memory.explorer.hop1": "1 hop",
+        "memory.explorer.hop2": "2 hops",
+        "memory.explorer.hops": "Hops",
+        "memory.explorer.reset": "Reset",
+        "memory.explorer.statusOverview": "Runtime overview",
+        "memory.explorer.conflicts": "Pending conflicts",
+        "memory.explorer.dreamRuns": "Dream runs",
+        "memory.explorer.audit7d": "Usage (7 days)",
+        "memory.explorer.tokenShare": "Token share by operation",
+        "memory.explorer.requests": "Requests",
+        "memory.explorer.tokens": "Tokens",
+        "memory.explorer.noData": "No real data available",
+        "memory.explorer.acl": "Read allowlist (directional)",
+        "memory.explorer.aclHint": "Allow one QQ group to read another group's long-term memories on the same bot. Read-only, non-transitive, never private/legacy. Browser selection is not a grant.",
+        "memory.explorer.aclEmpty": "No manual grants",
+        "memory.explorer.revoke": "Revoke",
+        "memory.explorer.reader": "Reader group",
+        "memory.explorer.grant": "Grant read",
+        "memory.explorer.bot": "Bot QQ number",
+        "memory.explorer.readerGroup": "Reader group number",
+        "memory.explorer.sourceGroup": "Source group number",
+        "memory.explorer.aclDirection": "Group {reader} can read Group {source}'s long-term memories",
+        "memory.am.tabs.memory": "Memory",
+        "memory.am.tabs.entities": "Entities",
+        "memory.am.tabs.status": "Status",
+        "memory.am.tabs.settings": "Settings",
+        "memory.am.memoryView.longTerm": "Long-term",
+        "memory.am.memoryView.recent": "Recent",
+        "memory.am.settings.general": "General",
+        "memory.am.settings.personalization": "Personalization",
+        "memory.personalization.profile": "User profile",
+        "memory.personalization.profileHint": "Profile and rules are read from the current owner settings; saves apply to the next injection.",
+        "memory.personalization.defaultCard": "Default persona card",
+        "memory.personalization.agentCards": "Per-Agent persona cards",
+        "memory.personalization.name": "Name",
+        "memory.personalization.personality": "Personality",
+        "memory.personalization.replyStyle": "Reply style",
+        "memory.personalization.enabled": "Enabled",
+        "memory.personalization.preview": "Actual injection preview",
+        "memory.personalization.previewHint": "Produced by the same server renderer used for injection; profile/persona/rules only, no cross-Scene memory bodies.",
+        "memory.personalization.saveProfile": "Save profile",
+        "memory.personalization.savePersona": "Save persona cards",
+        "memory.personalization.saved": "Personalization saved",
+        "memory.am.settings.retrieval": "Retrieval",
+        "memory.am.settings.scene": "Scene",
+        "memory.am.settings.backup": "Backup",
+        "memory.am.settings.acl": "Read allowlist",
+        "memory.am.recent.hotTitle": "Session hot memory",
+        "memory.am.recent.hotHint": "The last few turns of this Session, held only in process memory and gone with the Session; it is not SQLite memory and the owner API cannot enumerate or list its text.",
+        "memory.am.recent.hotState": "Hot-memory injection",
+        "memory.am.recent.trustedTitle": "Trusted Scene recent context",
+        "memory.am.recent.trustedHint": "In-process buffer with a 10-minute TTL. The owner can see event counts by Scene, never raw text.",
+        "memory.am.entitiesHint": "Read-only single-Scene graph. A Scene must be selected; scenes are never unioned.",
+        "memory.am.entitiesFullHint": "When Scene memories exist or strict mode is on, legacy graph and identity APIs are closed. Alias and canonical-entity management need a Scene-safe owner entry.",
+        "memory.am.entitiesOpenFull": "Open full memory/entity panel",
+        "memory.am.entitiesWeights": "Tag/entity weights",
         "memory.am.memory.archivedDone": "Archived",
         "memory.am.memory.unarchivedDone": "Unarchived",
         "memory.am.memory.deleted": "Deleted",
@@ -1439,7 +1640,7 @@ window.__ModuleLoader__.load({
         "memory.am.enabled": "Enabled",
         "memory.am.disabled": "Disabled",
         "memory.am.advancedTitle": "Show advanced diagnostics",
-        "memory.am.advancedHint": "Use “Open full memory manager” for graph, aliases, merges, maintenance and audit.",
+        "memory.am.advancedHint": "Use “Open full memory manager” for aliases, merges, maintenance and audit. In strict Scene mode, use the Scene graph above because ordinary graph reads are closed.",
         "memory.am.languageZh": "中文",
         "memory.am.languageEn": "English",
         "memory.am.field.language": "Memory language",
@@ -1748,7 +1949,7 @@ window.__ModuleLoader__.load({
         "memory.features.sceneIsolationEnabled": "Isolate memories by QQ scene",
         "memory.features.sceneIsolationEnabled.hint": "On: memories from a trusted Host scene are visible only there. Off: legacy behavior. Requires a trusted Host scene identity",
         "memory.features.sceneStrictQQ": "Strict QQ scene mode",
-        "memory.features.sceneStrictQQ.hint": "On: cross-scene memory, graph and ordinary HTTP content routes are denied; background maintenance pauses. Off by default",
+        "memory.features.sceneStrictQQ.hint": "On: cross-scene memory, graph and ordinary HTTP content routes are denied; autoDream and Sleep pause, while trusted QQ Session summarization may still run. Off by default",
         "memory.features.recentContextEnabled": "Recent context (10 min)",
         "memory.features.recentContextEnabled.hint": "On: keep a bounded in-memory recent-event buffer, injected only in the authorized direction. No embedding/LLM and no long-term write",
         "memory.features.coreMemoryEnabled": "Core memory (protected)",
@@ -4634,8 +4835,10 @@ window.__ModuleLoader__.load({
       { key: "autoReindexOnBoot", type: "boolean", default: true }
     ];
     const AM_FEATURE_KEYS = [
-      "autoInject", "autoSummarize", "autoDream", "sleepModeEnabled",
-      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled",
+      "autoInject", "hotMemoryEnabled", "autoSummarize", "autoDream", "sleepModeEnabled",
+      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled"
+    ];
+    const AM_SCENE_FEATURE_KEYS = [
       "sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"
     ];
     // Keep this list aligned with store.js TYPES minus document (document rows
@@ -4704,13 +4907,446 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    function AmadeusMemorySettings({ ctx, t }) {
+    // #graph-preview-start
+    function amadeusGraphPreview(nodes, edges, focusIds = [], limit = 12) {
+      const source = Array.isArray(nodes) ? nodes : [];
+      const relations = Array.isArray(edges) ? edges : [];
+      const byId = new Map(source.map((node) => [node.id, node]));
+      const capped = Math.max(1, Number(limit) || 12);
+      const picked = [];
+      const seen = new Set();
+      const push = (id) => {
+        if (picked.length >= capped || seen.has(id) || !byId.has(id)) return;
+        seen.add(id);
+        picked.push(byId.get(id));
+      };
+      const focus = (Array.isArray(focusIds) ? focusIds : [])
+        .filter((id) => typeof id === "string" && byId.has(id));
+      for (const id of focus) push(id);
+      for (const id of focus) {
+        for (const edge of relations) {
+          if (edge.from !== id && edge.to !== id) continue;
+          push(edge.from);
+          push(edge.to);
+        }
+      }
+      for (const node of source) push(node.id);
+      return picked;
+    }
+    // #graph-preview-end
+
+    const AM_NAV_STORAGE_KEY = "amadeus-memory.nav.v1";
+    const AM_NAV_PANELS = new Set(["memory", "entities", "status", "settings"]);
+    const AM_NAV_MEMORY = new Set(["long-term", "recent"]);
+    const AM_NAV_SETTINGS = new Set(["general", "retrieval", "scene", "backup"]);
+    function readAmadeusNav() {
+      const fallback = { panelTab: "memory", memoryView: "long-term", settingsPage: "general" };
+      try {
+        if (typeof window === "undefined" || !window.sessionStorage) return fallback;
+        const parsed = JSON.parse(window.sessionStorage.getItem(AM_NAV_STORAGE_KEY) || "null");
+        if (!parsed || typeof parsed !== "object") return fallback;
+        return {
+          panelTab: AM_NAV_PANELS.has(parsed.panelTab) ? parsed.panelTab : fallback.panelTab,
+          memoryView: AM_NAV_MEMORY.has(parsed.memoryView) ? parsed.memoryView : fallback.memoryView,
+          settingsPage: AM_NAV_SETTINGS.has(parsed.settingsPage) ? parsed.settingsPage : fallback.settingsPage
+        };
+      } catch {
+        return fallback;
+      }
+    }
+    function writeAmadeusNav({ panelTab, memoryView, settingsPage }) {
+      try {
+        if (typeof window === "undefined" || !window.sessionStorage) return;
+        window.sessionStorage.setItem(AM_NAV_STORAGE_KEY, JSON.stringify({
+          panelTab: AM_NAV_PANELS.has(panelTab) ? panelTab : "memory",
+          memoryView: AM_NAV_MEMORY.has(memoryView) ? memoryView : "long-term",
+          settingsPage: AM_NAV_SETTINGS.has(settingsPage) ? settingsPage : "general"
+        }));
+      } catch { /* navigation persistence is best-effort */ }
+    }
+
+    function AmadeusOwnerExplorer({ ctx, t, onClose }) {
+      const [tab, setTab] = useState("memory");
+      const [scopes, setScopes] = useState([]);
+      const [selectedScopes, setSelectedScopes] = useState([]);
+      const [items, setItems] = useState([]);
+      const [memBusy, setMemBusy] = useState(false);
+      const [memError, setMemError] = useState("");
+      const [q, setQ] = useState("");
+      const [type, setType] = useState("");
+      const [minImp, setMinImp] = useState(0);
+      const [archived, setArchived] = useState(false);
+      const [dateRange, setDateRange] = useState("all");
+      const [viewMode, setViewMode] = useState("cards");
+      const [offset, setOffset] = useState(0);
+      const [detail, setDetail] = useState(null);
+      const [detailDraft, setDetailDraft] = useState(null);
+      const [detailBusy, setDetailBusy] = useState(false);
+      const [detailError, setDetailError] = useState("");
+      const [graph, setGraph] = useState(null);
+      const [graphBusy, setGraphBusy] = useState(false);
+      const [graphError, setGraphError] = useState("");
+      const [graphQuery, setGraphQuery] = useState("");
+      const [graphFocus, setGraphFocus] = useState(null);
+      const [graphHops, setGraphHops] = useState(1);
+      const [status, setStatus] = useState(null);
+      const [scene, setScene] = useState(null);
+      const [recent, setRecent] = useState(null);
+      const [acl, setAcl] = useState(null);
+      const [aclReader, setAclReader] = useState("");
+      const [aclSource, setAclSource] = useState("");
+      const [aclBusy, setAclBusy] = useState(false);
+      const [aclError, setAclError] = useState("");
+
+      useEffect(() => {
+        adminJson("/graph/scopes").then((data) => setScopes(data.items || [])).catch(() => setScopes([]));
+      }, []);
+      const scopeParam = selectedScopes.length ? selectedScopes.join(",") : "all";
+      const scopeKey = selectedScopes.join(",");
+
+      const loadMemories = async () => {
+        setMemBusy(true); setMemError("");
+        try {
+          const from = dateRange === "all" ? "" : new Date(Date.now() - Number(dateRange) * 86400000).toISOString();
+          const params = new URLSearchParams({
+            limit: "20", offset: String(offset), archived: archived ? "1" : "0",
+            scenes: scopeParam,
+            ...(viewMode === "timeline" ? { order: "chrono" } : {})
+          });
+          if (q.trim()) params.set("q", q.trim());
+          if (type) params.set("type", type);
+          if (minImp) params.set("min_importance", String(minImp));
+          if (from) params.set("updated_from", from);
+          const data = await adminJson(`/memories?${params.toString()}`);
+          setItems(data.items || []);
+        } catch (error) { setMemError(String(error.message || error)); setItems([]); }
+        finally { setMemBusy(false); }
+      };
+      useEffect(() => { if (tab === "memory") void loadMemories(); }, [tab, offset, q, type, minImp, archived, dateRange, scopeKey, viewMode]);
+
+      const openDetail = async (item) => {
+        setDetailBusy(true); setDetailError("");
+        try {
+          const full = await adminJson(`/memory?id=${encodeURIComponent(item.id)}`);
+          setDetail(full);
+          setDetailDraft({
+            title: full.title, content: full.content, importance: full.importance,
+            expected: full.updated_at
+          });
+        } catch (error) {
+          setDetailError(String(error.message || error));
+        } finally { setDetailBusy(false); }
+      };
+
+      useEffect(() => {
+        if (tab !== "entity") return;
+        setGraphBusy(true); setGraphError("");
+        adminJson(`/graph?scopes=${encodeURIComponent(scopeParam)}&node_limit=100&edge_limit=200`)
+          .then((data) => { setGraph(data); setGraphFocus(null); })
+          .catch((error) => { setGraph(null); setGraphError(String(error.message || error)); })
+          .finally(() => setGraphBusy(false));
+      }, [tab, scopeParam]);
+
+      useEffect(() => {
+        if (tab !== "status") return;
+        Promise.all([
+          adminJson("/status"), adminJson("/scene"), adminJson("/recent")
+        ]).then(([st, sc, rc]) => { setStatus(st); setScene(sc); setRecent(rc); })
+          .catch((error) => setGraphError(String(error.message || error)));
+      }, [tab]);
+
+      useEffect(() => {
+        if (tab !== "settings") return;
+        adminJson("/acl").then(setAcl).catch(() => setAcl(null));
+      }, [tab]);
+
+      const toggleScope = (scope) => {
+        setSelectedScopes((current) => current.includes(scope)
+          ? current.filter((value) => value !== scope)
+          : [...current, scope]);
+      };
+      const scopePicker = () => h("div", { className: "mneme-set-card" },
+        h("div", { className: "mneme-set-hint" }, t("memory.explorer.scopeHint")),
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 } },
+          h("button", { className: "mneme-chip" + (selectedScopes.length === 0 ? " mneme-active" : ""), onClick: () => setSelectedScopes([]) }, t("memory.explorer.allScenes")),
+          scopes.map((row) => h("button", {
+            key: row.scope,
+            className: "mneme-chip" + (selectedScopes.includes(row.scope) ? " mneme-active" : ""),
+            title: `${row.label || row.scope} · ${row.active ?? 0}`,
+            onClick: () => toggleScope(row.scope)
+          }, `${row.label || row.scope} (${row.active ?? 0})`))));
+
+      const memoryPanel = () => h("div", null,
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.keyword"),
+            h("input", { className: "mneme-set-input", value: q, onChange: (event) => { setQ(event.target.value); setOffset(0); }, placeholder: t("memory.explorer.searchPlaceholder") })),
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.type"),
+            h("select", { className: "mneme-set-input", value: type, onChange: (event) => { setType(event.target.value); setOffset(0); } },
+              h("option", { value: "" }, t("memory.explorer.allTypes")),
+              ["preference", "project", "decision", "history", "rejected_solution", "pitfall", "constraint", "document"].map((value) => h("option", { key: value, value }, value)))),
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.minImportance"),
+            h("select", { className: "mneme-set-input", value: minImp, onChange: (event) => { setMinImp(Number(event.target.value)); setOffset(0); } },
+              [0, 3, 4, 5].map((value) => h("option", { key: value, value }, value === 0 ? t("memory.explorer.all") : String(value))))),
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.date"),
+            h("select", { className: "mneme-set-input", value: dateRange, onChange: (event) => { setDateRange(event.target.value); setOffset(0); } },
+              [["all", t("memory.explorer.all")], ["7", "7d"], ["30", "30d"], ["90", "90d"]].map(([value, label]) => h("option", { key: value, value }, label)))),
+          h("label", { className: "mneme-set-hint", style: { display: "flex", alignItems: "center", gap: 6 } },
+            h("input", { type: "checkbox", checked: archived, onChange: (event) => { setArchived(event.target.checked); setOffset(0); } }), t("memory.explorer.archived")),
+          h("div", { style: { display: "flex", gap: 6 } },
+            h("button", { className: "mneme-btn" + (viewMode === "cards" ? " mneme-active" : ""), onClick: () => setViewMode("cards") }, t("memory.explorer.cards")),
+            h("button", { className: "mneme-btn" + (viewMode === "timeline" ? " mneme-active" : ""), onClick: () => setViewMode("timeline") }, t("memory.explorer.timeline")))),
+        scopePicker(),
+        memError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, memError),
+        memBusy && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+        !memBusy && items.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.explorer.empty")),
+        h("div", { style: { maxHeight: "48vh", overflowY: "auto", marginTop: 10 } },
+          viewMode === "timeline"
+            ? Array.from(items.reduce((groups, item) => {
+                const day = String(item.updated_at || item.created_at || "").slice(0, 10) || "—";
+                if (!groups.has(day)) groups.set(day, []);
+                groups.get(day).push(item);
+                return groups;
+              }, new Map())).map(([day, list]) => h("div", { key: day, style: { borderLeft: "2px solid var(--dsw-alias-state-business-primary)", paddingLeft: 10, marginBottom: 12 } },
+                h("div", { className: "mneme-set-grouphead" }, day),
+                list.map((item) => h("button", {
+                  key: item.id, className: "mneme-set-card",
+                  style: { display: "block", width: "100%", textAlign: "left", cursor: "pointer", marginBottom: 6 },
+                  onClick: () => openDetail(item)
+                },
+                  h("div", { className: "mneme-set-ruletext" }, `${String(item.updated_at || "").slice(11, 16)} · ${item.title}`),
+                  h("div", { className: "mneme-set-hint" }, `${item.type} · ${t("memory.explorer.importance")} ${item.importance} · ${item.scene_scope || t("memory.am.scene.legacy")}`)))))
+            : items.map((item) => h("button", {
+              key: item.id,
+              className: "mneme-set-card",
+              style: { display: "block", width: "100%", textAlign: "left", cursor: "pointer", marginBottom: 8 },
+              onClick: () => { setDetail(item); setDetailDraft({ title: item.title, content: item.content, importance: item.importance, expected: item.updated_at }); }
+            },
+              h("div", { className: "mneme-set-ruletext" }, item.title),
+              h("div", { className: "mneme-set-hint" }, `${item.type} · ${t("memory.explorer.importance")} ${item.importance} · ${item.scene_scope || t("memory.am.scene.legacy")} · ${item.archived ? t("memory.am.memory.archive") : ""}`),
+              h("div", { className: "mneme-set-hint" }, String(item.excerpt || "").slice(0, 240))))),
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8 } },
+          h("button", { className: "mneme-btn", disabled: offset === 0, onClick: () => setOffset(Math.max(0, offset - 20)) }, t("memory.explorer.prev")),
+          h("button", { className: "mneme-btn", disabled: items.length < 20, onClick: () => setOffset(offset + 20) }, t("memory.explorer.next"))),
+        detailBusy && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+        detailError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, detailError),
+        detail && detailDraft && h("div", { className: "mneme-set-card", style: { marginTop: 10 } },
+          h("div", { className: "mneme-set-grouphead" }, detail.title),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.explorer.source")}: ${detail.source || "—"} · ${t("memory.explorer.scene")}: ${detail.scene_scope || t("memory.am.scene.legacy")} · ${detail.created_at || "—"}`),
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.editTitle"),
+            h("input", { className: "mneme-set-input", value: detailDraft.title, onChange: (event) => setDetailDraft({ ...detailDraft, title: event.target.value }) })),
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.editContent"),
+            h("textarea", { className: "mneme-set-input", rows: 6, value: detailDraft.content, onChange: (event) => setDetailDraft({ ...detailDraft, content: event.target.value }) })),
+          h("label", { className: "mneme-set-hint" }, t("memory.explorer.importance"),
+            h("select", { className: "mneme-set-input", value: detailDraft.importance, onChange: (event) => setDetailDraft({ ...detailDraft, importance: Number(event.target.value) }) },
+              [1, 2, 3, 4, 5].map((value) => h("option", { key: value, value }, String(value))))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+            h("button", { className: "mneme-btn", onClick: async () => {
+              try {
+                await adminJson("/memory/update", { method: "POST", body: JSON.stringify({
+                  id: detail.id, expected_updated_at: detailDraft.expected,
+                  title: detailDraft.title, content: detailDraft.content, importance: detailDraft.importance
+                }) });
+                setDetail(null); setDetailDraft(null); await loadMemories();
+              } catch (error) { setMemError(String(error.message || error)); }
+            } }, t("memory.am.save")),
+            h("button", { className: "mneme-btn", onClick: async () => {
+              try {
+                await adminJson("/memory/archive", { method: "POST", body: JSON.stringify({ id: detail.id, archived: !detail.archived, expected_updated_at: detail.updated_at }) });
+                setDetail(null); setDetailDraft(null); await loadMemories();
+              } catch (error) { setMemError(String(error.message || error)); }
+            } }, detail.archived ? t("memory.am.memory.unarchive") : t("memory.am.memory.archive")),
+            h("button", { className: "mneme-btn mneme-btndanger", onClick: async () => {
+              if (!window.confirm(t("memory.am.memory.confirmDelete"))) return;
+              try {
+                await adminJson("/memory/delete", { method: "POST", body: JSON.stringify({ id: detail.id, confirm: "DELETE" }) });
+                setDetail(null); setDetailDraft(null); await loadMemories();
+              } catch (error) { setMemError(String(error.message || error)); }
+            } }, t("memory.am.delete")),
+            h("button", { className: "mneme-btn", onClick: () => { setDetail(null); setDetailDraft(null); } }, t("memory.am.memory.cancel"))))
+      );
+
+      const neighborhood = () => {
+        if (!graph || !graphFocus) return { nodes: graph?.nodes || [], edges: graph?.edges || [] };
+        const byId = new Map((graph.nodes || []).map((node) => [node.id, node]));
+        const adjacency = new Map();
+        for (const edge of graph.edges || []) {
+          if (!adjacency.has(edge.from)) adjacency.set(edge.from, new Set());
+          if (!adjacency.has(edge.to)) adjacency.set(edge.to, new Set());
+          adjacency.get(edge.from).add(edge.to); adjacency.get(edge.to).add(edge.from);
+        }
+        const keep = new Set([graphFocus]);
+        let frontier = [graphFocus];
+        for (let hop = 0; hop < graphHops; hop += 1) {
+          const next = [];
+          for (const id of frontier) for (const other of adjacency.get(id) || []) if (!keep.has(other)) { keep.add(other); next.push(other); }
+          frontier = next;
+        }
+        return {
+          nodes: (graph.nodes || []).filter((node) => keep.has(node.id)),
+          edges: (graph.edges || []).filter((edge) => keep.has(edge.from) && keep.has(edge.to))
+        };
+      };
+
+      const entityPanel = () => {
+        const view = neighborhood();
+        const query = graphQuery.trim().toLowerCase();
+        const filtered = query ? view.nodes.filter((node) => `${node.name} ${node.type}`.toLowerCase().includes(query)) : view.nodes;
+        const preview = amadeusGraphPreview(view.nodes, view.edges, graphFocus ? [graphFocus] : [], 12);
+        const previewSet = new Set(preview.map((node) => node.id));
+        const width = 440; const height = 240; const positions = new Map();
+        const radius = Math.min(88, 42 + preview.length * 5);
+        preview.forEach((node, index) => {
+          const angle = preview.length === 1 ? 0 : (Math.PI * 2 * index) / preview.length - Math.PI / 2;
+          positions.set(node.id, { x: width / 2 + (preview.length === 1 ? 0 : radius * Math.cos(angle)), y: height / 2 + (preview.length === 1 ? 0 : radius * Math.sin(angle)) });
+        });
+        return h("div", null,
+          scopePicker(),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+            h("input", { className: "mneme-set-input", style: { flex: "1 1 220px" }, value: graphQuery, placeholder: t("memory.am.graph.search"), onChange: (event) => setGraphQuery(event.target.value) }),
+            h("button", { className: "mneme-btn" + (graphHops === 1 ? " mneme-active" : ""), onClick: () => setGraphHops(1) }, t("memory.explorer.hop1")),
+            h("button", { className: "mneme-btn" + (graphHops === 2 ? " mneme-active" : ""), onClick: () => setGraphHops(2) }, t("memory.explorer.hop2")),
+            h("button", { className: "mneme-btn", onClick: () => { setGraphFocus(null); setGraphQuery(""); } }, t("memory.explorer.reset"))),
+          graphBusy && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+          graphError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, graphError),
+          graph && view.nodes.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.am.graph.empty")),
+          graph && view.nodes.length > 0 && h("div", null,
+            graphFocus && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-accent)" } }, `${t("memory.am.graph.focused")}: ${graphFocus} · ${t("memory.explorer.hops")}: ${graphHops}`),
+            h("svg", { className: "mneme-graphsvg", viewBox: `0 0 ${width} ${height}`, style: { height: 240 }, "aria-hidden": "true", focusable: "false" },
+              view.edges.filter((edge) => previewSet.has(edge.from) && previewSet.has(edge.to)).map((edge) => {
+                const a = positions.get(edge.from); const b = positions.get(edge.to);
+                return a && b ? h("line", { key: edge.id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, className: "mneme-gedge" }) : null;
+              }),
+              preview.map((node) => {
+                const pos = positions.get(node.id); const focused = node.id === graphFocus;
+                return h("g", { key: node.id, className: "mneme-gnode", transform: `translate(${pos.x},${pos.y})`, onClick: () => setGraphFocus(node.id) },
+                  h("circle", { r: 13 + Math.min(8, node.degree || 0) * 2, fill: "var(--dsw-alias-state-business-primary)", fillOpacity: 0.75, stroke: focused ? "var(--mneme-accent)" : "none", strokeWidth: focused ? 3 : 0 }),
+                  h("text", { className: "mneme-glabel", y: 28, textAnchor: "middle", style: { fontWeight: focused ? 700 : 400 } }, String(node.name).slice(0, 22)));
+              })),
+            h("div", { className: "mneme-set-grouphead" }, t("memory.am.graph.nodesList")),
+            h("div", { style: { maxHeight: 140, overflowY: "auto" } },
+              filtered.map((node) => h("button", { key: node.id, className: "mneme-btn", style: { margin: "2px 4px 2px 0" }, onClick: () => setGraphFocus(node.id) }, `${node.name} · ${node.type} · ${node.related_memories} · ${(node.scopes || []).join(", ")}`))),
+            h("div", { className: "mneme-set-grouphead" }, t("memory.am.graph.relations")),
+            h("div", { style: { maxHeight: 160, overflowY: "auto" } },
+              view.edges.map((edge) => h("div", { key: edge.id, className: "mneme-set-hint" }, `${edge.from} → ${edge.relation_type} → ${edge.to} · ${(edge.scopes || []).join(", ")}`))),
+            graph.truncated && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, t("memory.am.graph.truncated"))));
+      };
+
+      const statusPanel = () => h("div", null,
+        status?.overview && h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-ruletext" }, t("memory.explorer.statusOverview")),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.am.memories")}: ${status.overview.memories.active} / ${status.overview.memories.total} · ${t("memory.am.archived")}: ${status.overview.memories.archived}`),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.am.vector")}: ${status.overview.semantic.configured ? (status.overview.semantic.ready ? t("memory.am.vectorReady") : t("memory.am.vectorInitializing")) : t("memory.am.vectorDisabled")}`),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.explorer.conflicts")}: ${status.conflicts ?? "—"}`),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.explorer.dreamRuns")}: ${(status.dreams || []).length}`)),
+        h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-ruletext" }, t("memory.explorer.audit7d")),
+          status?.audit ? h("div", null,
+            h("div", { className: "mneme-set-hint" }, `${t("memory.explorer.requests")}: ${status.audit.total_calls ?? 0} · ${t("memory.explorer.tokens")}: ${status.audit.total_tokens ?? 0}`),
+            (status.audit.by_day || []).slice(-7).map((day) => {
+              const tokens = Number(day.total_tokens) || 0;
+              const max = Math.max(1, ...((status.audit.by_day || []).map((row) => Number(row.total_tokens) || 0)));
+              return h("div", { key: day.day, className: "mneme-set-row", style: { border: "none", padding: "2px 0" } },
+                h("span", { className: "mneme-set-hint", style: { width: 90 } }, day.day),
+                h("span", { style: { height: 8, width: `${Math.round(tokens / max * 100)}%`, background: "var(--dsw-alias-state-business-primary)", borderRadius: 4 } }),
+                h("span", { className: "mneme-set-hint" }, `${tokens} · ${day.c ?? 0} ${t("memory.explorer.requests")}`));
+            }))
+            : h("div", { className: "mneme-set-hint" }, t("memory.explorer.noData"))),
+        status?.audit && h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-ruletext" }, t("memory.explorer.tokenShare")),
+          (() => {
+            const rows = (status.audit.by_operation || []).filter((row) => Number(row.total_tokens) > 0);
+            if (rows.length === 0) return h("div", { className: "mneme-set-hint" }, t("memory.explorer.noData"));
+            const max = Math.max(1, ...rows.map((row) => Number(row.total_tokens) || 0));
+            return rows.slice(0, 8).map((row) => h("div", { key: row.operation || "unknown", className: "mneme-set-row", style: { border: "none", padding: "2px 0" } },
+              h("span", { className: "mneme-set-hint", style: { width: 150, overflow: "hidden", textOverflow: "ellipsis" } }, row.operation || "unknown"),
+              h("span", { style: { height: 8, width: `${Math.round((Number(row.total_tokens) || 0) / max * 100)}%`, background: "var(--dsw-alias-state-business-primary)", borderRadius: 4 } }),
+              h("span", { className: "mneme-set-hint" }, `${row.total_tokens} · ${row.c ?? 0} ${t("memory.explorer.requests")}`)));
+          })()),
+        h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-ruletext" }, t("memory.am.scene.title")),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.am.scene.isolation")}: ${scene?.enabled ? "on" : "off"} · ${t("memory.am.scene.strict")}: ${scene?.strict_qq ? "on" : "off"}`),
+          h("div", { className: "mneme-set-hint" }, `${t("memory.am.recent.title")}: ${recent?.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.count")}: ${recent?.total_events ?? "—"}`)));
+
+      const aclPanel = () => h("div", { className: "mneme-set-card" },
+        h("div", { className: "mneme-set-grouphead" }, t("memory.explorer.acl")),
+        h("div", { className: "mneme-set-hint" }, t("memory.explorer.aclHint")),
+        aclError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, aclError),
+        !acl && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+        acl && h("div", null,
+          (acl.grants || []).length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.explorer.aclEmpty")),
+          (acl.grants || []).map((grant) => h("div", { key: grant.reader_scene + grant.source_scene, className: "mneme-set-row" },
+            h("span", { className: "mneme-set-ruletext", style: { flex: 1 } }, `${grant.reader_scene} → ${grant.source_scene}`),
+            h("button", { className: "mneme-btn", disabled: aclBusy, onClick: async () => {
+              setAclBusy(true); setAclError("");
+              try {
+                const data = await adminJson("/acl/revoke", { method: "POST", body: JSON.stringify({ reader_scene: grant.reader_scene, source_scene: grant.source_scene }) });
+                setAcl(data.state);
+              } catch (error) { setAclError(String(error.message || error)); }
+              finally { setAclBusy(false); }
+            } }, t("memory.explorer.revoke"))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+            h("select", { className: "mneme-set-input", value: aclReader, onChange: (event) => setAclReader(event.target.value) },
+              h("option", { value: "" }, t("memory.explorer.reader")),
+              (acl.scenes || []).map((row) => h("option", { key: row.scope, value: row.scope }, row.scope))),
+            h("select", { className: "mneme-set-input", value: aclSource, onChange: (event) => setAclSource(event.target.value) },
+              h("option", { value: "" }, t("memory.explorer.source")),
+              (acl.scenes || []).map((row) => h("option", { key: row.scope, value: row.scope }, row.scope))),
+            h("button", { className: "mneme-btn", disabled: aclBusy || !aclReader || !aclSource, onClick: async () => {
+              setAclBusy(true); setAclError("");
+              try {
+                const data = await adminJson("/acl/grant", { method: "POST", body: JSON.stringify({ reader_scene: aclReader, source_scene: aclSource }) });
+                setAcl(data.state);
+              } catch (error) { setAclError(String(error.message || error)); }
+              finally { setAclBusy(false); }
+            } }, t("memory.explorer.grant"))))));
+
+      const tabs = [
+        ["memory", t("memory.am.tabs.memory")], ["entity", t("memory.am.tabs.entities")],
+        ["status", t("memory.am.tabs.status")], ["settings", t("memory.am.tabs.settings")]
+      ];
+      const tree = h("div", {
+        className: "mneme-overlay", role: "dialog", "aria-label": t("memory.explorer.title"),
+        style: { width: "min(1100px, 96vw)", height: "90vh", display: "flex", flexDirection: "column", zIndex: 4000 }
+      },
+        h("div", { className: "mneme-overlaybar" },
+          h("span", { className: "mneme-overlaytitle" }, t("memory.explorer.title")),
+          h("button", { className: "mneme-btn", onClick: onClose }, t("memory.explorer.close"))),
+        h("div", { className: "mneme-overlaybody", style: { overflowY: "auto", padding: 12 } },
+          h("div", { role: "tablist", "aria-label": t("memory.explorer.title"), style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 } },
+            tabs.map(([key, label]) => h("button", {
+              key, role: "tab", "aria-selected": String(tab === key), tabIndex: tab === key ? 0 : -1,
+              className: "mneme-chip" + (tab === key ? " mneme-active" : ""), onClick: () => setTab(key)
+            }, label))),
+          h("div", { hidden: tab !== "memory" }, memoryPanel()),
+          h("div", { hidden: tab !== "entity" }, entityPanel()),
+          h("div", { hidden: tab !== "status" }, statusPanel()),
+          h("div", { hidden: tab !== "settings" }, h(AmadeusMemorySettings, { ctx, t, settingsOnly: true }))));
+      // The settings section lives inside the host settings sheet, which can
+      // establish its own clipping/stacking context. Portal the explorer to
+      // <body> exactly like the legacy MemoryOverlay so the fixed overlay is
+      // actually in the viewport and the AX tree.
+      if (reactDom && typeof document !== "undefined") return reactDom.createPortal(tree, document.body);
+      return tree;
+    }
+
+    function AmadeusMemorySettings({ ctx, t, settingsOnly = false }) {
+      const [panelTab, setPanelTab] = useState(() => settingsOnly ? "settings" : readAmadeusNav().panelTab);
+      const [memoryView, setMemoryView] = useState(() => readAmadeusNav().memoryView);
+      const [settingsPage, setSettingsPage] = useState(() => readAmadeusNav().settingsPage);
       const [overview, setOverview] = useState(null);
       const [features, setFeatures] = useState(null);
       const [prefs, setPrefs] = useState(null);
       const [vector, setVector] = useState(null);
       const [sceneStatus, setSceneStatus] = useState(null);
       const [recentStatus, setRecentStatus] = useState(null);
+      const [graphScopes, setGraphScopes] = useState([]);
+      const [graphScope, setGraphScope] = useState("");
+      const [graphData, setGraphData] = useState(null);
+      const [graphBusy, setGraphBusy] = useState("");
+      const [graphError, setGraphError] = useState("");
+      const [graphSelected, setGraphSelected] = useState(null);
+      const [graphQuery, setGraphQuery] = useState("");
+      const graphRequestRef = useRef(0);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState("");
       const [message, setMessage] = useState("");
@@ -4724,6 +5360,19 @@ window.__ModuleLoader__.load({
       const [configUnavailable, setConfigUnavailable] = useState(false);
       const [formSnapshot, setFormSnapshot] = useState(null);
       const [formValues, setFormValues] = useState(null);
+      const [explorerOpen, setExplorerOpen] = useState(false);
+      const [aclState, setAclState] = useState(null);
+      const [aclBotInput, setAclBotInput] = useState("");
+      const [aclReaderInput, setAclReaderInput] = useState("");
+      const [aclSourceInput, setAclSourceInput] = useState("");
+      const [aclBusy, setAclBusy] = useState(false);
+      const [aclError, setAclError] = useState("");
+      const [personalization, setPersonalization] = useState(null);
+      const [profileDraft, setProfileDraft] = useState("");
+      const [personaDraft, setPersonaDraft] = useState(null);
+      const [personalizationBusy, setPersonalizationBusy] = useState(false);
+      const [personalizationError, setPersonalizationError] = useState("");
+      const [personalizationSaved, setPersonalizationSaved] = useState("");
       const [formConflict, setFormConflict] = useState(false);
       const formRef = useRef(null);
       const formSnapRef = useRef(null);
@@ -4745,28 +5394,18 @@ window.__ModuleLoader__.load({
       const [restoreTarget, setRestoreTarget] = useState(null);
       const [restoreAck, setRestoreAck] = useState(false);
 
-      const adminJson = useCallback(async (path, opts = {}) => {
-        const res = await adminFetch(path, opts);
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok || body.ok === false) {
-          const err = new Error(body.error || `HTTP ${res.status}`);
-          err.candidates = Array.isArray(body.candidates) ? body.candidates : [];
-          throw err;
-        }
-        return body.data;
-      }, []);
-
       const load = useCallback(async () => {
         setLoading(true);
         setError("");
         try {
-          const [ov, ft, pf, vc, sc, rc] = await Promise.all([
+          const [ov, ft, pf, vc, sc, rc, gs] = await Promise.all([
             adminJson("/overview"),
             adminJson("/features"),
             adminJson("/preferences"),
             adminJson("/vector"),
             adminJson("/scene"),
-            adminJson("/recent")
+            adminJson("/recent"),
+            adminJson("/graph/scopes")
           ]);
           setOverview(ov);
           setFeatures(ft);
@@ -4774,6 +5413,7 @@ window.__ModuleLoader__.load({
           setVector(vc);
           setSceneStatus(sc);
           setRecentStatus(rc);
+          setGraphScopes(gs.items || []);
           setVectorDraft((prev) => (prev.baseUrl || prev.model || prev.apiKey || prev.enabled
             ? prev
             : { enabled: vc.enabled === true, baseUrl: vc.base_url || "", model: vc.model || "", apiKey: "" }));
@@ -4836,6 +5476,28 @@ window.__ModuleLoader__.load({
         } catch (e) {
           setMemError(`${t("memory.am.memory.loadError")}: ${String(e.message || e)}`);
         } finally { setMemBusy(""); }
+      };
+
+      const loadGraph = async (scope) => {
+        const requestId = ++graphRequestRef.current;
+        setGraphScope(scope);
+        setGraphSelected(null);
+        setGraphQuery("");
+        setGraphError("");
+        setGraphData(null);
+        if (!scope) { setGraphBusy(""); return; }
+        setGraphBusy("graph");
+        try {
+          const data = await adminJson(`/graph?scope=${encodeURIComponent(scope)}`);
+          if (graphRequestRef.current !== requestId) return; // stale A/B switch response
+          setGraphData(data);
+        } catch (e) {
+          if (graphRequestRef.current !== requestId) return;
+          setGraphData(null);
+          setGraphError(String(e.message || e));
+        } finally {
+          if (graphRequestRef.current === requestId) setGraphBusy("");
+        }
       };
 
       const clearRecent = async () => {
@@ -5055,9 +5717,35 @@ window.__ModuleLoader__.load({
       };
 
       useEffect(() => {
-        void loadMemories("", false, 0);
-        void loadBackups();
-      }, []);
+        if (panelTab === "memory" && memoryView === "long-term" && memItems.length === 0) {
+          void loadMemories("", false, 0);
+        }
+      }, [panelTab, memoryView]);
+
+      useEffect(() => {
+        if (panelTab === "settings" && settingsPage === "backup" && backups.length === 0) {
+          void loadBackups();
+        }
+      }, [panelTab, settingsPage]);
+
+      useEffect(() => {
+        if (panelTab !== "settings" || settingsPage !== "acl") return;
+        adminJson("/acl").then(setAclState).catch((err) => setAclError(String(err.message || err)));
+      }, [panelTab, settingsPage]);
+
+      useEffect(() => {
+        if (panelTab !== "settings" || settingsPage !== "personalization" || personalization) return;
+        adminJson("/personalization").then((data) => {
+          setPersonalization(data);
+          setProfileDraft(data.profile || "");
+          setPersonaDraft(JSON.parse(JSON.stringify(data.persona || { default: {}, byAgent: {} })));
+        }).catch((err) => setPersonalizationError(String(err.message || err)));
+      }, [panelTab, settingsPage, personalization]);
+
+      useEffect(() => {
+        if (settingsOnly) return;
+        writeAmadeusNav({ panelTab, memoryView, settingsPage });
+      }, [panelTab, memoryView, settingsPage, settingsOnly]);
 
       const refreshFeature = async (key, value) => {
         setBusy(key);
@@ -5434,7 +6122,7 @@ window.__ModuleLoader__.load({
               h("div", { style: { flex: "1 1 240px", minWidth: 0, overflowWrap: "anywhere" } },
                 h("div", { className: "mneme-set-ruletext" }, item.title),
                 h("div", { className: "mneme-set-hint" },
-                  `${memoryTypeLabel(item.type)} · ${t("memory.am.memory.importance")}: ${item.importance} · ${item.archived ? t("memory.am.memory.archive") : ""} · ${item.protected ? t("memory.am.memory.coreBadge") : ""} · ${item.updated_at || "—"}`),
+                  `${memoryTypeLabel(item.type)} · ${t("memory.am.memory.importance")}: ${item.importance} · ${item.archived ? t("memory.am.memory.archive") : ""} · ${item.protected ? t("memory.am.memory.coreBadge") : ""} · ${item.scene_scope || t("memory.am.scene.legacy")} · ${item.updated_at || "—"}`),
                 h("div", { className: "mneme-set-hint", style: { marginTop: 4 } }, item.excerpt || "")),
               h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
                 h("button", { className: "mneme-btn", onClick: () => openMemoryEditor(item.id), disabled: !!memBusy },
@@ -5459,6 +6147,120 @@ window.__ModuleLoader__.load({
             h("button", { className: "mneme-btn", onClick: () => setMemDelete(null), disabled: !!memBusy },
               t("memory.am.memory.cancel")))));
 
+      const graphCard = () => {
+        const nodes = graphData?.nodes || [];
+        const edges = graphData?.edges || [];
+        const width = 440;
+        const height = 240;
+        const overviewLimit = 12;
+        const selectedNode = graphSelected?.kind === "node" ? nodes.find((node) => node.id === graphSelected.id) : null;
+        const selectedEdge = graphSelected?.kind === "edge" ? edges.find((edge) => edge.id === graphSelected.id) : null;
+        const focusIds = selectedNode ? [selectedNode.id] : selectedEdge ? [selectedEdge.from, selectedEdge.to] : [];
+        const overviewNodes = amadeusGraphPreview(nodes, edges, focusIds, overviewLimit);
+        const overviewSet = new Set(overviewNodes.map((node) => node.id));
+        const overviewEdges = edges.filter((edge) => overviewSet.has(edge.from) && overviewSet.has(edge.to));
+        const query = graphQuery.trim().toLowerCase();
+        const filteredNodes = query
+          ? nodes.filter((node) => `${node.name || ""} ${node.type || ""}`.toLowerCase().includes(query))
+          : nodes;
+        const positions = new Map();
+        const radius = Math.min(88, 42 + overviewNodes.length * 5);
+        overviewNodes.forEach((node, index) => {
+          const angle = overviewNodes.length === 1 ? 0 : (Math.PI * 2 * index) / overviewNodes.length - Math.PI / 2;
+          positions.set(node.id, {
+            x: width / 2 + (overviewNodes.length === 1 ? 0 : radius * Math.cos(angle)),
+            y: height / 2 + (overviewNodes.length === 1 ? 0 : radius * Math.sin(angle))
+          });
+        });
+        const nodeName = (id) => nodes.find((node) => node.id === id)?.name || id;
+        return h("div", { className: "mneme-set-card", style: {
+          "--mneme-graphic-dim": "color-mix(in srgb,var(--dsw-alias-label-primary) 50%,transparent)"
+        } },
+          h("div", { className: "mneme-set-grouphead" }, t("memory.am.graph.title")),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+            h("label", { className: "mneme-set-hint", style: { flex: "1 1 220px", minWidth: 0 } },
+              t("memory.am.graph.scope"),
+              h("select", {
+                className: "mneme-set-input", value: graphScope, disabled: !!graphBusy,
+                "aria-label": t("memory.am.graph.scope"),
+                onChange: (e) => loadGraph(e.target.value)
+              },
+                h("option", { value: "" }, t("memory.am.graph.choose")),
+                graphScopes.map((row) => h("option", { key: row.scope, value: row.scope },
+                  `${row.label || row.scope} · ${row.active ?? 0}`))))),
+          graphBusy === "graph" && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+          graphError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, graphError),
+          !graphScope && h("div", { className: "mneme-set-hint" }, t("memory.am.graph.chooseHint")),
+          graphData && nodes.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.am.graph.empty")),
+          graphData && nodes.length > 0 && h("div", null,
+            h("label", { className: "mneme-set-hint", style: { display: "block", marginBottom: 8 } },
+              t("memory.am.graph.search"),
+              h("input", {
+                className: "mneme-set-input", style: { width: "100%", marginTop: 4, marginBottom: 0 },
+                type: "search", value: graphQuery, placeholder: t("memory.am.graph.searchPlaceholder"),
+                "aria-label": t("memory.am.graph.search"),
+                onChange: (event) => { setGraphQuery(event.target.value); setGraphSelected(null); }
+              })),
+            graphQuery && h("button", { className: "mneme-btn", style: { marginBottom: 8 }, onClick: () => { setGraphQuery(""); setGraphSelected(null); } },
+              t("memory.am.graph.searchClear")),
+            (selectedNode || selectedEdge) && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-accent)", marginBottom: 6 } },
+              `${t("memory.am.graph.focused")}: ${selectedNode ? `${selectedNode.name} · ${selectedNode.type}` : `${nodeName(selectedEdge.from)} → ${selectedEdge.relation_type} → ${nodeName(selectedEdge.to)}`}`),
+            h("svg", {
+              className: "mneme-graphsvg", viewBox: `0 0 ${width} ${height}`,
+              style: { height: 240 }, "aria-hidden": "true", focusable: "false"
+            },
+              overviewEdges.map((edge) => {
+                const a = positions.get(edge.from); const b = positions.get(edge.to);
+                if (!a || !b) return null;
+                return h("line", {
+                  key: edge.id, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+                  className: "mneme-gedge", onClick: () => setGraphSelected({ kind: "edge", id: edge.id })
+                });
+              }),
+              overviewNodes.map((node) => {
+                const pos = positions.get(node.id);
+                const focused = focusIds.includes(node.id);
+                return h("g", {
+                  key: node.id, className: focused ? "mneme-gnode mneme-gfocus" : "mneme-gnode",
+                  transform: `translate(${pos.x},${pos.y})`,
+                  onClick: () => setGraphSelected({ kind: "node", id: node.id })
+                },
+                  h("circle", {
+                    r: 13 + Math.min(8, node.degree || 0) * 2,
+                    fill: "var(--dsw-alias-state-business-primary)", fillOpacity: 0.75,
+                    stroke: focused ? "var(--mneme-accent)" : "none", strokeWidth: focused ? 3 : 0
+                  }),
+                  h("text", { className: "mneme-glabel", y: 28, textAnchor: "middle", style: { fontWeight: focused ? 700 : 400 } }, String(node.name).slice(0, 22))
+                );
+              })
+            ),
+            nodes.length > overviewLimit && h("div", { className: "mneme-set-hint" },
+              t("memory.am.graph.overview").replace("{shown}", String(overviewNodes.length)).replace("{total}", String(nodes.length))),
+            h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+              `${t("memory.am.graph.nodes")}: ${graphData.counts?.nodes ?? nodes.length} · ${t("memory.am.graph.edges")}: ${graphData.counts?.edges ?? edges.length}`),
+            graphData.truncated && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, t("memory.am.graph.truncated")),
+            selectedNode && h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+              `${selectedNode.name} · ${selectedNode.type} · ${t("memory.am.graph.related")}: ${selectedNode.related_memories}`),
+            selectedEdge && h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+              `${nodeName(selectedEdge.from)} → ${selectedEdge.relation_type} → ${nodeName(selectedEdge.to)}`),
+            h("div", { className: "mneme-set-grouphead", style: { marginTop: 8 } }, t("memory.am.graph.nodesList")),
+            query && filteredNodes.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.am.graph.searchEmpty")),
+            h("div", { style: { maxHeight: 140, overflowY: "auto" } },
+              filteredNodes.map((node) => h("button", {
+                key: node.id, className: "mneme-btn", style: { margin: "2px 4px 2px 0" },
+                "aria-label": `${node.name}, ${node.type}, ${node.related_memories} ${t("memory.am.graph.related")}`,
+                onClick: () => setGraphSelected({ kind: "node", id: node.id })
+              }, `${node.name} · ${node.type} · ${node.related_memories}`))),
+            h("div", { className: "mneme-set-grouphead", style: { marginTop: 8 } }, t("memory.am.graph.relations")),
+            edges.length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.am.graph.noRelations")),
+            h("div", { style: { maxHeight: 160, overflowY: "auto" } },
+              edges.map((edge) => h("button", {
+                key: edge.id, className: "mneme-btn", style: { margin: "2px 4px 2px 0" },
+                onClick: () => setGraphSelected({ kind: "edge", id: edge.id })
+              }, `${nodeName(edge.from)} → ${edge.relation_type} → ${nodeName(edge.to)}`)))
+        ));
+      };
+
       const sceneCard = () => h("div", { className: "mneme-set-card" },
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.scene.title")),
         !sceneStatus && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
@@ -5480,9 +6282,7 @@ window.__ModuleLoader__.load({
           h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } }, t("memory.am.recent.title")),
           recentStatus && h("div", null,
             h("div", { className: "mneme-set-hint" },
-              `${recentStatus.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.ttl")}: ${(Number(recentStatus.ttl_ms) / 60000).toFixed(Number(recentStatus.ttl_ms) % 60000 ? 1 : 0)} · ${t("memory.am.recent.count")}: ${recentStatus.total_events}`),
-            h("button", { className: "mneme-btn", disabled: !!memBusy || !recentStatus.enabled, onClick: clearRecent },
-              memBusy === "recent" ? t("memory.am.loading") : t("memory.am.recent.clear")))
+              `${recentStatus.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.ttl")}: ${(Number(recentStatus.ttl_ms) / 60000).toFixed(Number(recentStatus.ttl_ms) % 60000 ? 1 : 0)} · ${t("memory.am.recent.count")}: ${recentStatus.total_events}`))
         ));
 
       const backupCard = () => h("div", { className: "mneme-set-card" },
@@ -5520,16 +6320,88 @@ window.__ModuleLoader__.load({
 
 
       if (loading && !overview) {
-        return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
+      return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
           h("div", { className: "mneme-set-title" }, t("memory.am.title")),
           h("div", { className: "mneme-set-hint" }, t("memory.am.loading"))));
       }
+      const renderTabs = (items, active, onSelect, label) => h("div", {
+        role: "tablist", "aria-label": label,
+        style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }
+      }, items.map((item, index) => h("button", {
+        key: item.key, type: "button", role: "tab",
+        "aria-selected": String(item.key === active),
+        tabIndex: item.key === active ? 0 : -1,
+        className: item.key === active ? "mneme-chip mneme-active" : "mneme-chip",
+        onClick: () => onSelect(item.key),
+        onKeyDown: (event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          let next = index;
+          if (event.key === "ArrowRight") next = (index + 1) % items.length;
+          if (event.key === "ArrowLeft") next = (index - 1 + items.length) % items.length;
+          if (event.key === "Home") next = 0;
+          if (event.key === "End") next = items.length - 1;
+          onSelect(items[next].key);
+          event.currentTarget.parentElement?.querySelectorAll('[role="tab"]')?.[next]?.focus();
+        }
+      }, item.label)));
+      const topTabs = [
+        { key: "memory", label: t("memory.am.tabs.memory") },
+        { key: "entities", label: t("memory.am.tabs.entities") },
+        { key: "status", label: t("memory.am.tabs.status") },
+        { key: "settings", label: t("memory.am.tabs.settings") }
+      ];
+      const memoryTabs = [
+        { key: "long-term", label: t("memory.am.memoryView.longTerm") },
+        { key: "recent", label: t("memory.am.memoryView.recent") }
+      ];
+      const settingsTabs = [
+        { key: "general", label: t("memory.am.settings.general") },
+        { key: "personalization", label: t("memory.am.settings.personalization") },
+        { key: "retrieval", label: t("memory.am.settings.retrieval") },
+        { key: "scene", label: t("memory.am.settings.scene") },
+        { key: "backup", label: t("memory.am.settings.backup") },
+        { key: "acl", label: t("memory.am.settings.acl") }
+      ];
+      const aclBots = [...new Set((aclState?.scenes || []).map((row) => {
+        const match = /^qq:group:([^:]+):(.+)$/.exec(String(row.scope));
+        return match ? match[1] : null;
+      }).filter(Boolean))].sort();
+      const aclGroupNumber = (scene) => {
+        const match = /^qq:group:[^:]+:(.+)$/.exec(String(scene ?? ""));
+        return match ? match[1] : String(scene ?? "");
+      };
+      const aclEffectiveBot = aclBotInput.trim() || (aclBots.length === 1 ? aclBots[0] : "");
+      const aclDirection = () => t("memory.explorer.aclDirection")
+        .replace("{reader}", aclReaderInput.trim() || "…")
+        .replace("{source}", aclSourceInput.trim() || "…");
+      const recentPanel = () => h("div", null,        h("div", { className: "mneme-set-grouphead" }, t("memory.am.recent.hotTitle")),
+        h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-hint" }, t("memory.am.recent.hotHint")),
+          h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+            `${t("memory.am.recent.hotState")}: ${features ? (flagOn("hotMemoryEnabled") ? t("memory.am.enabled") : t("memory.am.disabled")) : t("memory.am.loading")}`)),
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } }, t("memory.am.recent.trustedTitle")),
+        h("div", { className: "mneme-set-card" },
+          h("div", { className: "mneme-set-hint" }, t("memory.am.recent.trustedHint")),
+          recentStatus ? h("div", null,
+            h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+              `${recentStatus.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.ttl")}: ${(Number(recentStatus.ttl_ms) / 60000).toFixed(Number(recentStatus.ttl_ms) % 60000 ? 1 : 0)} · ${t("memory.am.recent.count")}: ${recentStatus.total_events}`),
+            (recentStatus.scenes || []).map((row) => h("div", { key: row.scene, className: "mneme-set-hint" }, `${row.scene}: ${row.count}`)),
+            h("button", { className: "mneme-btn", disabled: !!memBusy || !recentStatus.enabled, onClick: clearRecent },
+              memBusy === "recent" ? t("memory.am.loading") : t("memory.am.recent.clear")))
+            : h("div", { className: "mneme-set-hint" }, t("memory.am.loading"))));
       return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
         h("div", { className: "mneme-set-title" }, t("memory.am.title")),
         h("div", { className: "mneme-set-desc" }, t("memory.am.subtitle")),
         error && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)", marginBottom: 10 } }, error),
         message && h("div", { className: "mneme-saved", style: { marginBottom: 10 } }, message),
+        renderTabs(topTabs, panelTab, setPanelTab, t("memory.am.tabs.memory")),
+        !settingsOnly && panelTab === "memory" && renderTabs(memoryTabs, memoryView, setMemoryView, t("memory.am.tabs.memory")),
+        !settingsOnly && h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8 } },
+          h("button", { className: "mneme-btn", onClick: () => setExplorerOpen(true) }, t("memory.explorer.title"))),
+        panelTab === "settings" && renderTabs(settingsTabs, settingsPage, setSettingsPage, t("memory.am.tabs.settings")),
 
+        panelTab === "status" && h("div", { role: "tabpanel", "aria-label": t("memory.am.tabs.status") },
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.overview")),
         h("div", { className: "mneme-set-card" },
           overview ? h("div", null,
@@ -5560,17 +6432,136 @@ window.__ModuleLoader__.load({
           ) : h("div", { className: "mneme-set-hint" }, t("memory.am.loading"))
         ),
         h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8 } },
-          h("button", { className: "mneme-btn", onClick: load, disabled: loading }, t("memory.am.refresh")),
-          h("button", { className: "mneme-btn", onClick: () => openLibraryAboveSettings() }, t("memory.am.openPanel"))),
+          h("button", { className: "mneme-btn", onClick: load, disabled: loading }, t("memory.am.refresh"))),
+        ),
 
-        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.memories")),
-        memoryManagementCard(),
+        panelTab === "memory" && h("div", { role: "tabpanel", "aria-label": t("memory.am.tabs.memory") },
+          memoryView === "long-term" && h("div", null,
+            h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.memories")),
+            memoryManagementCard()),
+          memoryView === "recent" && recentPanel()),
 
-        sceneCard(),
+        panelTab === "entities" && h("div", { role: "tabpanel", "aria-label": t("memory.am.tabs.entities") },
+          graphCard(),
+          h("div", { className: "mneme-set-card" },
+            h("div", { className: "mneme-set-hint" }, t("memory.am.entitiesHint")),
+            h("div", { className: "mneme-set-hint", style: { marginTop: 6 } }, t("memory.am.entitiesFullHint")),
+            h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+              h("button", { className: "mneme-btn", disabled: sceneStatus?.degraded === true, onClick: () => openLibraryAboveSettings() }, t("memory.am.entitiesOpenFull")),
+              h("button", { className: "mneme-btn", onClick: () => { setPanelTab("settings"); setSettingsPage("retrieval"); } }, t("memory.am.entitiesWeights"))))),
 
-        h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.backup")),
-        backupCard(),
+        panelTab === "status" && sceneCard(),
 
+        panelTab === "settings" && settingsPage === "backup" && h("div", { role: "tabpanel" },
+          h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.backup")),
+          backupCard()),
+
+        panelTab === "settings" && settingsPage === "personalization" && h("div", { role: "tabpanel", "aria-label": t("memory.am.settings.personalization") },
+          h("div", { className: "mneme-set-grouphead" }, t("memory.personalization.profile")),
+          h("div", { className: "mneme-set-card" },
+            h("div", { className: "mneme-set-hint" }, t("memory.personalization.profileHint")),
+            personalizationError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, personalizationError),
+            personalizationSaved && h("div", { className: "mneme-saved" }, personalizationSaved),
+            !personalization && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+            personalization && h("div", null,
+              h("textarea", { className: "mneme-set-input", rows: 5, value: profileDraft, onChange: (event) => setProfileDraft(event.target.value) }),
+              h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8 } },
+                h("button", { className: "mneme-btn", disabled: personalizationBusy, onClick: async () => {
+                  setPersonalizationBusy(true); setPersonalizationError(""); setPersonalizationSaved("");
+                  try {
+                    await adminJson("/personalization/profile", { method: "POST", body: JSON.stringify({ profile: profileDraft }) });
+                    const data = await adminJson("/personalization");
+                    setPersonalization(data); setPersonalizationSaved(t("memory.personalization.saved"));
+                  } catch (error) { setPersonalizationError(String(error.message || error)); }
+                  finally { setPersonalizationBusy(false); }
+                } }, t("memory.personalization.saveProfile"))))),
+          h("div", { className: "mneme-set-grouphead" }, t("memory.personalization.defaultCard")),
+          h("div", { className: "mneme-set-card" },
+            !personaDraft && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+            personaDraft && ["name", "personality", "replyStyle"].map((field) => h("label", { key: field, className: "mneme-set-hint" },
+              t(`memory.personalization.${field}`),
+              h("input", {
+                className: "mneme-set-input", value: personaDraft.default?.[field] || "",
+                onChange: (event) => setPersonaDraft({ ...personaDraft, default: { ...personaDraft.default, [field]: event.target.value } })
+              }))),
+            personaDraft && h("label", { className: "mneme-set-hint", style: { display: "inline-flex", gap: 6, alignItems: "center" } },
+              h("input", { type: "checkbox", checked: personaDraft.default?.enabled === true, onChange: (event) => setPersonaDraft({ ...personaDraft, default: { ...personaDraft.default, enabled: event.target.checked } }) }),
+              t("memory.personalization.enabled"))),
+          Object.keys(personaDraft?.byAgent || {}).length > 0 && h("div", null,
+            h("div", { className: "mneme-set-grouphead" }, t("memory.personalization.agentCards")),
+            h("div", { className: "mneme-set-card" },
+              Object.entries(personaDraft.byAgent).map(([agentId, card]) => h("div", { key: agentId, style: { marginBottom: 12 } },
+                h("div", { className: "mneme-set-ruletext" }, agentId),
+                ["name", "personality", "replyStyle"].map((field) => h("label", { key: field, className: "mneme-set-hint" },
+                  t(`memory.personalization.${field}`),
+                  h("input", {
+                    className: "mneme-set-input", value: card?.[field] || "",
+                    onChange: (event) => setPersonaDraft({
+                      ...personaDraft,
+                      byAgent: { ...personaDraft.byAgent, [agentId]: { ...card, [field]: event.target.value } }
+                    })
+                  }))),
+                h("label", { className: "mneme-set-hint", style: { display: "inline-flex", gap: 6, alignItems: "center" } },
+                  h("input", {
+                    type: "checkbox", checked: card?.enabled === true,
+                    onChange: (event) => setPersonaDraft({
+                      ...personaDraft,
+                      byAgent: { ...personaDraft.byAgent, [agentId]: { ...card, enabled: event.target.checked } }
+                    })
+                  }), t("memory.personalization.enabled"))))))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+            h("button", { className: "mneme-btn", disabled: personalizationBusy || !personaDraft, onClick: async () => {
+              setPersonalizationBusy(true); setPersonalizationError(""); setPersonalizationSaved("");
+              try {
+                await adminJson("/personalization/persona", { method: "POST", body: JSON.stringify({ persona: personaDraft }) });
+                const data = await adminJson("/personalization");
+                setPersonalization(data); setPersonaDraft(JSON.parse(JSON.stringify(data.persona || personaDraft)));
+                setPersonalizationSaved(t("memory.personalization.saved"));
+              } catch (error) { setPersonalizationError(String(error.message || error)); }
+              finally { setPersonalizationBusy(false); }
+            } }, t("memory.personalization.savePersona")),
+            featureRow("personaEnabled"), featureRow("personaStrictAddressing"), featureRow("autoInject")),
+          h("div", { className: "mneme-set-grouphead" }, t("memory.personalization.preview")),
+          h("div", { className: "mneme-set-card" },
+            h("div", { className: "mneme-set-hint" }, t("memory.personalization.previewHint")),
+            h("pre", { style: { whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 220, overflow: "auto" } }, personalization?.preview?.text || t("memory.explorer.noData")))),
+
+        panelTab === "settings" && settingsPage === "acl" && h("div", { role: "tabpanel", "aria-label": t("memory.am.settings.acl") },
+          h("div", { className: "mneme-set-grouphead" }, t("memory.explorer.acl")),
+          h("div", { className: "mneme-set-card" },
+            h("div", { className: "mneme-set-hint" }, t("memory.explorer.aclHint")),
+            aclError && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)" } }, aclError),
+            !aclState && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+            aclState && h("div", null,
+              (aclState.grants || []).length === 0 && h("div", { className: "mneme-set-hint" }, t("memory.explorer.aclEmpty")),
+              (aclState.grants || []).map((grant) => h("div", { key: grant.reader_scene + grant.source_scene, className: "mneme-set-row" },
+                h("span", { className: "mneme-set-ruletext", style: { flex: 1 } },
+                  t("memory.explorer.aclDirection").replace("{reader}", aclGroupNumber(grant.reader_scene)).replace("{source}", aclGroupNumber(grant.source_scene))),
+                h("button", { className: "mneme-btn", disabled: aclBusy, onClick: async () => {
+                  setAclBusy(true); setAclError("");
+                  try {
+                    const data = await adminJson("/acl/revoke", { method: "POST", body: JSON.stringify({ reader_scene: grant.reader_scene, source_scene: grant.source_scene }) });
+                    setAclState(data.state);
+                  } catch (error) { setAclError(String(error.message || error)); }
+                  finally { setAclBusy(false); }
+                } }, t("memory.explorer.revoke")))),
+              h("datalist", { id: "amadeus-memory-acl-bots" },
+                aclBots.map((bot) => h("option", { key: bot, value: bot }))),
+              h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8, flexWrap: "wrap" } },
+                h("input", { className: "mneme-set-input", list: "amadeus-memory-acl-bots", value: aclBotInput, placeholder: t("memory.explorer.bot"), onChange: (event) => setAclBotInput(event.target.value) }),
+                h("input", { className: "mneme-set-input", inputMode: "numeric", value: aclReaderInput, placeholder: t("memory.explorer.readerGroup"), onChange: (event) => setAclReaderInput(event.target.value) }),
+                h("input", { className: "mneme-set-input", inputMode: "numeric", value: aclSourceInput, placeholder: t("memory.explorer.sourceGroup"), onChange: (event) => setAclSourceInput(event.target.value) }),
+                h("button", { className: "mneme-btn", disabled: aclBusy || !aclEffectiveBot || !/^\d+$/.test(aclReaderInput.trim()) || !/^\d+$/.test(aclSourceInput.trim()), onClick: async () => {
+                  setAclBusy(true); setAclError("");
+                  try {
+                    const data = await adminJson("/acl/grant", { method: "POST", body: JSON.stringify({ bot: aclEffectiveBot, reader_group: aclReaderInput.trim(), source_group: aclSourceInput.trim() }) });
+                    setAclState(data.state);
+                  } catch (error) { setAclError(String(error.message || error)); }
+                  finally { setAclBusy(false); }
+                } }, t("memory.explorer.grant"))),
+              h("div", { className: "mneme-set-hint", style: { marginTop: 6 } }, `${t("memory.explorer.bot")}: ${aclEffectiveBot || "—"} · ${aclDirection()}`))),
+
+        panelTab === "settings" && settingsPage === "general" && h("div", { role: "tabpanel", "aria-label": t("memory.am.settings.general") },
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.core")),
         h("div", { className: "mneme-set-card" }, AM_FEATURE_KEYS.map(featureRow)),
         h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.featureHint")),
@@ -5589,8 +6580,9 @@ window.__ModuleLoader__.load({
                   h("button", { className: "mneme-btn", onClick: restoreConfig, disabled: !!busy || !formSnapshot || formSnapshot.status !== "ready" }, t("memory.am.restoreDefaults"))),
                 h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.restoreDefaultsHint")),
                 h("div", { className: "mneme-set-hint", style: { marginTop: 4 } }, t("memory.am.savedRestart")))
-        ),
+        )),
 
+        panelTab === "settings" && settingsPage === "retrieval" && h("div", { role: "tabpanel", "aria-label": t("memory.am.settings.retrieval") },
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.embedding")),
         h("div", { className: "mneme-set-card" },
           h("label", { className: "mneme-featnum" },
@@ -5686,6 +6678,14 @@ window.__ModuleLoader__.load({
           h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
             h("button", { className: "mneme-btn " + (resetConfirm ? "mneme-btndangerconfirm" : ""), disabled: !!busy, onClick: resetPreferences },
               resetConfirm ? t("memory.am.resetConfirm") : t("memory.am.reset")))),
+        ),
+
+        panelTab === "settings" && settingsPage === "scene" && h("div", { role: "tabpanel", "aria-label": t("memory.am.settings.scene") },
+          h("div", { className: "mneme-set-grouphead" }, t("memory.am.scene.title")),
+          h("div", { className: "mneme-set-card" }, AM_SCENE_FEATURE_KEYS.map(featureRow)),
+          h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.featureHint"))),
+
+        panelTab === "status" && h("div", { role: "tabpanel" },
         h("div", { className: "mneme-set-grouphead" }, t("memory.am.section.advanced")),
         h("details", { className: "mneme-set-card" },
           h("summary", { style: { cursor: "pointer", fontSize: 13, fontWeight: 600 } }, t("memory.am.advancedTitle")),
@@ -5695,7 +6695,9 @@ window.__ModuleLoader__.load({
             h("div", { className: "mneme-set-hint" }, `${t("memory.am.vectorIndex")}: ${overview.semantic.index.embedded}/${overview.semantic.index.total}`),
             h("div", { className: "mneme-set-hint" }, `${t("memory.am.trustedIntake")}: ${overview.runtime.trusted_intake ? t("memory.am.enabled") : t("memory.am.disabled")}`),
             h("div", { className: "mneme-set-hint" }, t("memory.am.advancedHint")))
-        )
+        )),
+
+        !settingsOnly && explorerOpen && h(AmadeusOwnerExplorer, { ctx, t, onClose: () => setExplorerOpen(false) }),
       ));
     }
 

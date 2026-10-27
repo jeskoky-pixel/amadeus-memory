@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/@modusensus/dsh-mneme?color=blue&label=npm)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Awesome](https://awesome-dsh-plugin.com/badge.svg)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-[![tests](https://img.shields.io/badge/tests-505%20passed-success)](https://github.com/slow-stack/mneme)
+[![tests](https://img.shields.io/badge/tests-523%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
 [![CI](https://img.shields.io/github/actions/workflow/status/slow-stack/mneme/ci.yml)](https://github.com/slow-stack/mneme/actions)
 [![node](https://img.shields.io/badge/node-22%2B-blue)](https://nodejs.org)
 [![npm downloads](https://img.shields.io/npm/d18m/@modusensus/dsh-mneme.svg?color=blue&label=downloads)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
@@ -221,7 +221,7 @@ Amadeus 分支在实体层之上增加三块**默认不影响旧行为**的能�
 配置键、API、迁移/回滚与合成基准见
 [Amadeus 记忆增强文档](docs/AMADEUS_MEMORY_ENHANCER.md)。
 
-### Amadeus Memory 产品化（0.9.5-amadeus.2）
+### Amadeus Memory 产品化（0.9.5-amadeus.3 候选）
 
 - **发行身份**：同包名 `@modusensus/dsh-mneme`、同插件 ID `dsh-mneme` 的增强版本，升级继承原 `memoryDir`、配置、Embedding 与 SQLite；不是第二个 Memory 包，不能与上游同时启用。上游/许可见 `UPSTREAM.md` 与 `LICENSE`。
 - **系统设置入口**：DSH 设置左侧 **Amadeus 记忆 / Amadeus Memory**，提供运行概览、记忆搜索/新建/编辑/归档/删除、安全备份/恢复、自动记忆/autoDream/Sleep、注入参数、Embedding 状态与配置、Tag/实体偏好、打开原完整面板。
@@ -369,7 +369,7 @@ dsh web
 ```bash
 cd dsh-mneme
 npm pack                       # 产出 modusensus-dsh-mneme-<版本>.tgz
-dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-0.9.5-amadeus.2.tgz"
+dsh plugin --profile web add "C:/path/to/modusensus-dsh-mneme-0.9.5-amadeus.3.tgz"
 ```
 
 > 必须用 `npm pack`，别用 `pnpm pack`：`bin/cli.mjs` 在工作区里是 CRLF，pnpm 会以 `ERR_PNPM_BIN_CRLF` 直接失败。
@@ -718,7 +718,7 @@ src/
 ├── api.js            # HTTP 路由（Web 面板数据通道，含 /conflicts 冲突队列）
 └── index.js          # 插件接线
 lib/                  # src 的同步分发产物（npm run sync，prepack 钩子在发布时自动跑；一致性由 scripts/check-sync.js 在 CI 与 release.yml 校验——它只查不同步；唯一手写例外 lib/client.js——Web 面板 bundle，sync 不覆盖）
-test/                 # 505 个测试（审计与三轴线压测不变量；src↔lib 一致性由 scripts/check-sync.js 发布闸门校验）
+test/                 # 523 个测试（审计与三轴线压测不变量；src↔lib 一致性由 scripts/check-sync.js 发布闸门校验）
 scripts/              # e2e-dsh.js 端到端演示 · stress-dsh.js 三轴线压测 · sync-lib.js 同步 · check-sync.js 发布闸门 · benchmark-recall.js / benchmark-embed.js / benchmark-rerank.js 基准 · sync-test-badge.mjs 测试徽章 · build-runtime-manifest.mjs 运行时清单
 ```
 
@@ -727,7 +727,7 @@ scripts/              # e2e-dsh.js 端到端演示 · stress-dsh.js 三轴线压
 ```bash
 cd dsh-mneme
 npm install        # 安装 peer 依赖（以 devDependencies 形式，用于本地测试）
-npm test           # 运行 505 个测试
+npm test           # 运行 523 个测试
 npm run test:all              # full suite; current Windows result is not green
 npm run test:upstream-release # upstream release-only suite; expected non-green
 npm run test:compat-windows   # Windows symlink/spawn capability probe
