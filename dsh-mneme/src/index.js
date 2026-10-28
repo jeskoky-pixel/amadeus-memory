@@ -50,7 +50,7 @@ import {
   readWorkspaceBinding
 } from "./workspace-binding.js";
 import { listWorkspaces } from "./workspace-gate.js";
-import { createQQModelAccessGate } from "./qq-model-boundary.js";
+import { createQQModelAccessGate, ORDINARY_DSH_PRESETS } from "./qq-model-boundary.js";
 
 export const name = "dsh-mneme";
 // webServer 在 inject 声明中：cordis 会等宿主 webServer 服务激活后才 apply 本
@@ -364,6 +364,7 @@ export function createRecentActivityOwnerCheck(ctx) {
  * with each other, while a verified Owner private Scene may read all sources.
  */
 export function createRecentActivityPairGate(ctx) {
+  const resolveTrustedSession = createTrustedSessionResolver(ctx);
   return function allowRecentPair(sourceSessionId, targetSessionId) {
     try {
       if (typeof sourceSessionId !== "string" || typeof targetSessionId !== "string") return false;
@@ -371,14 +372,26 @@ export function createRecentActivityPairGate(ctx) {
       if (qq === undefined || qq === null) return true;
       if (typeof qq.resolveTrustedSessionScene !== "function") return false;
       const resolve = (id) => {
-        const raw = qq.resolveTrustedSessionScene(id);
-        return raw === null || raw === undefined ? null : mintTrustedScene(raw);
+        let raw = null;
+        try {
+          raw = qq.resolveTrustedSessionScene(id);
+        } catch {
+          // QQ throws for an unbound ordinary DSH Session. Its frozen Host
+          // header must prove ordinary provenance; unknown/QQ presets deny.
+        }
+        if (raw !== null && raw !== undefined) return { scene: mintTrustedScene(raw) };
+        const session = resolveTrustedSession(id);
+        const preset = session?.header?.agentPreset;
+        return typeof preset === "string" && ORDINARY_DSH_PRESETS.has(preset.trim())
+          ? { ordinary: true }
+          : null;
       };
       const source = resolve(sourceSessionId);
       const target = resolve(targetSessionId);
-      if (target?.platform === "qq" && target.kind === "private" && target.admin === true) return true;
-      if (!source && !target) return true;
-      return Boolean(source && target && source.sceneId === target.sceneId);
+      if (!source || !target) return false;
+      if (target.scene?.platform === "qq" && target.scene.kind === "private" && target.scene.admin === true) return true;
+      if (source.ordinary && target.ordinary) return true;
+      return Boolean(source.scene && target.scene && source.scene.sceneId === target.scene.sceneId);
     } catch {
       return false;
     }

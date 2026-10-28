@@ -373,7 +373,10 @@ test("recent-runtime: production pair gate preserves ordinary sharing and revoke
     ["q1", { platform: "qq", kind: "group", id: "10001:20001", verified: true }],
     ["q2", { platform: "qq", kind: "group", id: "10001:20002", verified: true }]
   ]);
-  host.qq = { resolveTrustedSessionScene: id => scenes.get(id) ?? null };
+  host.qq = { resolveTrustedSessionScene(id) {
+    if (!scenes.has(id)) throw new Error("QQ_SESSION_NOT_BOUND");
+    return scenes.get(id);
+  } };
   const allowSession = createQQModelAccessGate({
     ctx: host,
     config: { sceneIsolationEnabled: true, sceneStrictQQ: true },
