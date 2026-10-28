@@ -43,9 +43,18 @@ Memory database or key was changed.
   timeline modes. Entity nodes and a one-hop graph rendered. The status page
   rendered its token cards and chart. The dark theme was inspected. Existing
   real screenshots are in [`screenshots/`](screenshots/).
-- The isolated Profile reports Embedding unconfigured. Real vector search,
-  provider connectivity and reindexing were **not** verified. Keyword search
-  and automatic long-term injection were verified.
+- During the original Desktop GUI pass, Embedding was unconfigured. After that
+  pass, the existing SiliconFlow `Qwen/Qwen3-Embedding-8B` endpoint and key were
+  copied into the isolated QA Workspace only. The key is absent from this
+  repository. Using the same `1.0.0` package installed in that Desktop Profile,
+  a separate headless plugin-runtime test made real provider calls: three
+  synthetic memories each received a 4096-dimensional vector. A semantic query
+  ranked the relevant memory first (score 0.7303); keyword mode did not return
+  it. A fresh Node process reopened the SQLite database and ranked the same
+  memory first (score 0.7301), confirming vector persistence. This verifies the
+  installed package's provider, indexing and retrieval path, but it is **not**
+  a new Desktop GUI or model-tool end-to-end pass. Reindex of older memories
+  was not exercised. See [`MNEME_LITE_PERFORMANCE.md`](MNEME_LITE_PERFORMANCE.md).
 
 ## Automated checks
 
@@ -72,10 +81,10 @@ Memory database or key was changed.
   subtab did not reliably display its panel during this pass; the complete
   memory browser and other settings surfaces remained accessible. Treat this
   as a GUI follow-up, not as a validated control.
-- Full DSH prompt assembly A/B timing and real vector retrieval remain
-  unmeasured. Do not claim a latency or retrieval-quality gain from the local
-  SQLite microbenchmark.
-- Before production use, configure an Embedding provider in an isolated
-  Profile, run semantic search/reindex and an A/B turn trace, then rehearse
+- Full DSH prompt assembly A/B timing and production-scale retrieval quality
+  remain unmeasured. The three-record real-provider test demonstrates the
+  vector path, not a general retrieval-quality gain.
+- Before production use, run a Desktop model-tool vector turn, reindex an
+  isolated copy of older memories, perform an A/B turn trace, then rehearse
   backup/restore. Preserve the previous package and database snapshots for
   rollback. No automatic migration or deployment is performed here.

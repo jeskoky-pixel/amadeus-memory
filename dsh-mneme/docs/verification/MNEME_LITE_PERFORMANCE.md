@@ -27,8 +27,23 @@ path observation, not a measured latency comparison.
 - The count and cost of summary LLM calls in a live deployment. The current
   recent-activity path uses deterministic completed-turn summaries and does
   not invoke an LLM per event; other original Mneme jobs remain separate.
-- Retrieval quality and latency with a real Embedding provider. The isolated
-  Desktop Profile used for this acceptance has no Embedding configuration.
+- Production-scale retrieval quality and latency with a real Embedding
+  provider; the three-record probe below is too small for that conclusion.
+
+## Real Embedding probe (isolated installed package)
+
+The existing SiliconFlow `Qwen/Qwen3-Embedding-8B` configuration was copied
+from the user's DSH settings into the isolated QA Workspace; no key is in Git.
+The `@modusensus/dsh-mneme@1.0.0` package installed in that Desktop Profile
+was loaded in a separate Node process against a disposable SQLite database.
+Three synthetic English memories were written and each produced a successful
+4096-dimensional vector receipt. For a paraphrased weather-supplies query,
+the umbrella memory ranked first in vector mode (score 0.7303, query 1,390 ms)
+while keyword mode did not return it. A fresh Node process reopened the file;
+all three vectors persisted and the same memory ranked first (score 0.7301,
+query 807 ms). These are two wall-clock samples, not a P95 estimate or a
+Desktop model-turn measurement. GUI vector controls, model-tool calls and
+older-record reindexing were not repeated in this probe.
 
 Do not interpret the sub-millisecond SQLite result as a full model-turn
 latency, or the token examples as a population average. Re-run an A/B trace
