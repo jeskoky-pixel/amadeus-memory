@@ -28,7 +28,7 @@ The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack
 
 ```powershell
 cd dsh-mneme
-npm test        # 运行 714 个产品测试
+npm test        # 运行 714 个测试
 npm run test:all              # 完整套件，含上游发行专用测试
 npm run test:upstream-release # 单独运行上游发行专用测试
 npm run test:compat-windows   # Windows symlink/spawn capability probe

@@ -9,6 +9,8 @@
 - 默认数据目录：`~/.dsh/memory`（保持不变）
 - SQLite 格式、配置键、feature flags 与数据路径：与 1.0.0 / 上游兼容，不迁移到第二套数据库。
 
+GitHub 源码仓库为 `https://github.com/jeskoky-pixel/amadeus-memory`。插件位于子目录 `dsh-mneme/`；支持 pnpm `#path:` 的 DSH Git 安装规格为 `git+https://github.com/jeskoky-pixel/amadeus-memory.git#path:/dsh-mneme`。仓库根目录的 `package.json` 是不可安装的私有壳，不能把根 Git URL 直接当插件安装。若安装器不支持 `#path:`，克隆仓库后进入 `dsh-mneme/` 构建 tarball，再用 Plugin Manager 安装。
+
 > 兼容性要点：1.0.1 只改 npm 发行名，插件 ID 仍是 `dsh-mneme`。因此 Profile 里的 Memory 数据、`memoryDir`、`vector` 配置和 feature flags 都可继续使用；但 Plugin Manager 看到的是新包名，**不要同时启用旧 `@modusensus/dsh-mneme` 与新 `@amadeus/memory` 两个实例**，否则会重复 autoDream / 自动注入 / 写入。升级时先停用旧包，再安装新 tarball 并硬重启。
 
 ## 首次运行：QQ 记忆的两个开关
