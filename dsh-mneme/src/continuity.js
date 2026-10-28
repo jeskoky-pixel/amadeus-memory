@@ -176,16 +176,50 @@ function noticeAlreadyInSurface(session, text) {
  * 调用方负责父／子闸门（`autoInject` + `continuityRescueEnabled`）；本函数不做开关判定，
  * 保持"挂上就是开"的单一口径。
  */
-export function createContinuityRescue(ctx, store) {
+export function createContinuityRescue(ctx, store, authorizeModelWork = null) {
   // 待处理的边缘：sessionId → 压缩事件序号。**真落地**的压缩事件到达时置位，下一次 pre-step 消费后
   // 删除（同一个边缘绝不注入第二次）。只留序号、不留 Session：插件在宿主进程里只 apply
   // 一次、服务所有会话，握着 Session 就是握着它的全量日志不放——压缩完就收工、不再有
   // pre-step 是常见路径，这些条目永远走不到消费路径上。
   const edge = new Map();
 
+  // Workspace authorization callback supplied by index.js. Direct module tests
+  // omit it and keep the legacy behavior; the mounted runtime always supplies
+  // it. Every decision is taken on the actual Host Session, and the guard
+  // re-reads the binding/registry on each call, so a moved Session or a binding
+  // switch stops this path on the very next check.
+  const authorize = typeof authorizeModelWork === "function" ? authorizeModelWork : null;
+  const deniedReasons = new Set();
+
+  function accessDecision(session) {
+    if (!authorize) return { allowed: true, reason: "legacy" };
+    try {
+      const decision = authorize(session);
+      return decision?.allowed === true
+        ? { allowed: true, reason: "ok" }
+        : { allowed: false, reason: decision?.reason ?? "denied" };
+    } catch {
+      return { allowed: false, reason: "access-check-failed" };
+    }
+  }
+
+  function logDenied(reason) {
+    if (deniedReasons.has(reason)) return;
+    deniedReasons.add(reason);
+    ctx.logger?.warn?.(`[dsh-mneme] continuity rescue denied: ${reason}`);
+  }
+
   const unsubscribe = ctx.on("session/event", (session, event) => {
     if (!isCompactionEdge(event)) return;
     if (!session?.id) return;
+    const access = accessDecision(session);
+    if (!access.allowed) {
+      // A queued edge from an earlier authorized moment must not survive a
+      // move/binding change: drop it instead of holding it for later.
+      edge.delete(session.id);
+      logDenied(access.reason);
+      return;
+    }
     if (!edge.has(session.id) && edge.size >= MAX_TRACKED_EDGES) {
       // 兜底淘汰最旧的（Map 是插入序）：这里漏掉最坏也只少一次注入，不会无界增长。
       edge.delete(edge.keys().next().value);
@@ -203,6 +237,17 @@ export function createContinuityRescue(ctx, store) {
     const sessionId = session?.id;
     if (!sessionId) return decision;
     if (!edge.has(sessionId)) return decision;
+
+    // Recheck the actual Host Session after the awaited next(): a Session moved
+    // while this step was in flight, or a binding change, must stop the rescue
+    // before snapshotEvents is read, a proposal is saved, or a notice is added.
+    const access = accessDecision(session);
+    if (!access.allowed) {
+      edge.delete(sessionId);
+      logDenied(access.reason);
+      return decision;
+    }
+
     const edgeSeq = edge.get(sessionId);
     edge.delete(sessionId);
 

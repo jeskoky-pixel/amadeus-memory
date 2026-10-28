@@ -17,13 +17,13 @@ import { createSummarizer } from "./summarize.js";
 import { createDreamScheduler, describeStreamFailure, recordScopedDreamBaseline } from "./dream.js";
 import { createSleepScheduler, runSleep } from "./dream/sleep.js";
 import { createApi } from "./api.js";
-import { createStandaloneApi } from "./api-standalone.js";
 // #275 存储生命周期第一批：无损回收（手动入口，不挂启动路径）。
 import { createMaintenance } from "./maintenance.js";
-import { createSettings } from "./settings.js";
-import { configureScene, setSceneReadAclReader } from "./scene.js";
+import { createSettings, RETIRED_FEATURE_FLAGS } from "./settings.js";
+import { configureScene, mintTrustedScene, setSceneReadAclReader } from "./scene.js";
 import { runWithSceneJob, LEGACY_SCENE_JOB, scopedSleepOutcome } from "./scene-job.js";
 import { configureRecentContext } from "./recent-context.js";
+import { createRecentActivityCore } from "./recent-activity.js";
 import { mountAdminApi } from "./admin-api.js";
 import { applyStagedRestore } from "./backup.js";
 import { createCommandManager } from "./commands.js";
@@ -40,9 +40,17 @@ import { Config, applyLightModePreset, injectChildEnabled } from "./config.js";
 import { langOf } from "./lang.js";
 import { extractEntities } from "./entities/extractor.js";
 import { createProfileExtractor } from "./profile-extract.js";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
+import {
+  UNBOUND_CONTROL_DIR,
+  createWorkspaceAccessGuard,
+  initializeWorkspaceDataDir,
+  readWorkspaceBinding
+} from "./workspace-binding.js";
+import { listWorkspaces } from "./workspace-gate.js";
+import { createQQModelAccessGate, ORDINARY_DSH_PRESETS } from "./qq-model-boundary.js";
 
 export const name = "dsh-mneme";
 // webServer 在 inject 声明中：cordis 会等宿主 webServer 服务激活后才 apply 本
@@ -271,6 +279,386 @@ export function provideSceneAclRead(ctx, cfg) {
   }
 }
 
+/**
+ * Read an optional Cordis service without `inject`. Cordis 4 throws on a bare
+ * read of an undeclared ctx property; `ctx.reflect.get` is the supported
+ * opt-out. Plain mock contexts (tests, older hosts) fall back to a property
+ * read. Any failure means "service absent", never an error in a caller.
+ * @param {object} ctx
+ * @param {string} name
+ * @returns {*}
+ */
+function readOptionalHostService(ctx, name) {
+  try {
+    if (typeof ctx?.reflect?.get === "function") return ctx.reflect.get(name);
+    return ctx?.[name];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolve a Session ID through the live DSH Session Store (`ctx.sessions`).
+ *
+ * This is the trusted Host identity source for cross-Session recent activity.
+ * It is deliberately read through `reflect.get` so an older Host without the
+ * service is not an error, and it returns only the live Session object whose
+ * immutable header the Host owns. A missing service, missing Session, throwing
+ * getter or ID mismatch yields null; callers must then fail closed. A caller
+ * can supply an ID as a lookup key, but never the object or header used for
+ * authorization.
+ * @param {object} ctx trusted DSH context
+ * @returns {(sessionId: string) => object|null}
+ */
+export function createTrustedSessionResolver(ctx) {
+  return function resolveTrustedSession(sessionId) {
+    try {
+      if (typeof sessionId !== "string" || sessionId.trim() === "") return null;
+      const sessions = readOptionalHostService(ctx, "sessions");
+      if (typeof sessions?.get !== "function") return null;
+      const session = sessions.get(sessionId);
+      if (session === null || typeof session !== "object") return null;
+      if (session.id !== sessionId) return null;
+      return session;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * Build the Host-authenticated owner predicate for the recent-activity
+ * `owner` sharing mode.
+ *
+ * The only acceptance input is the actual Session's stable ID resolved through
+ * the optional Amadeus QQ Host service. A scene counts as owner only when that
+ * Host returns exactly `platform: "qq"`, `kind: "private"` and `admin: true`;
+ * Session titles, presets, model arguments or HTTP fields are never consulted.
+ * QQ is optional: a missing service, a missing method, a throw or any other
+ * scene shape all yield false.
+ * @param {object} ctx trusted DSH context
+ * @returns {(session: object) => boolean}
+ */
+export function createRecentActivityOwnerCheck(ctx) {
+  return function isRecentActivityOwner(session) {
+    try {
+      const sessionId = session?.id;
+      if (typeof sessionId !== "string" || sessionId.trim() === "") return false;
+      const qq = readOptionalHostService(ctx, "qq");
+      if (typeof qq?.resolveTrustedSessionScene !== "function") return false;
+      const scene = qq.resolveTrustedSessionScene(sessionId);
+      return scene?.platform === "qq"
+        && scene?.kind === "private"
+        && scene?.verified === true
+        && scene?.admin === true;
+    } catch {
+      return false;
+    }
+  };
+}
+
+/**
+ * Raw recent summaries obey the QQ Scene boundary independently of Workspace
+ * membership. The QQ Host is consulted afresh for both exact Session IDs; a
+ * malformed/throwing binding fails closed. Ordinary DSH Sessions may share
+ * with each other, while a verified Owner private Scene may read all sources.
+ */
+export function createRecentActivityPairGate(ctx) {
+  const resolveTrustedSession = createTrustedSessionResolver(ctx);
+  return function allowRecentPair(sourceSessionId, targetSessionId) {
+    try {
+      if (typeof sourceSessionId !== "string" || typeof targetSessionId !== "string") return false;
+      const qq = readOptionalHostService(ctx, "qq");
+      if (qq === undefined || qq === null) return true;
+      if (typeof qq.resolveTrustedSessionScene !== "function") return false;
+      const resolve = (id) => {
+        let raw = null;
+        try {
+          raw = qq.resolveTrustedSessionScene(id);
+        } catch {
+          // QQ throws for an unbound ordinary DSH Session. Its frozen Host
+          // header must prove ordinary provenance; unknown/QQ presets deny.
+        }
+        if (raw !== null && raw !== undefined) return { scene: mintTrustedScene(raw) };
+        const session = resolveTrustedSession(id);
+        const preset = session?.header?.agentPreset;
+        return typeof preset === "string" && ORDINARY_DSH_PRESETS.has(preset.trim())
+          ? { ordinary: true }
+          : null;
+      };
+      const source = resolve(sourceSessionId);
+      const target = resolve(targetSessionId);
+      if (!source || !target) return false;
+      if (target.scene?.platform === "qq" && target.scene.kind === "private" && target.scene.admin === true) return true;
+      if (source.ordinary && target.ordinary) return true;
+      return Boolean(source.scene && target.scene && source.scene.sceneId === target.scene.sceneId);
+    } catch {
+      return false;
+    }
+  };
+}
+
+/**
+ * Mount the standalone recent-activity core over an already-open selected
+ * Workspace database and subscribe its trusted `session/event` bridge.
+ *
+ * The wrapper gates every event through the same `authorizeModelWork` closure
+ * used by injection/tools, so a moved Session or a binding switch stops
+ * recording immediately; the core rechecks the Session again before commit.
+ * Only `turn/end` reaches the core, and every callback failure is swallowed so
+ * recent activity can never block Mneme's own event chain. The returned
+ * disposer removes the listener on unload.
+ * @param {object} options
+ * @param {object} [options.ctx] trusted DSH context with `on`
+ * @param {import("node:sqlite").DatabaseSync} [options.db] selected store DB
+ * @param {string} [options.workspaceId] selected stable Workspace ID
+ * @param {(session: object) => object} [options.authorizeModelWork] runtime gate
+ * @param {() => boolean} [options.isEnabled] live opt-in switch; false denies reads/writes immediately
+ * @param {(sessionId: string) => (object|null)} [options.resolveTrustedSession] trusted
+ *   Host Session lookup; defaults to the live `ctx.sessions` store
+ * @param {(sourceSessionId: string, targetSessionId: string) => boolean} [options.allowCrossSession]
+ *   optional test override; production defaults to the live QQ Host pair gate
+ * @param {(session: object) => boolean} [options.isTrustedOwner] Host owner predicate
+ * @param {object} [options.config] core TTL/item/token options
+ * @param {object} [options.logger]
+ * @param {() => number} [options.now]
+ * @returns {{core: object|null, onSessionEvent: ((session: object, event: object) => void)|null, dispose: () => void}}
+ */
+export function createRecentActivityRuntime({
+  ctx = null,
+  db = null,
+  workspaceId = null,
+  authorizeModelWork = null,
+  isEnabled = null,
+  resolveTrustedSession = null,
+  allowCrossSession = null,
+  isTrustedOwner = null,
+  config = {},
+  logger = null,
+  now = Date.now
+} = {}) {
+  // The opt-in flag is a live boundary, not a boot-only gate. A persisted
+  // explicit false must deny the next event/read even though the listener and
+  // core were mounted while the flag was on. A throwing switch fails closed.
+  const allowSession = (session) => {
+    try {
+      if (typeof isEnabled === "function" && isEnabled() !== true) {
+        return { allowed: false, reason: "recent-activity-disabled" };
+      }
+    } catch {
+      return { allowed: false, reason: "recent-activity-disabled" };
+    }
+    return typeof authorizeModelWork === "function" ? authorizeModelWork(session) : null;
+  };
+  // Cross-Session grants must be authorized from the live Host Session behind
+  // the stored ID, never from a caller's ID-only placeholder. The resolver is
+  // read fresh on every check; a missing service or Session fails closed for
+  // ID-derived checks while the actual Session passed by the Host still works.
+  const trustedSessionLookup = typeof resolveTrustedSession === "function"
+    ? resolveTrustedSession
+    : createTrustedSessionResolver(ctx);
+  const pairGate = typeof allowCrossSession === "function"
+    ? allowCrossSession
+    : createRecentActivityPairGate(ctx);
+  let core = null;
+  try {
+    core = createRecentActivityCore({
+      db,
+      workspaceId,
+      allowSession,
+      resolveTrustedSession: trustedSessionLookup,
+      allowCrossSession: pairGate,
+      isTrustedOwner: typeof isTrustedOwner === "function" ? isTrustedOwner : null,
+      config,
+      logger,
+      now
+    });
+  } catch {
+    core = null;
+  }
+  if (!core || core.status?.().ok !== true) {
+    return { core: null, onSessionEvent: null, dispose() {} };
+  }
+
+  let disposed = false;
+  const onSessionEvent = (session, event) => {
+    if (disposed) return;
+    try {
+      if (event?.type !== "turn/end") return;
+      if (typeof isEnabled === "function" && isEnabled() !== true) return;
+      if (typeof authorizeModelWork !== "function") return;
+      const decision = authorizeModelWork(session);
+      if (decision?.allowed !== true) return;
+      core.onSessionEvent(session, event);
+    } catch {
+      // Recent activity must never block the host's session/event chain.
+    }
+  };
+
+  let unsubscribe = null;
+  if (typeof ctx?.on === "function") {
+    try {
+      unsubscribe = ctx.on("session/event", onSessionEvent);
+    } catch {
+      unsubscribe = null;
+    }
+  }
+
+  return {
+    core,
+    onSessionEvent,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      try {
+        if (typeof unsubscribe === "function") unsubscribe();
+      } catch {
+        // Listener teardown is best effort; nothing else is owned here.
+      }
+    }
+  };
+}
+
+/**
+ * Background Dream/Sleep may use the original unscoped Mneme paths only while
+ * Scene isolation is off and the database has no tagged rows. Any tagged row
+ * (or an explicit isolation switch) keeps the per-Scene compatibility path, so
+ * a legacy tagged row can never be derived into an unscoped memory.
+ * @param {{sceneIsolationEnabled?: boolean, hasSceneScopedRows?: boolean}} options
+ * @returns {boolean}
+ */
+export function needsSceneScopedBackgroundJobs({ sceneIsolationEnabled = false, hasSceneScopedRows = false } = {}) {
+  return sceneIsolationEnabled === true || hasSceneScopedRows === true;
+}
+
+/**
+ * Return a live view of the resolved config with runtime path overrides. A Proxy
+ * (rather than a spread) keeps volatile panel settings live while ensuring every
+ * Engine/API consumer that reads `memoryDir` or `documentDir` sees the active
+ * Workspace runtime root, never the control root or a global absolute path.
+ * @param {object} base resolved config (plain object or live-config Proxy)
+ * @param {object} overrides path keys to override
+ * @returns {object}
+ */
+export function createScopedRuntimeConfig(base, overrides = {}) {
+  const own = { ...(overrides && typeof overrides === "object" ? overrides : {}) };
+  // The old in-process Recent Context and Life trusted intake are retired from
+  // the Workspace-bound runtime. Force them off even when a stale feature flag
+  // or a legacy bundle config still carries true; their tables and API modules
+  // stay in place, read/write gated by these effective values.
+  for (const key of RETIRED_FEATURE_FLAGS) own[key] = false;
+  return new Proxy(base ?? {}, {
+    get(target, prop) {
+      if (prop === "then") return undefined;
+      if (Object.hasOwn(own, prop)) return own[prop];
+      return Reflect.get(target, prop);
+    },
+    has(target, prop) {
+      return Object.hasOwn(own, prop) || prop in target;
+    },
+    ownKeys(target) {
+      return [...new Set([...Reflect.ownKeys(target), ...Object.keys(own)])];
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (Object.hasOwn(own, prop)) {
+        return { enumerable: true, configurable: true, get: () => own[prop] };
+      }
+      return Reflect.getOwnPropertyDescriptor(target, prop);
+    }
+  });
+}
+
+/**
+ * Resolve the boot-time Workspace runtime from the single binding file.
+ *
+ * Selected mode: initialize/verify only the digest-derived isolated directory
+ * and use `<workspace>/memory.db`. Unbound mode (absent or corrupt binding, or a
+ * marker mismatch): use `<controlRoot>/unbound/memory.db` so the owner GUI can
+ * still load, while every model boundary is denied. The legacy root
+ * `<controlRoot>/memory.db` is never opened, created, restored or migrated; its
+ * mere presence is reported as a diagnostic.
+ *
+ * This helper only prepares directories and returns paths. It does not open a
+ * database; index.js opens the returned `runtimeDir` afterwards.
+ * @param {object} options
+ * @param {string} options.memoryDir configured control root
+ * @param {object} [options.ctx] trusted DSH context (optional registry probe)
+ * @param {object} [options.logger]
+ * @returns {object} controlRoot/runtimeDir/mode/activeWorkspaceId + diagnostics
+ */
+export function resolveWorkspaceRuntime({ memoryDir, ctx = null, logger = null } = {}) {
+  const controlRoot = resolve(memoryDir);
+  mkdirSync(controlRoot, { recursive: true });
+
+  const binding = readWorkspaceBinding(controlRoot);
+  let mode = "unbound";
+  let activeWorkspaceId = null;
+  let runtimeDir = join(controlRoot, UNBOUND_CONTROL_DIR);
+  let diagnostic = binding.bound ? null : (binding.diagnostic ?? "unbound");
+
+  if (binding.bound) {
+    const initialized = initializeWorkspaceDataDir(controlRoot, { expectedWorkspaceId: binding.workspaceId });
+    const currentBinding = readWorkspaceBinding(controlRoot);
+    if (initialized.ok && initialized.workspaceId === binding.workspaceId &&
+        currentBinding.bound && currentBinding.workspaceId === binding.workspaceId) {
+      mode = "selected";
+      activeWorkspaceId = binding.workspaceId;
+      runtimeDir = initialized.path;
+      diagnostic = null;
+    } else {
+      diagnostic = initialized.ok
+        ? "binding-changed-during-initialization"
+        : (initialized.reason ?? binding.diagnostic ?? "workspace-data-unavailable");
+    }
+  }
+
+  // The unbound control database is the one runtime directory created here for
+  // an unbound state. Selected mode's directory/marker was created above.
+  if (mode !== "selected") mkdirSync(runtimeDir, { recursive: true });
+
+  let legacyRootDatabase = false;
+  try {
+    legacyRootDatabase = existsSync(join(controlRoot, "memory.db"));
+  } catch {
+    legacyRootDatabase = false;
+  }
+
+  // A registry probe is diagnostic only. The selected isolated store still opens
+  // so the owner GUI can load; model operations are denied per request by the
+  // access guard when the registry is missing/invalid or no longer lists it.
+  let registryKnown = null;
+  if (mode === "selected" && ctx) {
+    try {
+      registryKnown = listWorkspaces(ctx).some((workspace) => workspace.id === activeWorkspaceId);
+    } catch {
+      registryKnown = false;
+    }
+  }
+
+  if (mode === "selected") {
+    logger?.info?.("[dsh-mneme] workspace runtime: selected Workspace store is active (isolated database)");
+    if (registryKnown === false) {
+      logger?.warn?.("[dsh-mneme] workspace runtime: selected Workspace is not present in the trusted registry; model memory access will be denied");
+    }
+  } else {
+    logger?.warn?.(`[dsh-mneme] workspace runtime: no valid selected Workspace (${diagnostic}); model memory access is denied until a Workspace is selected and the plugin is remounted`);
+  }
+  if (legacyRootDatabase) {
+    logger?.warn?.("[dsh-mneme] workspace runtime: legacy control-root memory.db detected and ignored (not opened, created, restored or migrated)");
+  }
+
+  return {
+    controlRoot,
+    runtimeDir,
+    mode,
+    activeWorkspaceId,
+    diagnostic,
+    binding,
+    legacyRootDatabase,
+    registryKnown
+  };
+}
+
 export const apply = (ctx, config) => {
   // Cordis/DSH may hand apply() an already-validated Config whose volatile
   // fields are stable references. Re-parsing that object through Config() would
@@ -279,21 +667,19 @@ export const apply = (ctx, config) => {
     Object.values(config).some(isVolatileRef));
   const rawCfg = alreadyParsed ? config : Config(config);
 
-  // Resolve memoryDir: expand leading "~"
+  // Resolve memoryDir: expand leading "~". memoryDir is the control root for the
+  // single Workspace binding file; it is never the database root of this runtime.
   const memoryDir = rawCfg.memoryDir.startsWith("~")
     ? join(homedir(), rawCfg.memoryDir.slice(1))
     : rawCfg.memoryDir;
-  mkdirSync(memoryDir, { recursive: true });
 
-  // A staged restore is applied before the SQLite handle is opened. The helper
-  // preserves the current database file set in backups/pre-restore-* and only
-  // removes the live files after the verified replacement is ready.
-  const stagedRestore = applyStagedRestore(memoryDir, { logger: ctx.logger });
-  if (stagedRestore?.applied) {
-    ctx.logger?.info?.(`[dsh-mneme] applied staged restore ${stagedRestore.backup}`);
-  } else if (stagedRestore?.error) {
-    ctx.logger?.warn?.(`[dsh-mneme] staged restore skipped: ${stagedRestore.error}`);
-  }
+  // Workspace runtime selection happens before any SQLite handle is opened. The
+  // binding file decides between the selected digest-derived isolated directory
+  // and the separate unbound control database under <memoryDir>/unbound/. The
+  // legacy <memoryDir>/memory.db is never opened, created, restored or migrated.
+  const workspaceRuntime = resolveWorkspaceRuntime({ memoryDir, ctx, logger: ctx.logger });
+  const runtimeDir = workspaceRuntime.runtimeDir;
+  const activeWorkspaceId = workspaceRuntime.activeWorkspaceId;
 
   // #218 末楼的实际事故：profile 被清理，落在其中的记忆库连带丢失。命中
   // profile 作用域时给一条可操作的告警（只提示、不搬库、不加配置键），启发
@@ -305,7 +691,19 @@ export const apply = (ctx, config) => {
     );
   }
 
-  const store = createStore(join(memoryDir, "memory.db"));
+  // A staged restore is applied before the SQLite handle is opened, but only
+  // inside the selected isolated runtime. An unbound control database is left
+  // untouched: it must stay a separate, empty owner-GUI control store.
+  if (workspaceRuntime.mode === "selected") {
+    const stagedRestore = applyStagedRestore(runtimeDir, { logger: ctx.logger });
+    if (stagedRestore?.applied) {
+      ctx.logger?.info?.(`[dsh-mneme] applied staged restore ${stagedRestore.backup}`);
+    } else if (stagedRestore?.error) {
+      ctx.logger?.warn?.(`[dsh-mneme] staged restore skipped: ${stagedRestore.error}`);
+    }
+  }
+
+  const store = createStore(join(runtimeDir, "memory.db"));
   // Scene reads consult the persisted directional group ACL. Owner-private
   // read-all is a Host capability handled inside Scene policy, not a DB grant.
   setSceneReadAclReader((reader, source) => store.hasSceneReadGrant(reader, source));
@@ -353,20 +751,134 @@ export const apply = (ctx, config) => {
       })()
     : createLiveConfig(rawCfg, flatFlags, nestedFlags);
 
+  // Runtime file state must live inside the active Workspace directory. The
+  // configured documentDir is honored only as a relative path under that root;
+  // an absolute/~ path is a global location and is deliberately not adopted in
+  // this milestone. The proxy keeps panel updates live while overriding path
+  // keys for every engine/API consumer.
+  let scopedDocumentDir = "";
+  const configuredDocumentDir = cfg.documentDir;
+  if (typeof configuredDocumentDir === "string" && configuredDocumentDir.trim()) {
+    const rawDocumentDir = configuredDocumentDir.trim();
+    const relativeDocumentDir = relative(runtimeDir, resolve(runtimeDir, rawDocumentDir));
+    if (isAbsolute(rawDocumentDir) || relativeDocumentDir === ".." ||
+      relativeDocumentDir.startsWith(`..${sep}`) || isAbsolute(relativeDocumentDir) ||
+      rawDocumentDir === "~" ||
+      rawDocumentDir.startsWith("~/") || rawDocumentDir.startsWith("~\\")) {
+      ctx.logger?.warn?.("[dsh-mneme] documentDir escapes the active Workspace; using its managed documents directory instead");
+    } else {
+      scopedDocumentDir = rawDocumentDir;
+    }
+  }
+  const runtimeOverrides = {
+    memoryDir: runtimeDir,
+    documentDir: scopedDocumentDir
+  };
+  // No selected Workspace means no autonomous memory work: skip the semantic
+  // boot backfill as well as the Dream/Sleep/entity/continuity/nudge paths.
+  if (workspaceRuntime.mode !== "selected") runtimeOverrides.autoReindexOnBoot = false;
+  const runtimeCfg = createScopedRuntimeConfig(cfg, runtimeOverrides);
+
+  // The runtime authorization closure is created once per mount, before any
+  // session/event hook is wired. It re-reads the binding file on every model
+  // boundary, so a binding change denies the old store immediately; index.js
+  // always supplies it (direct module tests may omit it and keep the legacy
+  // allow behavior).
+  //
+  // The QQ boundary wraps that Workspace guard: Workspace membership alone must
+  // not admit a QQ group/private Session into unscoped long-term memory. The
+  // Host is consulted at execution time and only strict Scene mode can admit a
+  // verified QQ binding. This single closure gates injection, tools,
+  // autoSummarize and every event-derived writer below.
+  const workspaceAccessGuard = createWorkspaceAccessGuard({
+    memoryDir: workspaceRuntime.controlRoot,
+    activeWorkspaceId,
+    ctx,
+    logger: ctx.logger
+  });
+  const authorizeModelWork = createQQModelAccessGate({
+    ctx,
+    config: runtimeCfg,
+    authorizeWorkspace: workspaceAccessGuard.authorize,
+    logger: ctx.logger
+  });
+
+  // Teardown effects are collected from every later registration. Declared here
+  // because the command/recorder block below also registers a disposer.
+  const disposers = [];
+
+  // Mneme-lite Recent Activity is opt-in and only mounts for a selected
+  // Workspace. It shares the already-open isolated store DB and the existing
+  // runtime access guard; no second database is opened and the long-term
+  // memory/Dream/Sleep/retrieval paths are untouched. Registering the trusted
+  // listener here lets unload dispose it with the rest of the runtime.
+  let recentActivity = null;
+  // Owner policy management needs the same core while the feature is disabled,
+  // but it must not inherit the model-side immediate-disable wrapper. This
+  // second core is never subscribed to session/event; it only reads/writes the
+  // isolated recent-activity tables for the owner API.
+  let recentActivityAdmin = null;
+  let recentActivityBootEnabled = false;
+  if (activeWorkspaceId && runtimeCfg.recentActivityEnabled === true) {
+    recentActivityBootEnabled = true;
+    const persisted = settings.getRecentActivityConfig();
+    const coreConfig = {
+      ttlHours: persisted.ttl_hours,
+      maxItems: persisted.max_items,
+      maxTokens: persisted.max_tokens
+    };
+    const isTrustedOwner = createRecentActivityOwnerCheck(ctx);
+    const resolveTrustedSession = createTrustedSessionResolver(ctx);
+    const allowCrossSession = createRecentActivityPairGate(ctx);
+    const mount = createRecentActivityRuntime({
+      ctx,
+      db: store.db,
+      workspaceId: activeWorkspaceId,
+      authorizeModelWork,
+      isEnabled: () => settings.getFeatureFlags().recentActivityEnabled !== false,
+      resolveTrustedSession,
+      allowCrossSession,
+      isTrustedOwner,
+      config: coreConfig,
+      logger: ctx.logger
+    });
+    recentActivity = mount.core;
+    if (recentActivity) {
+      disposers.push(mount.dispose);
+      try {
+        const adminCore = createRecentActivityCore({
+          db: store.db,
+          workspaceId: activeWorkspaceId,
+          allowSession: authorizeModelWork,
+          resolveTrustedSession,
+          allowCrossSession,
+          isTrustedOwner,
+          config: coreConfig,
+          logger: ctx.logger
+        });
+        if (adminCore.status?.().ok === true) recentActivityAdmin = adminCore;
+      } catch {
+        recentActivityAdmin = null;
+      }
+    } else {
+      ctx.logger?.warn?.("[dsh-mneme] recentActivityEnabled=true but the recent-activity core is unavailable");
+    }
+  }
+
   // Scene isolation is off by default and has no production Host adapter in
   // this fork: hostContract stays false, so actual QQ cross-scene sharing is
   // disabled. Synthetic trusted events can exercise the contract without QQ.
   configureScene({
-    enabled: cfg.sceneIsolationEnabled === true,
-    strictQQ: cfg.sceneStrictQQ === true,
+    enabled: runtimeCfg.sceneIsolationEnabled === true,
+    strictQQ: runtimeCfg.sceneStrictQQ === true,
     hostContract: false
   });
-  const disposeSceneAclHandshake = provideSceneAclRead(ctx, cfg);
+  const disposeSceneAclHandshake = provideSceneAclRead(ctx, runtimeCfg);
   configureRecentContext({
-    enabled: cfg.recentContextEnabled === true,
-    ttlMs: cfg.recentContextTtlMs,
-    maxEvents: cfg.recentContextMaxEvents,
-    maxTokens: cfg.recentContextMaxTokens
+    enabled: runtimeCfg.recentContextEnabled === true,
+    ttlMs: runtimeCfg.recentContextTtlMs,
+    maxEvents: runtimeCfg.recentContextMaxEvents,
+    maxTokens: runtimeCfg.recentContextMaxTokens
   });
 
   // 失败表的启动期清理也放在装配之后（此前它在 createStore 之后、装配之前，写死
@@ -376,8 +888,8 @@ export const apply = (ctx, config) => {
   // 悄悄失败」：这一族的 recall_runs 清理当年就是静默蒸发，表涨到两万余行无人
   // 察觉，所以本处与 llm_audit / distill_records / recall_runs 三处一样出声。
   try {
-    const failureRetentionDays = Number.isInteger(cfg.reflectionFailureRetentionDays)
-      ? cfg.reflectionFailureRetentionDays
+    const failureRetentionDays = Number.isInteger(runtimeCfg.reflectionFailureRetentionDays)
+      ? runtimeCfg.reflectionFailureRetentionDays
       : 90;
     store.deleteOldFailures(new Date(Date.now() - failureRetentionDays * 86400000).toISOString());
   } catch (err) {
@@ -390,8 +902,8 @@ export const apply = (ctx, config) => {
   // （raw 说关 → 不清理，cfg 说开 → 照写，审计表就无保留期地长）。保留期默认 90 天、
   // 失败只 warn，与失败表清理同款：账本清理绝不许挡住插件启动。
   try {
-    if (cfg.llmAudit?.enabled !== false) {
-      const retentionMs = Number.isInteger(cfg.llmAudit?.retentionDays) ? cfg.llmAudit.retentionDays : 90;
+    if (runtimeCfg.llmAudit?.enabled !== false) {
+      const retentionMs = Number.isInteger(runtimeCfg.llmAudit?.retentionDays) ? runtimeCfg.llmAudit.retentionDays : 90;
       store.deleteOldLlmAudits(new Date(Date.now() - retentionMs * 86400000).toISOString());
     }
   } catch (err) {
@@ -404,9 +916,9 @@ export const apply = (ctx, config) => {
   // 每次启动扫一遍，白付一次全表 DELETE 的代价。只裁 distill_records；链接
   // （memory_provenance）保留，指向空区间即为「来源已过期」。
   try {
-    if (cfg.distillRecords?.enabled === true) {
-      const retentionMs = Number.isInteger(cfg.distillRecords?.retentionDays)
-        ? cfg.distillRecords.retentionDays
+    if (runtimeCfg.distillRecords?.enabled === true) {
+      const retentionMs = Number.isInteger(runtimeCfg.distillRecords?.retentionDays)
+        ? runtimeCfg.distillRecords.retentionDays
         : 90;
       store.clearDistillRecords(new Date(Date.now() - retentionMs * 86400000).toISOString());
     }
@@ -423,7 +935,7 @@ export const apply = (ctx, config) => {
   // 升级为「原话无限期留存」，所以必须与那次改动同批交付。
   // 保留期语义是「天」（函数内部乘 86400000），清理失败只 warn，绝不挡插件启动。
   try {
-    const recallRetentionDays = Number.isInteger(cfg.recallRetentionDays) ? cfg.recallRetentionDays : 90;
+    const recallRetentionDays = Number.isInteger(runtimeCfg.recallRetentionDays) ? runtimeCfg.recallRetentionDays : 90;
     store.purgeRecallRunsOlderThan(recallRetentionDays);
   } catch (err) {
     // 这里必须真的出声。这一对当初是**静默**蒸发的：函数与调用一起没了、没人发现，
@@ -434,15 +946,13 @@ export const apply = (ctx, config) => {
 
   // 记忆语言（memory.language）：本实例逐层传入 inject / summarize / dream /
   // sleep / mirror，多实例（如 agent preset 内挂载）互不影响。
-  const mirror = createMirror(memoryDir, langOf(cfg));
+  const mirror = createMirror(runtimeDir, langOf(runtimeCfg));
 
-  // #296 第二批：managed 文档目录。解析与 memoryDir 同一套（空 = 跟随 memoryDir 的
-  // <memoryDir>/documents/，~ 展开，相对路径落在 memoryDir 下）。索引对象总是建：
-  // 闸关时它只承担「清掉陈旧 index.md」这一件事，与 documents.md 在闸关时被镜像删
-  // 掉同一口径。建目录与写索引失败都只 warn，不阻断插件加载（它们是机器产物）。
-  const documentDir = resolveDocumentDir(memoryDir, cfg.documentDir);
-  const documentIndex = createDocumentIndex(documentDir, langOf(cfg));
-  if (cfg.documentMemoryEnabled === true) {
+  // #296 第二批：managed 文档目录。Resolved under the active Workspace runtime
+  // root; an absolute/global documentDir was discarded above.
+  const documentDir = resolveDocumentDir(runtimeDir, scopedDocumentDir);
+  const documentIndex = createDocumentIndex(documentDir, langOf(runtimeCfg));
+  if (runtimeCfg.documentMemoryEnabled === true) {
     const ensured = documentIndex.ensure();
     if (!ensured.ok) {
       ctx.logger?.warn?.(`[dsh-mneme] documentDir is not writable: ${documentDir}: ${ensured.error}`);
@@ -467,11 +977,11 @@ export const apply = (ctx, config) => {
   // 默认仅告警、拦截 opt-in），判据不碰决策。
   const writeAdmission = createWriteAdmission({
     store,
-    config: cfg,
+    config: runtimeCfg,
     logger: ctx.logger,
-    sensitiveScan: createSensitiveScan({ config: cfg })
+    sensitiveScan: createSensitiveScan({ config: runtimeCfg })
   });
-  const service = createService({ store, mirror, config: cfg, logger: ctx.logger, documentIndex, writeAdmission });
+  const service = createService({ store, mirror, config: runtimeCfg, logger: ctx.logger, documentIndex, writeAdmission });
 
   // F-NEW-03: if the mirror sync failed last run (persisted dirty state), retry
   // a safe re-render at boot so a stale mirror converges without needing a
@@ -524,7 +1034,7 @@ export const apply = (ctx, config) => {
   // 原样保留在 createSemantic 内部,这里只拿引用。init 全失败的 embedder 引用仍会进入
   // dream/sleep 的 semantic 面 —— 与搬移前一致:检索侧 setEmbedder(null) 降级关键词。
   const semantic = createSemantic({
-    store, service, settings, cfg, logger: ctx.logger, vectorIndex, applyHumanEdits, lightMode
+    store, service, settings, cfg: runtimeCfg, logger: ctx.logger, vectorIndex, applyHumanEdits, lightMode
   });
   const { embedder, reranker } = semantic;
 
@@ -534,26 +1044,48 @@ export const apply = (ctx, config) => {
   // M.O. 执行记账器：默认 null（旗标关），开了才装配。
   let recorder = null;
   if (ctx.commands) {
-    commands = createCommandManager({ ctx, settings, logger: ctx.logger, language: langOf(cfg) });
+    commands = createCommandManager({ ctx, settings, logger: ctx.logger, language: langOf(runtimeCfg) });
     commands.sync();
   }
 
   // M.O. 执行记账（v0.9.0 第二批）：`/mo-run` 显式开一次执行窗口，窗口内的命令执行
-  // 才可能被记成一条 run。挂的是 `session/event`——本仓已有三处消费者（continuity /
-  // summarize / api），不是新引入的宿主依赖。
+  // 才可能被记成一条 run。挂的是 `session/event`——本仓已有的消费者之一
+  // （continuity / summarize / nudge / api），不是新引入的宿主依赖。
   //
   // 为什么必须显式开窗：工作流的 trigger 是人话，拿它去猜「用户这句话是不是要开始走
   // 某条流程」只能猜错，而猜错会把一条从没跑过的流程记成跑过。所以窗口边界由人的
   // 显式动作划，**没开窗时一个字都不记**。
   //
   // 门控：默认关（actionRunEnabled），并且它挂热路径，轻量档也关。
-  if (cfg.actionRunEnabled === true) {
-    recorder = createExecutionRecorder({ ctx, logger: ctx.logger });
+  if (runtimeCfg.actionRunEnabled === true) {
+    // The recorder's own session/event hook only buffers tool events for an
+    // already-open window, but the window belongs to a Session. Gate the event
+    // subscription too, so a moved/unbound Session stops buffering as soon as
+    // the guard notices. The wrapper keeps pipeline-runner.js free of Workspace
+    // policy (its only ctx dependency is `on`).
+    const recorderCtx = {
+      on(name, fn) {
+        if (typeof ctx.on !== "function") return null;
+        if (name !== "session/event") return ctx.on(name, fn);
+        return ctx.on(name, (session, event) => {
+          let allowed = false;
+          try {
+            allowed = authorizeModelWork(session)?.allowed === true;
+          } catch {
+            allowed = false;
+          }
+          if (!allowed) return;
+          return fn(session, event);
+        });
+      }
+    };
+    recorder = createExecutionRecorder({ ctx: recorderCtx, logger: ctx.logger });
     const disposeMoRun = registerMoRunCommand({
       ctx,
       recorder,
       enabled: true,
-      language: () => langOf(cfg)
+      language: () => langOf(runtimeCfg),
+      authorizeModelWork
     });
     if (disposeMoRun) {
       disposers.push(disposeMoRun);
@@ -575,7 +1107,10 @@ export const apply = (ctx, config) => {
   // whenever scene isolation is enabled OR the store already contains tagged
   // rows, even if the user turned the flags off afterwards. Runtime guards below
   // also cover tagged rows arriving after startup.
-  const sceneUnsafeDerivation = () => cfg.sceneIsolationEnabled === true || store.hasSceneScopedRows() === true;
+  const sceneUnsafeDerivation = () => needsSceneScopedBackgroundJobs({
+    sceneIsolationEnabled: runtimeCfg.sceneIsolationEnabled,
+    hasSceneScopedRows: store.hasSceneScopedRows()
+  });
 
   // Background jobs are partitioned by persisted scene_scope only. The scope
   // list is internal store metadata, never model/HTTP input; pagination keeps
@@ -602,12 +1137,12 @@ export const apply = (ctx, config) => {
     let last = { ok: true, skipped: true };
     const results = [];
     for (const scope of scopes) {
-      const result = await runWithSceneJob(scope, () => dream.runDream(ctx, service, cfg));
+      const result = await runWithSceneJob(scope, () => dream.runDream(ctx, service, runtimeCfg));
       last = result ?? last;
       results.push(result ?? { ok: false });
       if (!result?.ok) ok = false;
     }
-    const recorded = ok ? recordScopedDreamBaseline(store, service, cfg, results) : null;
+    const recorded = ok ? recordScopedDreamBaseline(store, service, runtimeCfg, results) : null;
     return { ...last, ok, baseline: recorded ?? globalDreamBaseline() };
   }
 
@@ -619,7 +1154,7 @@ export const apply = (ctx, config) => {
     let processed = 0;
     for (const scope of scopes) {
       if (signal?.aborted) break;
-      const result = await runWithSceneJob(scope, () => runSleep(ctx, service, cfg, ctx.logger, { embedder, vectorIndex }, signal));
+      const result = await runWithSceneJob(scope, () => runSleep(ctx, service, runtimeCfg, ctx.logger, { embedder, vectorIndex }, signal));
       processed += 1;
       last = result ?? last;
       if (!result?.ok) ok = false;
@@ -629,15 +1164,35 @@ export const apply = (ctx, config) => {
     });
     return outcome;
   }
+
+  // Common lite path: a fresh Workspace with no tagged rows and Scene isolation
+  // off calls the original Mneme Dream/Sleep directly. Scene buckets are only
+  // enumerated when the compatibility path is actually required. The decision is
+  // re-evaluated per run so a tagged row arriving later switches to the safe
+  // per-Scene path instead of being processed unscoped.
+  async function runBackgroundDream() {
+    if (!sceneUnsafeDerivation()) return dream.runDream(ctx, service, runtimeCfg);
+    return runScopedDreams();
+  }
+
+  async function runBackgroundSleep(signal) {
+    if (!sceneUnsafeDerivation()) {
+      return runSleep(ctx, service, runtimeCfg, ctx.logger, { embedder, vectorIndex }, signal);
+    }
+    return runScopedSleep(signal);
+  }
   let dream = null;
-  if (cfg.autoDream) {
+  if (!activeWorkspaceId && runtimeCfg.autoDream) {
+    ctx.logger?.warn?.("[dsh-mneme] autoDream requested but no Workspace is selected; autonomous memory writes are disabled in unbound mode");
+  }
+  if (activeWorkspaceId && runtimeCfg.autoDream) {
     dream = createDreamScheduler({
-      thresholdCount: cfg.dreamThresholdCount,
-      thresholdChars: cfg.dreamThresholdChars,
-      delayMs: cfg.dreamDelayMs,
-      minIntervalMs: (cfg.dreamMinIntervalMinutes ?? 0) * 60000,
+      thresholdCount: runtimeCfg.dreamThresholdCount,
+      thresholdChars: runtimeCfg.dreamThresholdChars,
+      delayMs: runtimeCfg.dreamDelayMs,
+      minIntervalMs: (runtimeCfg.dreamMinIntervalMinutes ?? 0) * 60000,
       // Issue #292：连续失败指数退避（opt-in，默认关 = 行为不变）。
-      failureBackoff: cfg.autoDreamFailureBackoff === true,
+      failureBackoff: runtimeCfg.autoDreamFailureBackoff === true,
       logger: ctx.logger,
       semantic: { embedder, vectorIndex },
       lastRunAtSeed: store.lastDreamRunAt("auto"),
@@ -647,14 +1202,14 @@ export const apply = (ctx, config) => {
       // 零基线（= 升级前行为）。
       baselineSeed: store.lastDreamBaseline("auto"),
       // Issue #239（第 4 项）镜像到巩固：高峰期不做梦，顺延到最近的高峰结束时刻。
-      peakHours: cfg.dreamPeakHours ?? "",
-      peakMaxDeferMinutes: cfg.dreamPeakMaxDeferMinutes ?? 120,
+      peakHours: runtimeCfg.dreamPeakHours ?? "",
+      peakMaxDeferMinutes: runtimeCfg.dreamPeakMaxDeferMinutes ?? 120,
       // 跳过时的审计行在这里落地（调度器只拿到 service，拿不到 config 的
       // llmAudit 开关与巩固模型路由）。口径与 runAuditedLlm 一致：审计关掉就
       // 不写；写失败只 warn，绝不反噬调度（CONTRIBUTING 的 fail-safe 硬约定）。
       auditPeakSkip: ({ count, chars }) => {
-        if (cfg?.llmAudit?.enabled === false || typeof service?.saveLlmAudit !== "function") return;
-        const modelId = cfg.dreamProvider && cfg.dreamModel ? `${cfg.dreamProvider}:${cfg.dreamModel}` : "";
+        if (runtimeCfg?.llmAudit?.enabled === false || typeof service?.saveLlmAudit !== "function") return;
+        const modelId = runtimeCfg.dreamProvider && runtimeCfg.dreamModel ? `${runtimeCfg.dreamProvider}:${runtimeCfg.dreamModel}` : "";
         service.saveLlmAudit({
           timestamp: new Date().toISOString(),
           trigger_source: "autoDream",
@@ -672,7 +1227,7 @@ export const apply = (ctx, config) => {
           metadata: JSON.stringify({ count, chars })
         });
       },
-      onRun: () => (dream ? runScopedDreams() : Promise.resolve({ ok: true, skipped: true, reason: "dream-disposed" }))
+      onRun: () => (dream ? runBackgroundDream() : Promise.resolve({ ok: true, skipped: true, reason: "dream-disposed" }))
     });
     service.setDreamHook(() => dream.maybeSchedule(service));
   }
@@ -683,13 +1238,16 @@ export const apply = (ctx, config) => {
   // service.enqueue so they serialize with autoDream — the two never overlap.
   // Abortable on user activity; audited into dream_runs with run_type='sleep'.
   let sleep = null;
-  if (cfg.sleepModeEnabled) {
+  if (!activeWorkspaceId && runtimeCfg.sleepModeEnabled) {
+    ctx.logger?.warn?.("[dsh-mneme] sleepMode requested but no Workspace is selected; autonomous memory writes are disabled in unbound mode");
+  }
+  if (activeWorkspaceId && runtimeCfg.sleepModeEnabled) {
     sleep = createSleepScheduler({
       service,
-      config: cfg,
+      config: runtimeCfg,
       logger: ctx.logger,
       lastRunAtSeed: store.lastDreamRunAt("sleep"),
-      onRun: (signal) => (sleep ? runScopedSleep(signal) : Promise.resolve({ ok: true, skipped: true, reason: "sleep-disposed" }))
+      onRun: (signal) => (sleep ? runBackgroundSleep(signal) : Promise.resolve({ ok: true, skipped: true, reason: "sleep-disposed" }))
     });
     service.setSleepHook(() => sleep.noteWrite());
   }
@@ -701,7 +1259,10 @@ export const apply = (ctx, config) => {
   // expects, reusing the same ctx.llm.stream consumption pattern as dream.js.
   // Explicit opt-in only (entityExtractionEnabled defaults to false); any LLM
   // failure degrades inside the extractor to { ok:false }, never a write error.
-  if (cfg.entityExtractionEnabled) {
+  if (!activeWorkspaceId && runtimeCfg.entityExtractionEnabled) {
+    ctx.logger?.warn?.("[dsh-mneme] entityExtraction requested but no Workspace is selected; autonomous extraction is disabled in unbound mode");
+  }
+  if (activeWorkspaceId && runtimeCfg.entityExtractionEnabled) {
     if (!ctx.llm) {
       // Issue #108: an enabled-but-unwired extractor failed silently before —
       // zero entities, zero llm_audit_logs, no log line anywhere. Make the
@@ -716,10 +1277,10 @@ export const apply = (ctx, config) => {
         // Issue #250: the adapter needs service to write its llm_audit_logs row
         // (it never had it) and config for the shared llmAudit.enabled gate.
         service,
-        config: cfg
+        config: runtimeCfg
       });
       service.setEntityExtractor((memory) =>
-        extractEntities(memory, { store, config: cfg, callLLM: streamEntityText, logger: ctx.logger, identity: service.identity })
+        extractEntities(memory, { store, config: runtimeCfg, callLLM: streamEntityText, logger: ctx.logger, identity: service.identity })
           .catch((err) => {
             ctx.logger?.warn?.(`[dsh-mneme] entity extraction failed: ${String(err)}`);
             return { ok: false, error: String(err) };
@@ -728,8 +1289,6 @@ export const apply = (ctx, config) => {
     }
   }
 
-  const disposers = [];
-
   // Issue #380：注入前判定闸门。判定 LLM 走 entity adapter 同款装配（ctx.llm +
   // agentDefaultModel 回退），gate 自持 enabled/usable 判定（未启用/llm 缺席/
   // llmAudit 关闭时内部恒 off，注入行为与现状逐字节一致）。
@@ -737,7 +1296,7 @@ export const apply = (ctx, config) => {
     llm: ctx.llm,
     agentDefaultModel: ctx.agentDefaultModel,
     service,
-    config: cfg,
+    config: runtimeCfg,
     logger: ctx.logger
   });
   disposers.push(() => preInjectGate.clear());
@@ -747,24 +1306,37 @@ export const apply = (ctx, config) => {
   disposers.push(() => semantic.dispose());   // #118 重试计时器 + boot 回填计时器(搬入 semantic.js 后由它自持)
 
   ctx.inject(["systemPrompt"], (promptCtx) => {
-    if (cfg.autoInject) disposers.push(createInjector(promptCtx, service, settings, cfg, preInjectGate));
+    if (runtimeCfg.autoInject) {
+      disposers.push(createInjector(
+        promptCtx,
+        service,
+        settings,
+        runtimeCfg,
+        preInjectGate,
+        authorizeModelWork,
+        recentActivity,
+        () => settings.getRecentActivityConfig()
+      ));
+    }
   });
 
   // #249 N3：压缩边缘双落点。触发靠宿主自己落的压缩事件（订阅 + pre-step 追加），
   // 不需要 systemPrompt / tools 的任何能力，所以不塞进上面的 inject 回调；父／子
   // 闸门在挂载点判一次，与 inject.js 共用同一个 injectChildEnabled 判据。
-  if (cfg.autoInject && injectChildEnabled(cfg, "continuityRescueEnabled")) {
-    disposers.push(createContinuityRescue(ctx, store));
+  // Unbound mode has no selected Workspace, so this autonomous store writer is
+  // not mounted at all.
+  if (activeWorkspaceId && runtimeCfg.autoInject && injectChildEnabled(runtimeCfg, "continuityRescueEnabled")) {
+    disposers.push(createContinuityRescue(ctx, store, authorizeModelWork));
   }
 
   ctx.inject(["tools"], (toolsCtx) => {
-    disposers.push(createTools(toolsCtx, service, cfg, embedder));
+    disposers.push(createTools(toolsCtx, service, runtimeCfg, embedder, authorizeModelWork, recentActivity));
   });
 
-  const strictQQScene = cfg.sceneIsolationEnabled === true && cfg.sceneStrictQQ === true;
+  const strictQQScene = runtimeCfg.sceneIsolationEnabled === true && runtimeCfg.sceneStrictQQ === true;
   const summarizer = (!strictQQScene && sceneUnsafeDerivation())
     ? { dispose() {} }
-    : createSummarizer(ctx, service, cfg);
+    : createSummarizer(ctx, service, runtimeCfg, { authorizeModelWork });
   disposers.push(summarizer.dispose);
 
   // #275 存储生命周期第一批：无损回收的手动入口。刻意不挂启动路径、不接定时器——
@@ -774,7 +1346,7 @@ export const apply = (ctx, config) => {
   // 位置在 webServer 块之前：面板的 in-process API（createApi）与 standalone 数据面
   // 都要用它，而 webServer 是可选的——headless 宿主不注册面板路由，构造点若留在块后
   // 就永远晚于 createApi（#386 第 4 条）。构造期无副作用（只返回 { reclaim }），前移安全。
-  const maintenance = createMaintenance({ store, config: cfg, logger: ctx.logger });
+  const maintenance = createMaintenance({ store, config: runtimeCfg, logger: ctx.logger });
 
   // webServer 可选依赖：cordis 4 的 ctx 是 Proxy，直接访问未在 inject 声明的
   // 属性会抛 "cannot get property without inject"（不会返回 undefined），所以
@@ -787,18 +1359,30 @@ export const apply = (ctx, config) => {
     // 画像提取草稿（#497）：装配与开关无关——闸在路由那一侧（关着回 409 disabled，
     // 本模块一次都不会被调用）。这样「没启用」与「没装配」在 HTTP 面上是两个可区分的
     // 答案（503 unavailable 只该出现在旧宿主/装配缺失上，不该被读成「用户没开」）。
-    const extractProfileDraft = createProfileExtractor({ ctx, service, config: cfg, logger: ctx.logger });
+    const extractProfileDraft = createProfileExtractor({ ctx, service, config: runtimeCfg, logger: ctx.logger });
     const api = createApi(ctx, service, settings, commands ?? {
       add: () => { throw new Error("commands unavailable"); },
       remove: () => false,
       list: () => []
-    }, embedder, { vectorIndex, reranker }, cfg.apiToken, cfg, maintenance, extractProfileDraft);
+    }, embedder, { vectorIndex, reranker }, runtimeCfg.apiToken, runtimeCfg, maintenance, extractProfileDraft);
     disposers.push(api.dispose);
     // Native settings page data plane: owner-authenticated and deliberately
     // smaller than the token API. No API key, memory body or SQLite path is
     // returned. Kept separate from the token-gated panel routes so an ordinary
-    // user does not need to copy a token into the browser.
-    mountAdminApi(ctx, { service, settings, store, config: cfg, embedder, vectorIndex, reranker, memoryDir });
+    // user does not need to copy a token into the browser. Backups and staged
+    // restores are scoped to the active Workspace runtime.
+    mountAdminApi(ctx, {
+      service, settings, store, config: runtimeCfg, embedder, vectorIndex, reranker,
+      memoryDir: runtimeDir,
+      // Workspace selection is stored at the control root, never under the
+      // active Workspace runtime (the backup/restore endpoints keep memoryDir).
+      controlRoot: workspaceRuntime.controlRoot,
+      activeWorkspaceId,
+      initialSelectedWorkspaceId: workspaceRuntime.binding?.workspaceId ?? null,
+      recentActivity,
+      recentActivityAdmin,
+      recentActivityBootEnabled
+    });
   }
 
   // M.O. 自动沉淀（v0.9.3）：项目里重复走的那套动作，自动变成 memoryDir 里的一条
@@ -809,23 +1393,23 @@ export const apply = (ctx, config) => {
   //
   // 为什么挂 session/event 却又要进轻量档黑名单：它读的是 zstd 会话日志（同步解压），
   // 是本插件里最重的一条后台路径；且它只产「提议」，关掉不影响记忆本身的正确性。
-  if (cfg.actionNudgeEnabled === true) {
-    disposers.push(createNudgeAutoRun({ ctx, memoryDir, logger: ctx.logger }));
+  if (!activeWorkspaceId && runtimeCfg.actionNudgeEnabled === true) {
+    ctx.logger?.warn?.("[dsh-mneme] actionNudge requested but no Workspace is selected; autonomous proposal writes are disabled in unbound mode");
+  }
+  if (activeWorkspaceId && runtimeCfg.actionNudgeEnabled === true) {
+    // Proposals are runtime state: they live under the active Workspace root, not
+    // under the control root.
+    disposers.push(createNudgeAutoRun({ ctx, memoryDir: runtimeDir, logger: ctx.logger, authorizeModelWork }));
   }
 
   // Standalone external API (v0.7.12): plain node:http server for ecosystem
-  // integrations outside the DSH host. Persisted external_api settings win
-  // over the bundle config (enabled/port); the Bearer token lives in the same
-  // kv and is auto-generated on first boot by createStandaloneApi. Binding a
-  // non-loopback host is the operator's documented responsibility.
-  if ((settings.getExternalApi?.()?.enabled ?? cfg.externalApiEnabled) === true) {
-    // embedder 交给 /context 的查询嵌入（issue #370）：与 service.setEmbedder 同一
-    // 实例（semantic.js 装配产物），lightMode 下为 null，路由侧降级规则档。
-    const standalone = createStandaloneApi({ service, store, config: cfg, logger: ctx.logger, settings, maintenance, embedder });
-    disposers.push(() => standalone.server.close());
-    standalone.ready.catch((error) => {
-      ctx.logger?.warn?.(`[dsh-mneme] standalone API failed to start: ${String(error)}`);
-    });
+  // integrations outside the DSH host. In this milestone it cannot assert a DSH
+  // Session, so its model memory data plane cannot be authorized. The owner
+  // panel/API stays available; the standalone listener is disabled entirely and
+  // the reason is logged, rather than exposing an unauthenticated-by-Session
+  // memory plane. Enabling it again requires a Host-backed authorization design.
+  if ((settings.getExternalApi?.()?.enabled ?? runtimeCfg.externalApiEnabled) === true) {
+    ctx.logger?.warn?.("[dsh-mneme] standalone external API is disabled in the Workspace-bound runtime: it cannot assert a trusted DSH Session, so its model memory data plane is unavailable; use the owner panel/API");
   }
 
   // Async disposer: cordis awaits the returned promise on unload (runDisposable),

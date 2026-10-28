@@ -141,6 +141,18 @@ test("missing Host binding fails tool execution closed", async () => {
   } finally { h.close(); }
 });
 
+test("custom QQ Preset without Host binding cannot read or write unscoped memory", async () => {
+  const h = setup(undefined);
+  try {
+    const exec = execFor("custom-qq-session", "renamed-qq-preset");
+    const search = h.registered.find((tool) => tool.name === "memory_search");
+    const save = h.registered.find((tool) => tool.name === "memory_save");
+    await assert.rejects(search.execute({ query: "secret" }, exec), /SCENE_UNVERIFIED/);
+    await assert.rejects(save.execute({ title: "secret", content: "private" }, exec), /SCENE_UNVERIFIED/);
+    assert.equal(h.store.count(), 0);
+  } finally { h.close(); }
+});
+
 test("disallowed high-rank candidates do not starve valid Scene recall", async () => {
   const s = scenes();
   const h = setup(s.a);

@@ -100,8 +100,8 @@ export function runPrivacyCheck({ root = process.cwd(), sourceOnly = false, dist
   let pkg = null;
   if (existsSync(pkgJson)) {
     pkg = JSON.parse(readFileSync(pkgJson, "utf8"));
-    if (pkg.name !== "@modusensus/dsh-mneme") problems.push(`unexpected package name: ${pkg.name}`);
-    if (pkg.version !== "1.0.0") problems.push(`unexpected package version: ${pkg.version}`);
+    if (pkg.name !== "@amadeus/memory") problems.push(`unexpected package name: ${pkg.name}`);
+    if (pkg.version !== "1.0.1") problems.push(`unexpected package version: ${pkg.version}`);
     if (pkg.amadeus?.edition !== "enhanced") problems.push("amadeus.edition must be enhanced");
     for (const required of ["src/qa-guard.js", "src/backup.js", "lib/qa-guard.js", "lib/backup.js", "docs/BACKUP_ROLLBACK.md"]) {
       if (!existsSync(join(root, required))) problems.push(`missing required file: ${required}`);
@@ -116,7 +116,7 @@ export function runPrivacyCheck({ root = process.cwd(), sourceOnly = false, dist
       const info = JSON.parse(readFileSync(packageInfo, "utf8"));
       if (info.version !== pkg.version) problems.push("PACKAGE_INFO version mismatches package.json");
       if (!/^[a-f0-9]{64}$/.test(String(info.sha256 ?? ""))) problems.push("PACKAGE_INFO sha256 invalid");
-      const tgz = join(distDir, `modusensus-dsh-mneme-${pkg.version}.tgz`);
+      const tgz = join(distDir, `amadeus-memory-${pkg.version}.tgz`);
       if (existsSync(tgz)) {
         for (const [name, text] of tarGzTextEntries(tgz)) scanText(name, text);
         const bytes = statSync(tgz).size;

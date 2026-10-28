@@ -15,7 +15,7 @@ describe('version-check.js', () => {
   // ---- validateRegistryUrl：https + 精确 host 白名单（构造性排除本机/内网）----
   describe('validateRegistryUrl', () => {
     test('白名单内 https 地址通过', () => {
-      assert.equal(validateRegistryUrl('https://registry.npmjs.org/@modusensus%2Fdsh-mneme/latest'), true);
+      assert.equal(validateRegistryUrl('https://registry.npmjs.org/@amadeus%2Fmemory/latest'), true);
       assert.equal(validateRegistryUrl('https://registry.npmjs.org/anything'), true);
     });
 
@@ -147,6 +147,7 @@ describe('version-check.js', () => {
   // ---- 模块常量：URL 必须过白名单，运行版本可读 ----
   test('REGISTRY_URL 自身通过白名单校验；PACKAGE_VERSION 可读', () => {
     assert.equal(validateRegistryUrl(REGISTRY_URL), true);
-    assert.match(PACKAGE_VERSION, /^\d+\.\d+\.\d+/);
+    assert.match(REGISTRY_URL, /@amadeus%2Fmemory\/latest$/);
+    assert.equal(PACKAGE_VERSION, '1.0.1');
   });
 });

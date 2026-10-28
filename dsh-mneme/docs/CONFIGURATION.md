@@ -51,6 +51,7 @@ stays off.
 | `recentContextTtlMs` | `600000` | 近期事件有效期（毫秒） | 过期不可读 |
 | `recentContextMaxEvents` | `20` | 每个场景最多事件数 | 超出淘汰最旧 |
 | `recentContextMaxTokens` | `500` | 单次读取 token 预算 | 超出跳过较旧事件 |
+| `recentActivityEnabled` | `false` | 跨会话近期活动：选中 Workspace 的隔离库、受信 turn/end 监听、独立提示块与只读工具 | 关 = 无监听、无提示块、无工具；不读写长期记忆、Dream/Sleep、Hot Memory 或检索 |
 | `coreMemoryEnabled` | `false` | 允许受保护核心记忆工具与 GUI 管理 | 关 = 工具隐藏、管理接口拒绝 |
 
 ## 作用域级可逆闸门（issue #471）
@@ -348,7 +349,7 @@ stays off.
 `autoReindexOnBoot` · `hybridInject` · `injectGuidanceEnabled` · `searchSemanticDedup` ·
 `selectiveInjectEnabled` · `bm25SearchEnabled` · `entityRecallEnabled` ·
 `graphAnchoringEnabled` · `graphWeightEnabled` · `graphInjectHint` · `graphPassiveConfirm` ·
-`actionRunEnabled` · `actionNudgeEnabled` ·
+`actionRunEnabled` · `actionNudgeEnabled` · `recentActivityEnabled` ·
 `dreamNarrativeEnabled` · `documentMemoryEnabled` · `heatEnabled` · `continuityRescueEnabled` ·
 `organizeEnabled`（#231） ·
 `profileExtractEnabled`（#497） ·

@@ -1,20 +1,22 @@
 {
-  "name": "@modusensus/dsh-mneme",
+  "name": "@amadeus/memory",
   "description": "Amadeus Memory (enhanced Mneme 0.9.4): cross-session memory with stable typed identities, native DSH settings, SQLite storage, autoDream, vector retrieval and 13 model tools.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "amadeus": {
     "edition": "enhanced",
     "upstream": "@modusensus/dsh-mneme@0.9.4",
-    "product": "memory"
+    "product": "memory",
+    "pluginId": "dsh-mneme",
+    "dataPath": "~/.dsh/memory"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/slow-stack/mneme.git"
+    "url": "git+https://github.com/jeskoky-pixel/amadeus-memory.git"
   },
-  "homepage": "https://github.com/slow-stack/mneme#readme",
+  "homepage": "https://github.com/jeskoky-pixel/amadeus-memory#readme",
   "bugs": {
-    "url": "https://github.com/slow-stack/mneme/issues"
+    "url": "https://github.com/jeskoky-pixel/amadeus-memory/issues"
   },
   "type": "module",
   "main": "lib/index.js",

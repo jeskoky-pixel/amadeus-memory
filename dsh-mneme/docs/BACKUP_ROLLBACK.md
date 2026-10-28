@@ -45,32 +45,38 @@ DELETE 等高风险动作在 UI 需要二次确认；恢复需要“我了解需
 4. 保留旧插件 tarball 和旧 Profile 的配置副本。
 5. 如使用 Markdown 镜像，备份整个 `memoryDir`；镜像不是权威数据，但便于人工核对。
 
-## 升级
+## 升级（1.0.1 发行身份迁移）
 
-本版本采用同一包名/插件 ID 的增强版本升级：
+1.0.1 起 npm 包名是 `@amadeus/memory`，但**插件 ID 仍是 `dsh-mneme`，默认数据路径仍是 `~/.dsh/memory`**。因此数据格式不需要转换；真正要防的是新旧两个 npm 身份同时运行，或两个实例同时写同一份 `memory.db`。
 
-- 从 `@modusensus/dsh-mneme@0.9.4` 升级到 `0.9.5-amadeus.1`；
-- 数据目录、`vector` 配置、feature flags 和身份/偏好表沿用；
-- 不安装第二个 Memory 实例，避免重复 autoDream、自动注入或写入。
+推荐使用隔离副本升级（生产数据也适用）：
 
-步骤：
+1. 停用旧版本（`@modusensus/dsh-mneme@1.0.0` 或更早），停止 DSH 写入。
+2. 创建一致性 SQLite 备份；再把**整个旧 `memoryDir`**（含 `memory.db`、`-wal`、`-shm`、Markdown 镜像和 `backups/`）复制到新目录，例如 `~/.dsh/memory-amadeus-1.0.1/`。原目录保持不动。
+3. 在 Plugin Manager 停用/卸载旧包，安装 `@amadeus/memory@1.0.1`，将新实例的 `memoryDir` 指向副本。
+4. 确认只有一个 Memory 插件启用；硬重启 DSH。
+5. 打开设置页和原 Memory 面板，检查数据库健康、记忆数、向量覆盖、权重、近期活动工具与 QQ Scene 两个开关。
+6. 观察一个完整会话后再停用旧包；记录新版本和 tarball SHA-256。
 
-1. 停用旧版本。
-2. 在 Plugin Manager 用新 tarball 替换旧包。
-3. 确认只有一个 Memory 插件启用。
-4. 硬重启 DSH。
-5. 打开设置页和原 Memory 面板，检查数据库健康、记忆数、向量覆盖、权重与工具。
-6. 记录新版本和 tarball SHA-256。
+例外：如果你明确接受就地升级，`memoryDir` 可以继续指向原目录；仍必须先停旧实例并做一致性备份，再安装新包。绝不能让旧 `@modusensus/dsh-mneme` 与新 `@amadeus/memory` 同时启用。
+
+兼容性说明：
+
+- 插件 ID `dsh-mneme`、配置命名空间、feature flags、`vector` 设置和 SQLite schema 均沿用；升级不需要重填 Embedding 密钥。
+- Plugin Manager 显示的新包名与旧包名不同，这是发行身份变化，不是第二套数据格式。
+- 近期活动跨 Session 授权依赖 Host 的 live Session Store；历史/非 live Session 的授权会 fail closed，见 [INSTALL](INSTALL.md#已知限制)。
+
+从更早的 `0.9.4` / `0.9.5-amadeus.*` 升级时，同样先停旧实例、备份并复制 `memoryDir`，再安装新包。
 
 ## 回滚
 
-1. 停用当前版本，保留其数据库副本（不要删除现场）。
-2. 安装旧 tarball/旧版本。
-3. 如果 schema 或数据需要回到升级前，停止写入后用备份替换 `memory.db`；同时删除旧的 `memory.db-wal` / `memory.db-shm`，再启动。
+1. 停用 `@amadeus/memory`，保留其数据库副本（不要删除现场）。
+2. 重新安装旧 `@modusensus/dsh-mneme` tarball，将其 `memoryDir` 指回未被新实例写过的旧目录或升级前备份。
+3. 如果已在新副本中写入，需要回到升级前状态时，停止写入后用一致性备份替换 `memory.db`；同时删除旧的 `memory.db-wal` / `memory.db-shm`，再启动。
 4. 硬重启 DSH，确认只有一个设置入口、一个 Memory 实例，没有重复后台任务。
 5. 验证记忆数、图谱、向量索引、权重和 Embedding 配置。
 
-当前版本没有破坏性 schema 变更；身份、偏好、intake 和 pending 表是 additive。即使不回滚数据库，旧版本也应能忽略新增表。但旧版本可能不认识新增偏好/身份功能，UI 会隐藏相应入口。
+当前版本没有破坏性 schema 变更；身份、偏好、intake、pending 与近期活动表都是 additive。即使不回滚数据库，旧版本也应能忽略新增表。但旧版本可能不认识新增偏好/身份功能，UI 会隐藏相应入口；近期活动的跨 Session 授权修复只在 1.0.1 运行。
 
 ## 常见恢复场景
 

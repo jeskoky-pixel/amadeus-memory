@@ -1,8 +1,10 @@
 # dsh-mneme bundle patch — the layer applied when a profile lists this bundle.
-# Installed via: dsh plugin --profile <name> add @modusensus/dsh-mneme
+# Installed via: dsh plugin --profile <name> add @amadeus/memory
+# The npm/package identity is @amadeus/memory; the runtime plugin ID stays
+# `dsh-mneme`, and the default data path stays ~/.dsh/memory.
 - insert:
     - id: dsh-mneme
-      name: '@modusensus/dsh-mneme'
+      name: '@amadeus/memory'
       config:
         memoryDir: ~/.dsh/memory
         autoInject: true

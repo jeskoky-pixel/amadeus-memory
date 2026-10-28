@@ -28,15 +28,23 @@ export function createNudgeAutoRun({
   runNudge = nudgeForProject,
   minIntervalMs = NUDGE_AUTO_MIN_INTERVAL_MS,
   budgetMs = NUDGE_AUTO_BUDGET_MS,
-  maxFiles = null
+  maxFiles = null,
+  authorizeModelWork = null
 } = {}) {
   const log = logger || (ctx && ctx.logger) || null;
+  // Workspace authorization callback supplied by index.js. Direct module tests
+  // omit it and keep the legacy behavior. It is checked before a turn/end may
+  // queue work and again inside the deferred job, so a moved Session or a
+  // binding switch never reaches projectRootOf/runNudge.
+  const authorize = typeof authorizeModelWork === "function" ? authorizeModelWork : null;
+  const deniedReasons = new Set();
   let disposed = false;
   let timer = null;
   // 每个项目一条冷却记录；键是归一化后的项目根。
   const lastRunAt = new Map();
   // 已排队但还没跑的项目：同一个项目连来十个 turn/end，只跑最后一次。
-  const pending = new Set();
+  // 值保留触发时的实际 Host Session，供延迟任务再次鉴权；跑完即删。
+  const pending = new Map();
 
   const normalize = (p) => {
     let s = String(p).replace(/\\/g, "/").replace(/\/+$/, "");
@@ -44,9 +52,34 @@ export function createNudgeAutoRun({
     return s;
   };
 
-  const runOne = (projectRoot) => {
+  function accessDecision(session) {
+    if (!authorize) return { allowed: true, reason: "legacy" };
+    try {
+      const decision = authorize(session);
+      return decision?.allowed === true
+        ? { allowed: true, reason: "ok" }
+        : { allowed: false, reason: decision?.reason ?? "denied" };
+    } catch {
+      return { allowed: false, reason: "access-check-failed" };
+    }
+  }
+
+  function logDenied(reason) {
+    if (deniedReasons.has(reason)) return;
+    deniedReasons.add(reason);
+    log?.warn?.("[dsh-mneme] M.O. 自动沉淀 denied: " + reason);
+  }
+
+  const runOne = (projectRoot, session = null) => {
     pending.delete(projectRoot);
     if (disposed) return null;
+    // The deferred job runs in a later macrotask. Recheck the actual Session
+    // here: it may have been moved or the binding changed while queued.
+    const access = accessDecision(session);
+    if (!access.allowed) {
+      logDenied(access.reason);
+      return null;
+    }
     lastRunAt.set(normalize(projectRoot), now());
     try {
       const doc = runNudge({
@@ -74,9 +107,10 @@ export function createNudgeAutoRun({
   const flush = () => {
     timer = null;
     if (disposed) return;
-    const first = pending.values().next();
+    const first = pending.entries().next();
     if (first.done) return;
-    runOne(first.value);
+    const [projectRoot, session] = first.value;
+    runOne(projectRoot, session);
     if (pending.size > 0 && !disposed) defer();
   };
 
@@ -89,12 +123,14 @@ export function createNudgeAutoRun({
     if (typeof timer.unref === "function") timer.unref();
   };
 
-  const schedule = (projectRoot) => {
+  const schedule = (projectRoot, session) => {
     const key = normalize(projectRoot);
     const last = lastRunAt.get(key);
     if (last !== undefined && now() - last < minIntervalMs) return;
-    if (pending.has(projectRoot)) return;
-    pending.add(projectRoot);
+    // Keep the latest authorized Session for the same project: a later
+    // authorized turn/end may be the one that is still allowed when the job
+    // finally runs.
+    pending.set(projectRoot, session);
     defer();
   };
 
@@ -102,9 +138,16 @@ export function createNudgeAutoRun({
     if (disposed) return;
     // 只认 turn/end：一轮结束才算一个观测窗口，中途记的是半截。
     if (!event || event.type !== "turn/end") return;
+    // Reject before queuing: an unauthorized turn/end must not even retain a
+    // project root or schedule a deferred scan.
+    const access = accessDecision(session);
+    if (!access.allowed) {
+      logDenied(access.reason);
+      return;
+    }
     const projectRoot = projectRootOf(session);
     if (!projectRoot) return;
-    schedule(projectRoot);
+    schedule(projectRoot, session);
   };
 
   const unsubscribe = ctx && typeof ctx.on === "function" ? ctx.on("session/event", onSessionEvent) : null;
@@ -118,8 +161,10 @@ export function createNudgeAutoRun({
     }
     if (typeof unsubscribe === "function") unsubscribe();
   };
-  // 手动入口与测试都要能直接驱动一次（不起 timer、不走冷却）。
-  dispose.runNow = (projectRoot) => (disposed || !projectRoot ? null : runOne(projectRoot));
+  // 手动入口与测试都要能直接驱动一次（不起 timer、不走冷却）。When the
+  // runtime supplies an authorization callback, the trusted Session must be
+  // passed too; omitting it fails closed instead of scanning another Workspace.
+  dispose.runNow = (projectRoot, session = null) => (disposed || !projectRoot ? null : runOne(projectRoot, session));
   dispose.pendingCount = () => pending.size;
   dispose.lastRunAt = (projectRoot) => lastRunAt.get(normalize(projectRoot));
   return dispose;

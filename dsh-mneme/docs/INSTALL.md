@@ -1,14 +1,32 @@
 # Amadeus Memory — 安装、升级与验收
 
-本包是 **Amadeus Memory 增强发行版**，基于 Mneme 0.9.4，沿用上游 MIT 许可。发行身份是安全增强版而不是新包：
+本包是 **Amadeus Memory 增强发行版**，基于 Mneme 0.9.4，沿用上游 MIT 许可：
 
-- 包名：`@modusensus/dsh-mneme`
-- 版本：`1.0.0`（QQ Scene Host、场景图谱与后台整理）
+- npm 包名：`@amadeus/memory`
+- 版本：`1.0.1`（近期活动跨 Session 授权修复；QQ Scene Host、场景图谱与后台整理沿用 1.0.0）
 - 插件 ID / Bundle ID：`dsh-mneme`（保持不变）
-- 上游：`@modusensus/dsh-mneme@0.9.4`
-- 数据目录 / 配置键 / SQLite 格式：与上游兼容，升级不迁移到第二套数据库。
+- 上游：`@modusensus/dsh-mneme@0.9.4`（`UPSTREAM.md` 与 `LICENSE` 保留署名）
+- 默认数据目录：`~/.dsh/memory`（保持不变）
+- SQLite 格式、配置键、feature flags 与数据路径：与 1.0.0 / 上游兼容，不迁移到第二套数据库。
 
-不在本版本改用 `@amadeus/memory`：那会改变 Plugin Manager 身份、插件 ID 与配置命名空间，需要额外的旧实例禁用、双实例互斥和数据继承证明；本包优先选择可证明安全的同 ID 升级。
+> 兼容性要点：1.0.1 只改 npm 发行名，插件 ID 仍是 `dsh-mneme`。因此 Profile 里的 Memory 数据、`memoryDir`、`vector` 配置和 feature flags 都可继续使用；但 Plugin Manager 看到的是新包名，**不要同时启用旧 `@modusensus/dsh-mneme` 与新 `@amadeus/memory` 两个实例**，否则会重复 autoDream / 自动注入 / 写入。升级时先停用旧包，再安装新 tarball 并硬重启。
+
+## 首次运行：QQ 记忆的两个开关
+
+QQ 长期记忆不是单一开关，必须**同时**打开：
+
+1. `sceneIsolationEnabled`（设置页「场景、近期与核心记忆」→「按 QQ 场景隔离记忆」）：记录并过滤可信 Host 的场景归属。
+2. `sceneStrictQQ`（「严格 QQ 场景模式」）：跨场景普通记忆、图谱和普通 HTTP 内容接口拒绝；autoDream / Sleep 暂停，可信 QQ Session 的自动摘要仍可运行。
+
+只开其中一个，QQ 模型访问都会 fail closed；两者都关时普通 DSH 会话保持原有行为。QQ Scene 是否可信只由进程内 QQ Host 对当前 Session ID 的绑定决定，标题、Preset 名称和请求参数都不是授权证据。
+
+**旧库迁移（推荐隔离副本）**：不要在原 `memory.db` 上做实验，也不要让新旧实例同时指向同一个目录。
+
+1. 停用旧 Memory 实例并停止 DSH 写入。
+2. 把**整个旧 `memoryDir`**（含 `memory.db`、`-wal`、`-shm`、Markdown 镜像与 `backups/`）复制到一个新的隔离目录，例如 `~/.dsh/memory-amadeus-1.0.1/`。
+3. 安装 `@amadeus/memory@1.0.1`，把新实例的 `memoryDir` 指向这份副本；确认记忆数、向量索引、Scene 归属与工具正常。
+4. 观察一个完整会话后，再停用/卸载旧包。原目录保持不动，作为回滚现场。
+5. 回滚时停用新实例，恢复旧 tarball 与旧 `memoryDir`；不要用运行中的 `-wal` / `-shm` 覆盖备份。
 
 ## 前置条件
 
@@ -34,7 +52,7 @@ node test/tools.test.js
 npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 ```
 
-产物：`dist/modusensus-dsh-mneme-1.0.0.tgz`。SHA-256 记录在交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
+产物：`dist/amadeus-memory-1.0.1.tgz`。SHA-256 记录在交付报告；打包后再改源码必须重新 `sync`、重新测试、重新打包。
 
 ## 通过 Plugin Manager 安装
 
@@ -65,24 +83,25 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 
 ## 升级与回滚
 
-升级：
+升级（从 `@modusensus/dsh-mneme@1.0.0` 或更早版本）：
 
-1. 记录当前 `@modusensus/dsh-mneme` 版本、tarball SHA-256、`memoryDir`、Embedding Provider/模型与 API Token 是否已配置（不要记录明文密钥）。
-2. 停用旧插件或停止 DSH 写入，创建 SQLite 一致性备份。
-3. 在 Plugin Manager 用新 tarball 替换旧版本；确认只启用一份。
-4. 硬重启 DSH，打开 Amadeus 设置页，验证记忆数、单 Scene 图谱、向量索引、偏好权重与工具。
-5. 旧 `memoryDir`、`vector` 设置和 `feature_flags` 均保留。
+1. 记录旧包名/版本、tarball SHA-256、`memoryDir`、Embedding Provider/模型与 API Token 是否已配置（不要记录明文密钥）。
+2. 停用旧插件或停止 DSH 写入，按上面的「旧库迁移」复制整个 `memoryDir` 到新的隔离目录，并创建 SQLite 一致性备份。
+3. 在 Plugin Manager 卸载/停用旧包，安装 `dist/amadeus-memory-1.0.1.tgz`，把 `memoryDir` 指向副本；确认只启用一份。
+4. 硬重启 DSH，打开 Amadeus 设置页，验证记忆数、单 Scene 图谱、向量索引、偏好权重、近期活动工具与 QQ Scene 开关。
+5. 旧 `memoryDir`、`vector` 设置和 `feature_flags` 均保留；确认新实例稳定后再停用旧路径。
 
 回滚：
 
-1. 停用新版本，保留其数据库副本。
-2. 安装旧 tarball/旧版本，恢复升级前的 SQLite 备份（如有必要）。
-3. 硬重启并确认设置入口只出现一次、没有重复后台任务或重复写入。
-4. 详细步骤见 [备份与回滚](BACKUP_ROLLBACK.md)。
+1. 停用新版本，保留其数据库副本（不要删除现场）。
+2. 重新安装旧 `@modusensus/dsh-mneme` tarball，把 `memoryDir` 指回未被新实例写过的旧目录或升级前备份。
+3. 如已使用新副本，按需用升级前一致性备份替换副本；同时删除 `-wal` / `-shm` 再启动。
+4. 硬重启并确认设置入口只出现一次、没有重复后台任务或重复写入。
+5. 详细步骤见 [备份与回滚](BACKUP_ROLLBACK.md)。
 
 ## 验收清单（Codex 实机）
 
-- [ ] Plugin Manager 显示 `@modusensus/dsh-mneme@1.0.0`，启用成功。
+- [ ] Plugin Manager 显示 `@amadeus/memory@1.0.1`，插件 ID 仍为 `dsh-mneme`，启用成功。
 - [ ] 系统设置左侧出现 **Amadeus 记忆**，页面加载状态、记忆数、数据库和向量索引。
 - [ ] 记忆管理：搜索、新建、编辑、归档、取消归档、删除二次确认；并发编辑冲突会提示而不覆盖。
 - [ ] 备份：创建后列表显示 SHA-256；校验通过；暂存恢复需要确认，重启后应用且保留 `pre-restore-*` 现场。
@@ -101,3 +120,5 @@ npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist
 - 本仓库的自动化测试不能代替 DSH Desktop 真实 GUI 验收；最终浏览器截图、Plugin Manager 安装与硬重启由 Codex 执行。
 - Config Forms 参数保存后通常需要 Host 重载；页面会明确提示，不宣称即时生效。
 - 真实远端 Embedding 的延迟长尾与语义召回质量仍是部署前评估项；本版本不更换用户已配置的模型或阈值。
+- 跨 Session 近期活动授权要求 Host 提供 `ctx.sessions.get(id)` 的可信 Session Store。Host 不提供该服务，或 Session 已不是进程内 live Session 时，按 ID 重建的跨 Session 授权会 fail closed（不降级为相信调用方 ID/header）；普通单 Session 记录/读取不受影响。
+- 1.0.1 修复的是近期活动的身份解析，不是 QQ Scene 数据面隔离模型；严格 QQ 模式仍按原有策略拒绝跨场景内容。

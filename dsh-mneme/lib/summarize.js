@@ -546,6 +546,38 @@ export { parsePeakSpec, isInPeakWindow, nextOffPeakAt };
 export function createSummarizer(ctx, service, config, deps = {}) {
   if (!config.autoSummarize) return { dispose: () => {} };
 
+  // Workspace authorization callback supplied by index.js. Direct module tests
+  // omit it and keep the legacy behavior; the mounted runtime always supplies
+  // it. It is rechecked after the async LLM work and immediately before the
+  // summary DB transaction, so a binding switch mid-flight cannot write.
+  const authorizeModelWork = typeof deps.authorizeModelWork === "function" ? deps.authorizeModelWork : null;
+  const deniedReasons = new Set();
+
+  function modelAccessDecision(session) {
+    if (!authorizeModelWork) return { allowed: true, reason: "legacy" };
+    try {
+      const decision = authorizeModelWork(session);
+      return decision?.allowed === true
+        ? { allowed: true, reason: "ok" }
+        : { allowed: false, reason: decision?.reason ?? "denied" };
+    } catch {
+      return { allowed: false, reason: "access-check-failed" };
+    }
+  }
+
+  function logModelDenied(reason) {
+    if (deniedReasons.has(reason)) return;
+    deniedReasons.add(reason);
+    ctx.logger?.warn?.(`[dsh-mneme] summarization denied: ${reason}`);
+  }
+
+  function assertModelAccess(session) {
+    const decision = modelAccessDecision(session);
+    if (decision.allowed) return;
+    logModelDenied(decision.reason);
+    throw new Error(`WORKSPACE_ACCESS_DENIED: ${decision.reason}`);
+  }
+
   // Issue #239（第 4 项）：时钟与定时器可注入——排程不绑死真实时钟，测试才能确定性
   // 覆盖「高峰顺延 → 非高峰补跑」。房型同 dream/sleep.js 的注入参数。
   const now = typeof deps.now === "function" ? deps.now : () => Date.now();
@@ -711,6 +743,11 @@ export function createSummarizer(ctx, service, config, deps = {}) {
 
   async function summarize(session, triggerEvent, opts = {}) {
     if (disposed || inFlight.has(session.id)) return;
+    const access = modelAccessDecision(session);
+    if (!access.allowed) {
+      logModelDenied(access.reason);
+      return;
+    }
     const decision = sceneDecision(session, opts.expectedSceneId ?? null);
     if (decision.kind === "deny") return;
     const run = () => summarizeInner(session, triggerEvent, opts, decision.kind === "scene" ? decision.scene : null);
@@ -1111,6 +1148,9 @@ export function createSummarizer(ctx, service, config, deps = {}) {
         // Write-side scene check: reject the entire atomic write if the binding
         // moved while the LLM was running.
         assertSceneStable(session, sceneGuard);
+        // Workspace binding recheck inside the transaction: the LLM call and the
+        // dedupe lookups above are async, so the binding may have changed.
+        assertModelAccess(session);
         const savedIds = [];
         for (const { entry, source, dup } of writes) {
           const outcome = service.saveWithDedupe({
@@ -1160,9 +1200,12 @@ export function createSummarizer(ctx, service, config, deps = {}) {
           throw new Error("dsh-mneme: atomic summarization writes require service.transaction");
         }
         assertSceneStable(session, sceneGuard);
+        assertModelAccess(session);
         service.transaction(writeWindow);
       } else {
         // 空数组是合法成功：没有记忆写入，但本次事件窗口仍然应被持久消费。
+        // The cursor is still a DB write, so recheck after the async work above.
+        assertModelAccess(session);
         persistCursor(session.id, nextSeq);
       }
       // Issue #239 定标：窗口字符数无条件随成功行落进 metadata。原先只有
@@ -1228,9 +1271,11 @@ export function createSummarizer(ctx, service, config, deps = {}) {
     if (disposed || event.type !== "turn/end") return;
     // Return the summarization promise so awaiters observe the writes; the
     // catch keeps listener dispatch from rejecting. Dispose-initiated aborts
-    // and external AbortErrors are silent.
+    // and external AbortErrors are silent. Workspace denials were already
+    // logged once by the gate.
     return summarize(session, event).catch((error) => {
       if (disposed || error?.name === "AbortError") return;
+      if (String(error?.message ?? "").startsWith("WORKSPACE_ACCESS_DENIED")) return;
       ctx.logger?.warn?.(`dsh-mneme: summarization failed: ${String(error)}`);
     });
   });

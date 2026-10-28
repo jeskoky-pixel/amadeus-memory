@@ -10,12 +10,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const clientSource = readFileSync(join(root, "lib/client.js"), "utf8");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-test("native Memory settings exposes Scene, Recent and Core switches through owner API", () => {
-  const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"];
+test("native Memory settings exposes compatibility Scene and Core switches without retired features", () => {
+  const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "coreMemoryEnabled"];
   const featureList = clientSource.match(/const AM_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
   const sceneList = clientSource.match(/const AM_SCENE_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
   for (const key of keys) {
     assert.ok(featureList.includes(`"${key}"`) || sceneList.includes(`"${key}"`), `${key} belongs in the native settings card`);
+  }
+  for (const retired of ["recentContextEnabled", "trustedIntakeEnabled"]) {
+    assert.ok(!featureList.includes(`"${retired}"`) && !sceneList.includes(`"${retired}"`),
+      `${retired} must not appear as an actionable retired switch`);
   }
   assert.ok(clientSource.includes("AM_SCENE_FEATURE_KEYS.map(featureRow)"), "Scene switches must render in Settings > Scene");
   assert.match(clientSource, /adminJson\("\/features",\s*\{\s*method: "POST"/);
@@ -32,7 +36,7 @@ test("native memory editor only calls Core API for changed protection or note", 
 // The Web client bundle registers itself via __ModuleLoader__.load. DSH
 // resolves the bundle by plugin package name, so the registered id must match
 // package.json `name` exactly (a mismatch surfaces as "loaded without
-// registering '@modusensus/dsh-mneme'" in the DSH client).
+// registering '@amadeus/memory'" in the DSH client).
 test("client bundle registers under the package name", () => {
   const match = clientSource.match(/__ModuleLoader__\.load\(\{\s*id:\s*"([^"]+)"/);
   assert.ok(match, "client bundle must call __ModuleLoader__.load with an id");
@@ -359,7 +363,7 @@ test("collapsed entry vacates the New-Session slot instead of covering it", () =
   );
   assert.ok(
     // 源码里这段 CSS 含转义引号（注入 <style> 后才还原成普通引号），断言按源码字面量写。
-    clientSource.includes(':has([data-plugin-entry=\\"@modusensus/dsh-mneme\\"]){--dsh-windows-menu-start:120px}'),
+    clientSource.includes(':has([data-plugin-entry=\\"@amadeus/memory\\"]){--dsh-windows-menu-start:120px}'),
     "the caption menu must shift right so the memory icon never overlaps 应用 / 编辑"
   );
   assert.ok(
@@ -585,7 +589,7 @@ test("plugin-list icon: declared, in-package, and shipped in files", () => {
 // 插件列表的标题/描述读包内的 `locale/<语言码>.json`：宿主 readPluginMeta 先解析
 // `<specifier>/locale/en.json`，再遍历同目录的每个 *.json（文件名必须过语言码正则），
 // 取 meta.title / meta.description；一个都读不到就回落到 package.json 的 name——
-// 也就是裸包名 "@modusensus/dsh-mneme"（用户看到的现状）。
+// 也就是裸包名 "@amadeus/memory"（用户看到的现状）。
 // ⚠️ 真正的门槛是**能否被 Node 解析**：宿主用 ESM resolver 取这个文件，而 exports
 // 字段会把没列出的子路径**全部挡掉**，且 optionalResourcePath 对"读不到"是静默的
 // （返回 undefined 继续走回落），不报错。所以少了 "./locale/*" 这一行，文件乖乖躺在
@@ -1475,7 +1479,7 @@ test("mirror health: card wired with fail-closed unknown rendering", () => {
 test("serve card: sample command is npx-installable and card is wired", () => {
   assert.ok(clientSource.includes('"memory.settings.serve.title"'), "serve card must exist in the settings view");
   assert.ok(clientSource.includes("copyServeCmd"), "serve command must have a copy affordance");
-  assert.ok(clientSource.includes("npx -p @modusensus/dsh-mneme dsh-mneme-serve"), "sample command must name the real package via -p");
+  assert.ok(clientSource.includes("npx -p @amadeus/memory dsh-mneme-serve"), "sample command must name the real package via -p");
   assert.equal(clientSource.includes("npx dsh-mneme-serve"), false, "bare `npx dsh-mneme-serve` would install a nonexistent package");
   for (const key of [
     "memory.settings.serve.title",

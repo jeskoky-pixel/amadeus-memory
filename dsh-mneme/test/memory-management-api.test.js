@@ -648,22 +648,27 @@ test("owner correction replaces protected fact and invalidates old vector and gr
   } finally { h.close(); h.cleanup(); }
 });
 
-test("owner feature API persists Scene, Recent and Core switches for the native settings page", async () => {
+test("owner feature API persists Scene/Core switches and keeps retired Recent Context and Life intake false", async () => {
   const h = setup();
   try {
-    const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"];
-    const enabled = Object.fromEntries(keys.map((key) => [key, true]));
+    const activeKeys = ["sceneIsolationEnabled", "sceneStrictQQ", "coreMemoryEnabled"];
+    const retiredKeys = ["recentContextEnabled", "trustedIntakeEnabled"];
+    const allKeys = [...activeKeys, ...retiredKeys];
+    const enabled = Object.fromEntries(allKeys.map((key) => [key, true]));
     assert.equal((await call(h.route, { method: "POST", url: "/api/amadeus-memory/admin/features", body: enabled })).status, 200);
     let state = await call(h.route, { url: "/api/amadeus-memory/admin/features" });
-    for (const key of keys) assert.equal(state.json.data.effective[key], true);
+    for (const key of activeKeys) assert.equal(state.json.data.effective[key], true);
+    for (const key of retiredKeys) {
+      assert.equal(state.json.data.effective[key], false, `${key} must not report enabled after retirement`);
+    }
     assert.equal((await call(h.route, { method: "POST", url: "/api/amadeus-memory/admin/features",
-      body: Object.fromEntries(keys.map((key) => [key, false])) })).status, 200);
+      body: Object.fromEntries(allKeys.map((key) => [key, false])) })).status, 200);
     state = await call(h.route, { url: "/api/amadeus-memory/admin/features" });
-    for (const key of keys) assert.equal(state.json.data.effective[key], false);
+    for (const key of allKeys) assert.equal(state.json.data.effective[key], false);
     h.close();
     const reopened = createStore(join(h.dir, "memory.db"));
     const settings = createSettings(reopened.db);
-    for (const key of keys) assert.equal(settings.getFeatureFlags()[key], false);
+    for (const key of allKeys) assert.equal(settings.getFeatureFlags()[key], false);
     reopened.close();
   } finally { h.close(); h.cleanup(); }
 });

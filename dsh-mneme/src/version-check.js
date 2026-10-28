@@ -4,7 +4,7 @@
 // 永不跨 minor/major，#174 的报障者正是这样用着 0.7.32 的行为模型来报 bug）。
 //
 // 本模块只做三件事：
-//   1. 向 npm registry 查 @modusensus/dsh-mneme 的 latest dist-tag（带 TTL
+//   1. 向 npm registry 查 @amadeus/memory 的 latest dist-tag（带 TTL
 //      缓存 + 超时 + 全失败静默——离线/被墙/registry 异常都返回 null，调用方
 //      据 null 渲染「未知」，前端不打扰）；
 //   2. 与运行版本做纯函数比对（classify）；
@@ -24,7 +24,7 @@ const PACKAGE_VERSION = (() => {
 
 // registry 查询地址是模块常量而非用户输入；validateRegistryUrl 仍作为发请求
 // 前的强制闸（构造上即排除非 https 与非白名单 host，双保险且可单测）。
-const REGISTRY_URL = "https://registry.npmjs.org/@modusensus%2Fdsh-mneme/latest";
+const REGISTRY_URL = "https://registry.npmjs.org/@amadeus%2Fmemory/latest";
 const REGISTRY_HOST = "registry.npmjs.org";
 // 市场收录本身有 ~1 天年龄闸门，1h 的 registry 缓存远低于该粒度，足够新鲜。
 const CACHE_TTL_MS = 60 * 60 * 1000;

@@ -47,7 +47,7 @@ test("stale prior metadata + changed README rebuilds; final metadata matches arc
   const dist = join(fixture, "dist");
   const files = {
     "package/package.json": JSON.stringify({
-      name: "@modusensus/dsh-mneme", version: "1.0.0",
+      name: "@amadeus/memory", version: "1.0.1",
       amadeus: { edition: "enhanced", upstream: "@modusensus/dsh-mneme@0.9.4" }
     }),
     "package/README.md": "changed README after the previous package\n",
@@ -69,10 +69,10 @@ test("stale prior metadata + changed README rebuilds; final metadata matches arc
     }
     writeFileSync(join(fixture, "docs", "BACKUP_ROLLBACK.md"), "# backup\n");
     // Stale metadata and stale tarball from before the README change.
-    const tgz = join(dist, "modusensus-dsh-mneme-1.0.0.tgz");
+    const tgz = join(dist, "amadeus-memory-1.0.1.tgz");
     writeTarGz(tgz, files);
     writeFileSync(join(dist, "PACKAGE_INFO.json"), JSON.stringify({
-      version: "1.0.0", bytes: 1, sha256: "0".repeat(64)
+      version: "1.0.1", bytes: 1, sha256: "0".repeat(64)
     }));
 
     const source = runPrivacyCheck({ root: fixture, sourceOnly: true, distDir: dist });

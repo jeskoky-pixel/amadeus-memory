@@ -9,8 +9,11 @@ import { dirname, join } from "node:path";
 import { FEATURE_FLAG_SPEC } from "./settings.js";
 import { TYPES } from "./store.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
+import { listWorkspaces, listWorkspaceSessionIds } from "./workspace-gate.js";
+import { readWorkspaceBinding, setWorkspaceBinding } from "./workspace-binding.js";
 import { scenePolicy, currentScene, listSceneGrants } from "./scene.js";
 import { recentContextConfig, recentContextCounts, clearRecentContext } from "./recent-context.js";
+import { RECENT_ACTIVITY_LIMITS } from "./recent-activity.js";
 import { renderUserSettingsBlock } from "./user-settings.js";
 import {
   createBackup,
@@ -21,6 +24,9 @@ import {
 
 const PREFIX = "/api/amadeus-memory/admin";
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+// Display metadata only. The Host title projection is untrusted for identity and
+// authorization, so it is bounded before leaving this owner-only surface.
+const MAX_SESSION_TITLE_CHARS = 200;
 const NESTED_FLAG_PATHS = {
   "memoryQualityFilter.enabled": ["memoryQualityFilter", "enabled"],
   "llmAudit.enabled": ["llmAudit", "enabled"],
@@ -517,6 +523,111 @@ function requireMemoryDir(deps) {
   return deps.memoryDir;
 }
 
+// The Workspace binding lives at the configured control root, never at the
+// selected Workspace's runtime directory. This route deliberately uses its own
+// dependency so a runtime path override cannot redirect the selection file.
+function workspaceControlRoot(deps) {
+  const root = deps.controlRoot;
+  if (typeof root !== "string" || root.trim() === "") {
+    const error = new Error("the Workspace control root is unavailable in this process");
+    error.status = 503;
+    throw error;
+  }
+  return root;
+}
+
+function readOptionalService(ctx, name) {
+  try {
+    if (typeof ctx?.reflect?.get === "function") return ctx.reflect.get(name);
+    return ctx?.[name];
+  } catch {
+    return undefined;
+  }
+}
+
+// Distinguish a genuinely empty Registry from an unavailable/malformed one.
+// The selection path re-reads the Registry inside setWorkspaceBinding, so this
+// probe is only for the API's availability answer and never authorization.
+function workspaceRegistryState(ctx) {
+  let rawList;
+  try {
+    const registry = readOptionalService(ctx, "workspaceRegistry");
+    if (!registry || typeof registry.list !== "function") {
+      return { available: false, reason: "registry-unavailable" };
+    }
+    rawList = registry.list();
+  } catch {
+    return { available: false, reason: "registry-unavailable" };
+  }
+  if (!Array.isArray(rawList)) return { available: false, reason: "malformed-registry" };
+  return { available: true, reason: null };
+}
+
+// A safe host remount is not available on the observed loader version:
+// loader.update(id, options) only restarts when an effective entry option
+// (config/group) changes. Passing unchanged options with its forced patch does
+// not restart the plugin, and there is no public "force restart" option.
+// Returning this truthfully is safer than toggling `disabled`, which would
+// unmount the owner API before a remount could be proven successful.
+function workspaceRemountState() {
+  return {
+    supported: false,
+    reason: "host-loader-update-requires-effective-option-change",
+    action: "restart-plugin"
+  };
+}
+
+function workspaceSnapshot(deps) {
+  const controlRoot = workspaceControlRoot(deps);
+  const registry = workspaceRegistryState(deps.ctx);
+  const workspaces = registry.available
+    ? listWorkspaces(deps.ctx).map((workspace) => ({
+        id: workspace.id,
+        title: workspace.title,
+        session_count: workspace.sessionCount
+      }))
+    : [];
+  const binding = readWorkspaceBinding(controlRoot);
+  const active = typeof deps.activeWorkspaceId === "string" && deps.activeWorkspaceId.trim() !== ""
+    ? deps.activeWorkspaceId
+    : null;
+  const selected = binding.bound ? binding.workspaceId : null;
+  // A change is latched for the life of this mounted runtime. The guard latches
+  // on the first mismatch, so selecting the original ID back before a remount
+  // must not be reported as already active.
+  const changedThisMount = deps.workspaceState?.changedSinceBoot === true;
+  const changedSinceBoot = deps.initialSelectedWorkspaceId !== undefined
+    ? selected !== (deps.initialSelectedWorkspaceId ?? null)
+    : false;
+  const pendingRemount = changedThisMount || changedSinceBoot ||
+    (binding.bound ? selected !== active : active !== null);
+  return {
+    workspaces,
+    selected_workspace_id: selected,
+    active_workspace_id: active,
+    runtime_mode: active === null ? "unbound" : "selected",
+    pending_remount: pendingRemount,
+    restart_required: pendingRemount,
+    registry_available: registry.available,
+    ...(registry.reason ? { registry_error: registry.reason } : {}),
+    ...(binding.diagnostic ? { binding_diagnostic: binding.diagnostic } : {}),
+    remount: workspaceRemountState()
+  };
+}
+
+function workspaceSelectionStatus(reason) {
+  if (reason === "invalid-workspace-id" || reason === "unknown-workspace-id") return 400;
+  if (reason === "invalid-memory-dir") return 503;
+  return 409;
+}
+
+function workspaceSelectionError(reason) {
+  if (reason === "unknown-workspace-id") return "workspace is not present in the trusted Registry";
+  if (reason === "invalid-workspace-id") return "workspace_id must be an exact Registry ID";
+  if (reason === "invalid-memory-dir") return "the Workspace control root is unavailable in this process";
+  return "the Workspace binding could not be saved";
+}
+
 function featureState(settings, config) {
   const keys = [
     ...FEATURE_FLAG_SPEC.booleans,
@@ -540,6 +651,488 @@ function featureState(settings, config) {
     ? keys.filter((key) => overrides[key] !== undefined && !Object.is(overrides[key], configValue(key)))
     : [];
   return { overrides, effective, pendingRestart };
+}
+
+// --- recent-activity owner surface -----------------------------------------
+// All recent-activity routes operate on the active isolated Workspace store.
+// Session IDs are never accepted from a request as authorization input: every
+// listed/updated/previewed ID must first be present in the strict Registry list
+// for `deps.activeWorkspaceId`. The model core stays authoritative for content
+// filtering; this layer only refuses stale/unknown IDs and safe status fields.
+
+function recentActivityConfigDto(config) {
+  const source = config && typeof config === "object" ? config : {};
+  const ttl = Number(source.ttl_hours);
+  const maxItems = Number(source.max_items);
+  const maxTokens = Number(source.max_tokens);
+  return {
+    ttl_hours: RECENT_ACTIVITY_LIMITS.TTL_HOURS.includes(ttl)
+      ? ttl
+      : RECENT_ACTIVITY_LIMITS.DEFAULT_TTL_HOURS,
+    auto_inject: source.auto_inject !== false,
+    max_items: Number.isInteger(maxItems) && maxItems >= 1 && maxItems <= RECENT_ACTIVITY_LIMITS.MAX_ITEMS
+      ? maxItems
+      : RECENT_ACTIVITY_LIMITS.DEFAULT_MAX_ITEMS,
+    max_tokens: Number.isInteger(maxTokens) &&
+      maxTokens >= RECENT_ACTIVITY_LIMITS.MIN_MAX_TOKENS &&
+      maxTokens <= RECENT_ACTIVITY_LIMITS.MAX_MAX_TOKENS
+      ? maxTokens
+      : RECENT_ACTIVITY_LIMITS.DEFAULT_MAX_TOKENS
+  };
+}
+
+function recentActivityConfiguredEnabled(deps) {
+  try {
+    const flags = deps.settings.getFeatureFlags();
+    if (typeof flags?.recentActivityEnabled === "boolean") return flags.recentActivityEnabled;
+  } catch {
+    // Fall through to the boot-time effect below.
+  }
+  return deps.config?.recentActivityEnabled === true;
+}
+
+function recentActivityBootEnabled(deps) {
+  // Older embedders/tests may pass only the mounted core; infer the boot state
+  // from it rather than reporting a live core as disabled.
+  return deps.recentActivityBootEnabled === undefined
+    ? deps.recentActivity != null
+    : deps.recentActivityBootEnabled === true;
+}
+
+function recentActivityRuntimeEnabled(deps) {
+  if (recentActivityBootEnabled(deps) !== true) return false;
+  if (!deps.recentActivity || typeof deps.recentActivity.status !== "function") return false;
+  try {
+    if (deps.recentActivity.status()?.ok !== true) return false;
+  } catch {
+    return false;
+  }
+  // A persisted explicit false denies model reads immediately through the core's
+  // wrapped allowSession callback; the owner surface reports the same state.
+  return recentActivityConfiguredEnabled(deps) === true;
+}
+
+function recentActivityWorkspaceState(deps) {
+  const active = typeof deps.activeWorkspaceId === "string" && deps.activeWorkspaceId.trim() !== ""
+    ? deps.activeWorkspaceId
+    : null;
+  let bindingKnown = false;
+  let binding = null;
+  if (typeof deps.controlRoot === "string" && deps.controlRoot.trim() !== "") {
+    try {
+      binding = readWorkspaceBinding(deps.controlRoot);
+      bindingKnown = true;
+    } catch {
+      bindingKnown = false;
+    }
+  }
+  const selected = bindingKnown
+    ? (binding?.bound ? binding.workspaceId : null)
+    : active;
+  const staleBinding = Boolean(
+    bindingKnown && active !== null && binding?.bound === true && selected !== active
+  );
+  const pendingBinding = bindingKnown && selected !== active;
+  return {
+    active,
+    selected,
+    bindingKnown,
+    staleBinding,
+    pendingBinding,
+    runtimeMode: active === null ? "unbound" : "selected"
+  };
+}
+
+function parseRecentActivityAllowlist(raw) {
+  let list;
+  try {
+    list = JSON.parse(raw ?? "[]");
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list)) return [];
+  const ids = [];
+  for (const entry of list.slice(0, RECENT_ACTIVITY_LIMITS.MAX_SHARED_TARGETS)) {
+    if (typeof entry === "string" && entry.trim() !== "" && entry.length <= RECENT_ACTIVITY_LIMITS.MAX_ID_CHARS) {
+      ids.push(entry);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+function recentActivityPolicyMap(deps, workspaceId) {
+  const map = new Map();
+  if (!workspaceId) return map;
+  try {
+    const rows = deps.store.db.prepare(
+      `SELECT source_session_id AS sourceSessionId, mode, allowlist, enabled
+         FROM recent_activity_source_policy
+        WHERE workspace_id = ?`
+    ).all(workspaceId);
+    for (const row of rows) {
+      const id = typeof row?.sourceSessionId === "string" ? row.sourceSessionId : null;
+      if (!id) continue;
+      const mode = row.mode === "owner" || row.mode === "shared" ? row.mode : "self";
+      map.set(id, {
+        enabled: Number(row.enabled) !== 0,
+        mode,
+        shared_session_ids: mode === "shared" ? parseRecentActivityAllowlist(row.allowlist) : []
+      });
+    }
+  } catch {
+    // The table is created by the core only after the feature is mounted. An
+    // absent table means "no persisted policies yet", never an error page.
+  }
+  return map;
+}
+
+// The DSH session-title projection is optional display data. Strip control
+// characters, collapse whitespace, and bound the result; never derive identity
+// or authorization from this value.
+function recentActivitySessionTitle(item) {
+  const raw = item?.projections?.values?.title;
+  if (typeof raw !== "string") return null;
+  const cleaned = raw
+    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028\u2029\u202A-\u202E\u2066-\u2069]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+  const chars = Array.from(cleaned);
+  return chars.length > MAX_SESSION_TITLE_CHARS
+    ? chars.slice(0, MAX_SESSION_TITLE_CHARS).join("")
+    : cleaned;
+}
+
+async function recentActivitySessionActivity(ctx) {
+  let controller;
+  try {
+    controller = readOptionalService(ctx, "sessionController");
+  } catch {
+    controller = undefined;
+  }
+  if (!controller || typeof controller.list !== "function") {
+    return { available: false, byId: new Map() };
+  }
+  let value;
+  try {
+    // The official SessionController.list is asynchronous and returns
+    // `{ items: [...] }`. Await it once; never call per Session.
+    value = await controller.list({});
+  } catch {
+    return { available: false, byId: new Map() };
+  }
+  const items = Array.isArray(value) ? value : (Array.isArray(value?.items) ? value.items : null);
+  if (!items) return { available: false, byId: new Map() };
+  const byId = new Map();
+  for (const item of items) {
+    const id = item?.sessionId;
+    if (typeof id !== "string" || id.trim() === "") continue;
+    // Host milliseconds must be a real, finite, nonnegative number. Do not
+    // coerce null/""/Date/booleans to a timestamp.
+    const rawUpdatedAt = item?.updatedAt;
+    const updatedAt = typeof rawUpdatedAt === "number" &&
+      Number.isFinite(rawUpdatedAt) && rawUpdatedAt >= 0
+      ? rawUpdatedAt
+      : null;
+    const title = recentActivitySessionTitle(item);
+    const previous = byId.get(id);
+    if (previous === undefined) {
+      byId.set(id, { updatedAt, title });
+      continue;
+    }
+    if (updatedAt !== null && (previous.updatedAt === null || updatedAt > previous.updatedAt)) {
+      previous.updatedAt = updatedAt;
+    }
+    // A later duplicate without the title projection must not erase a valid
+    // display title; the ID remains authoritative either way.
+    if (title !== null && previous.title === null) previous.title = title;
+  }
+  return { available: true, byId };
+}
+
+async function recentActivitySessions(deps, workspaceId, policyMap) {
+  if (!workspaceId) {
+    return { ok: false, reason: "no-active-workspace", sessions: [] };
+  }
+  const listed = listWorkspaceSessionIds(deps.ctx, workspaceId);
+  if (!listed.ok) {
+    return { ok: false, reason: listed.reason ?? "workspace-registry-unavailable", sessions: [] };
+  }
+  const live = new Set(listed.sessionIds);
+  const activity = await recentActivitySessionActivity(deps.ctx);
+  const sessions = listed.sessionIds.map((id) => {
+    const policy = policyMap.get(id) ?? { enabled: true, mode: "self", shared_session_ids: [] };
+    // Intersect by the exact Registry ID. A returned Host item only enriches a
+    // Session already authorized by the Workspace Registry list.
+    const metadata = activity.byId.get(id);
+    return {
+      id,
+      title: metadata?.title ?? null,
+      last_active_at: metadata?.updatedAt ?? null,
+      enabled: policy.enabled,
+      mode: policy.mode,
+      shared_session_ids: policy.mode === "shared"
+        ? policy.shared_session_ids.filter((target) => live.has(target))
+        : []
+    };
+  });
+  sessions.sort((a, b) => {
+    const left = a.last_active_at ?? -Infinity;
+    const right = b.last_active_at ?? -Infinity;
+    if (left !== right) return right - left;
+    return a.id.localeCompare(b.id);
+  });
+  return {
+    ok: true,
+    reason: "ok",
+    sessions,
+    lastActivityAvailable: activity.available
+  };
+}
+
+function recentActivityStats(deps, liveSessionIds = null) {
+  const config = recentActivityConfigDto(deps.settings.getRecentActivityConfig?.());
+  let stats = null;
+  try {
+    stats = deps.recentActivity?.stats?.() ?? null;
+  } catch {
+    stats = null;
+  }
+  if (!stats || stats.ok !== true) {
+    return {
+      available: false,
+      event_count: 0,
+      source_counts: [],
+      last_updated: null,
+      summary_bytes: 0,
+      policy_count: 0,
+      config
+    };
+  }
+  const sourceCounts = Array.isArray(stats.sourceCounts)
+    ? stats.sourceCounts.map((row) => ({
+        source_session_id: String(row?.sourceSessionId ?? ""),
+        count: Number(row?.count) || 0
+      })).filter((row) =>
+        row.source_session_id !== "" &&
+        liveSessionIds instanceof Set &&
+        liveSessionIds.has(row.source_session_id)
+      )
+    : [];
+  return {
+    available: true,
+    event_count: Number(stats.eventCount) || 0,
+    source_counts: sourceCounts,
+    last_updated: stats.lastUpdatedAt === null || stats.lastUpdatedAt === undefined
+      ? null
+      : (Number.isFinite(Number(stats.lastUpdatedAt)) ? Number(stats.lastUpdatedAt) : null),
+    summary_bytes: Number(stats.summaryBytes) || 0,
+    policy_count: Number(stats.policyCount) || 0,
+    config
+  };
+}
+
+async function recentActivitySnapshot(deps) {
+  const workspace = recentActivityWorkspaceState(deps);
+  const configuredEnabled = recentActivityConfiguredEnabled(deps);
+  const runtimeEnabled = recentActivityRuntimeEnabled(deps);
+  const featurePendingRestart = configuredEnabled === true && recentActivityBootEnabled(deps) !== true;
+  const policyMap = recentActivityPolicyMap(deps, workspace.active);
+  const sessionsState = await recentActivitySessions(deps, workspace.active, policyMap);
+  const liveSessionIds = sessionsState.ok
+    ? new Set(sessionsState.sessions.map((session) => session.id))
+    : null;
+  // The previous Recent card (trusted Scene buffer) is obsolete but its route
+  // and data are kept for existing clients that still read this endpoint.
+  const recentContext = recentContextConfig();
+  const recentScenes = recentContextCounts().slice(0, 64);
+  return {
+    active_workspace_id: workspace.active,
+    selected_workspace_id: workspace.selected,
+    runtime_mode: workspace.runtimeMode,
+    enabled: runtimeEnabled,
+    configured_enabled: configuredEnabled,
+    pending_restart: featurePendingRestart || workspace.pendingBinding,
+    feature_pending_restart: featurePendingRestart,
+    binding_pending_remount: workspace.pendingBinding,
+    config: recentActivityConfigDto(deps.settings.getRecentActivityConfig?.()),
+    stats: recentActivityStats(deps, liveSessionIds),
+    sessions: sessionsState.sessions,
+    sessions_available: sessionsState.ok,
+    last_activity_available: sessionsState.lastActivityAvailable === true,
+    ...(sessionsState.ok ? {} : { sessions_error: sessionsState.reason }),
+    recent_context: {
+      enabled: recentContext.enabled,
+      ttl_ms: recentContext.ttlMs,
+      max_events: recentContext.maxEvents,
+      max_tokens: recentContext.maxTokens,
+      scenes: recentScenes,
+      total_events: recentScenes.reduce((sum, row) => sum + row.count, 0)
+    },
+    // Legacy top-level fields consumed by the old Recent card. New clients use
+    // `stats`/`config`; keeping these avoids breaking an existing page while it
+    // is replaced by the cross-Session recent-activity card.
+    ttl_ms: recentContext.ttlMs,
+    max_events: recentContext.maxEvents,
+    scenes: recentScenes,
+    total_events: recentScenes.reduce((sum, row) => sum + row.count, 0)
+  };
+}
+
+function recentActivityMutationGate(deps) {
+  const workspace = recentActivityWorkspaceState(deps);
+  if (!workspace.active) {
+    return {
+      ok: false,
+      status: 409,
+      error: "a selected Workspace runtime is required before changing recent activity",
+      reason: "no-active-workspace"
+    };
+  }
+  if (workspace.staleBinding) {
+    return {
+      ok: false,
+      status: 409,
+      error: "the Workspace binding changed; restart or reload the plugin before changing recent activity",
+      reason: "binding-pending-remount"
+    };
+  }
+  return { ok: true, workspace };
+}
+
+function recentActivityLiveSessionIds(deps, workspace) {
+  const listed = listWorkspaceSessionIds(deps.ctx, workspace.active);
+  if (!listed.ok) {
+    return {
+      ok: false,
+      status: 409,
+      error: "the trusted Workspace Registry is unavailable or ambiguous",
+      reason: listed.reason ?? "workspace-registry-unavailable"
+    };
+  }
+  return { ok: true, ids: new Set(listed.sessionIds), sessionIds: listed.sessionIds };
+}
+
+function validateRecentActivityConfigBody(body) {
+  const patch = {};
+  let enabled;
+  let count = 0;
+  for (const [key, value] of Object.entries(body)) {
+    count += 1;
+    if (key === "enabled") {
+      if (typeof value !== "boolean") {
+        return { ok: false, error: "enabled must be a boolean" };
+      }
+      enabled = value;
+      continue;
+    }
+    if (key === "ttl_hours") {
+      if (!Number.isInteger(value) || !RECENT_ACTIVITY_LIMITS.TTL_HOURS.includes(value)) {
+        return { ok: false, error: "ttl_hours must be one of 1, 6, 24, 72" };
+      }
+      patch[key] = value;
+      continue;
+    }
+    if (key === "auto_inject") {
+      if (typeof value !== "boolean") {
+        return { ok: false, error: "auto_inject must be a boolean" };
+      }
+      patch[key] = value;
+      continue;
+    }
+    if (key === "max_items") {
+      if (!Number.isInteger(value) || value < 1 || value > RECENT_ACTIVITY_LIMITS.MAX_ITEMS) {
+        return { ok: false, error: `max_items must be an integer in [1, ${RECENT_ACTIVITY_LIMITS.MAX_ITEMS}]` };
+      }
+      patch[key] = value;
+      continue;
+    }
+    if (key === "max_tokens") {
+      if (!Number.isInteger(value) ||
+        value < RECENT_ACTIVITY_LIMITS.MIN_MAX_TOKENS ||
+        value > RECENT_ACTIVITY_LIMITS.MAX_MAX_TOKENS) {
+        return {
+          ok: false,
+          error: `max_tokens must be an integer in [${RECENT_ACTIVITY_LIMITS.MIN_MAX_TOKENS}, ${RECENT_ACTIVITY_LIMITS.MAX_MAX_TOKENS}]`
+        };
+      }
+      patch[key] = value;
+      continue;
+    }
+    return { ok: false, error: `unknown recent activity setting "${key}"` };
+  }
+  if (count === 0) return { ok: false, error: "at least one recent activity setting is required" };
+  return { ok: true, patch, enabled };
+}
+
+function validateRecentActivityPolicyBody(body) {
+  const source = body.source_session_id;
+  if (typeof source !== "string" || source === "" || source.length > RECENT_ACTIVITY_LIMITS.MAX_ID_CHARS) {
+    return { ok: false, error: "source_session_id must be an exact Session ID" };
+  }
+  let enabled;
+  if (body.enabled !== undefined) {
+    if (typeof body.enabled !== "boolean") {
+      return { ok: false, error: "enabled must be a boolean" };
+    }
+    enabled = body.enabled;
+  }
+  if (body.mode !== "self" && body.mode !== "owner" && body.mode !== "shared") {
+    return { ok: false, error: "mode must be self, owner or shared" };
+  }
+  let sharedSessionIds = [];
+  if (body.shared_session_ids !== undefined) {
+    if (!Array.isArray(body.shared_session_ids) ||
+      body.shared_session_ids.length > RECENT_ACTIVITY_LIMITS.MAX_SHARED_TARGETS) {
+      return {
+        ok: false,
+        error: `shared_session_ids must be an array of up to ${RECENT_ACTIVITY_LIMITS.MAX_SHARED_TARGETS} exact Session IDs`
+      };
+    }
+    for (const id of body.shared_session_ids) {
+      if (typeof id !== "string" || id === "" || id.length > RECENT_ACTIVITY_LIMITS.MAX_ID_CHARS) {
+        return { ok: false, error: "shared_session_ids must contain exact Session IDs" };
+      }
+    }
+    sharedSessionIds = [...new Set(body.shared_session_ids)];
+  }
+  return {
+    ok: true,
+    source,
+    enabled,
+    mode: body.mode,
+    sharedSessionIds: body.mode === "shared" ? sharedSessionIds : []
+  };
+}
+
+function safeRecentPreview(result) {
+  const source = result && typeof result === "object" ? result : {};
+  const items = Array.isArray(source.items)
+    ? source.items.map((item) => ({
+        sourceSessionId: typeof item?.sourceSessionId === "string" ? item.sourceSessionId : "",
+        kind: item?.kind === "agent_action" ? "agent_action" : "conversation",
+        summary: typeof item?.summary === "string" ? item.summary : "",
+        occurredAt: item?.occurredAt === null || item?.occurredAt === undefined
+          ? null
+          : (Number.isFinite(Number(item.occurredAt)) ? Number(item.occurredAt) : null),
+        estimatedTokens: Number(item?.estimatedTokens) || 0
+      }))
+    : [];
+  const ok = source.ok === true;
+  return {
+    ok,
+    reason: typeof source.reason === "string" && source.reason !== ""
+      ? source.reason
+      : (ok ? "ok" : "recent-activity-unavailable"),
+    items,
+    count: items.length,
+    estimatedTokens: Number(source.estimatedTokens) || 0,
+    truncated: source.truncated === true
+  };
+}
+
+function deniedRecentPreview(reason) {
+  return safeRecentPreview({ ok: false, reason, items: [] });
 }
 
 function safeEmbedderStatus(embedder, config, settings, vectorIndex, service, reranker) {
@@ -702,6 +1295,9 @@ async function handle(req, res, deps) {
   }
   const path = url.pathname.slice(PREFIX.length) || "/";
   if (req.method === "GET") {
+    if (path === "/workspace") {
+      return send(res, 200, { ok: true, data: workspaceSnapshot(deps) });
+    }
     if (path === "/overview") return send(res, 200, { ok: true, data: overview(deps) });
     if (path === "/graph/scopes") {
       return send(res, 200, { ok: true, data: graphScopes(deps) });
@@ -745,20 +1341,49 @@ async function handle(req, res, deps) {
         }
       });
     }
+    if (path === "/recent/preview") {
+      const gate = recentActivityMutationGate(deps);
+      if (!gate.ok) {
+        return send(res, gate.status, { ok: false, error: gate.error, reason: gate.reason });
+      }
+      const target = url.searchParams.get("target_session_id");
+      if (typeof target !== "string" || target === "") {
+        return send(res, 400, { ok: false, error: "target_session_id is required" });
+      }
+      if (!deps.recentActivity || typeof deps.recentActivity.previewRecentActivity !== "function") {
+        return send(res, 409, {
+          ok: false,
+          error: "recent activity is not active in this runtime; restart after enabling it",
+          reason: "recent-activity-unavailable"
+        });
+      }
+      const live = recentActivityLiveSessionIds(deps, gate.workspace);
+      if (!live.ok) {
+        return send(res, live.status, { ok: false, error: live.error, reason: live.reason });
+      }
+      if (!live.ids.has(target)) {
+        return send(res, 400, {
+          ok: false,
+          error: "target_session_id is not a Session in the active Workspace",
+          reason: "unknown-session-id"
+        });
+      }
+      if (recentActivityConfiguredEnabled(deps) !== true) {
+        return send(res, 200, { ok: true, data: deniedRecentPreview("recent-activity-disabled") });
+      }
+      let preview;
+      try {
+        preview = deps.recentActivity.previewRecentActivity(
+          { id: target },
+          { includeSelf: url.searchParams.get("include_self") === "true" }
+        );
+      } catch {
+        preview = { ok: false, reason: "preview-failed", items: [] };
+      }
+      return send(res, 200, { ok: true, data: safeRecentPreview(preview) });
+    }
     if (path === "/recent") {
-      const cfg = recentContextConfig();
-      const counts = recentContextCounts().slice(0, 64);
-      return send(res, 200, {
-        ok: true,
-        data: {
-          enabled: cfg.enabled,
-          ttl_ms: cfg.ttlMs,
-          max_events: cfg.maxEvents,
-          max_tokens: cfg.maxTokens,
-          scenes: counts,
-          total_events: counts.reduce((sum, row) => sum + row.count, 0)
-        }
-      });
+      return send(res, 200, { ok: true, data: await recentActivitySnapshot(deps) });
     }
     if (path === "/memories") {
       const q = String(url.searchParams.get("q") ?? "").trim();
@@ -865,6 +1490,59 @@ async function handle(req, res, deps) {
   }
   if (req.method !== "POST") return send(res, 405, { ok: false, error: "method not allowed" });
   const body = await readJson(req);
+  if (path === "/workspace") {
+    const controlRoot = workspaceControlRoot(deps);
+    const requested = body.workspace_id;
+    if (typeof requested !== "string" || requested.trim() === "") {
+      return send(res, 400, {
+        ok: false,
+        error: "workspace_id must be an exact Registry ID",
+        reason: "invalid-workspace-id"
+      });
+    }
+    const registry = workspaceRegistryState(deps.ctx);
+    if (!registry.available) {
+      return send(res, 503, {
+        ok: false,
+        error: "the trusted Workspace Registry is unavailable",
+        reason: registry.reason
+      });
+    }
+    const current = readWorkspaceBinding(controlRoot);
+    const changing = !current.bound || current.workspaceId !== requested;
+    if (changing && body.confirm !== true) {
+      return send(res, 400, {
+        ok: false,
+        error: "confirm: true is required to change the selected Workspace",
+        reason: "confirmation-required"
+      });
+    }
+    const result = setWorkspaceBinding({
+      memoryDir: controlRoot,
+      workspaceId: requested,
+      ctx: deps.ctx
+    });
+    if (!result.ok) {
+      return send(res, workspaceSelectionStatus(result.reason), {
+        ok: false,
+        error: workspaceSelectionError(result.reason),
+        reason: result.reason
+      });
+    }
+    if (result.changed === true && deps.workspaceState) deps.workspaceState.changedSinceBoot = true;
+    const data = workspaceSnapshot(deps);
+    return send(res, 200, {
+      ok: true,
+      data: {
+        ...data,
+        changed: result.changed === true,
+        old_workspace_id: result.oldWorkspaceId ?? null,
+        ...(data.pending_remount
+          ? { message: "Workspace binding saved; restart or reload the plugin to activate it" }
+          : {})
+      }
+    });
+  }
   if (path === "/personalization/profile") {
     if (typeof body.profile !== "string") return send(res, 400, { ok: false, error: "profile must be a string" });
     deps.settings.setProfile(body.profile);
@@ -980,6 +1658,124 @@ async function handle(req, res, deps) {
     if (!existing) return send(res, 404, { ok: false, error: "memory not found" });
     service.remove(id);
     return send(res, 200, { ok: true, data: { deleted: id } });
+  }
+  if (path === "/recent/config") {
+    const gate = recentActivityMutationGate(deps);
+    if (!gate.ok) {
+      return send(res, gate.status, { ok: false, error: gate.error, reason: gate.reason });
+    }
+    const parsed = validateRecentActivityConfigBody(body);
+    if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
+    let nextConfig;
+    let transactionOpen = false;
+    try {
+      deps.store.db.exec("SAVEPOINT recent_activity_config");
+      transactionOpen = true;
+      nextConfig = Object.keys(parsed.patch).length
+        ? deps.settings.setRecentActivityConfig(parsed.patch)
+        : deps.settings.getRecentActivityConfig();
+      if (parsed.enabled !== undefined) {
+        deps.settings.setFeatureFlags({ recentActivityEnabled: parsed.enabled });
+      }
+      deps.store.db.exec("RELEASE SAVEPOINT recent_activity_config");
+      transactionOpen = false;
+    } catch (error) {
+      if (transactionOpen) {
+        try {
+          deps.store.db.exec("ROLLBACK TO SAVEPOINT recent_activity_config");
+          deps.store.db.exec("RELEASE SAVEPOINT recent_activity_config");
+        } catch { /* preserve the original failure */ }
+      }
+      return send(res, 400, { ok: false, error: String(error?.message ?? error).slice(0, 300) });
+    }
+    // TTL/item/token changes are live for the mounted cores. auto_inject is
+    // consulted by inject.js on every prompt, so it never needs a restart.
+    const coreConfig = {
+      ttlHours: nextConfig.ttl_hours,
+      maxItems: nextConfig.max_items,
+      maxTokens: nextConfig.max_tokens
+    };
+    for (const core of [deps.recentActivity, deps.recentActivityAdmin]) {
+      try {
+        core?.configure?.(coreConfig);
+      } catch {
+        // Configuration was validated; a malformed core must not roll it back.
+      }
+    }
+    return send(res, 200, { ok: true, data: await recentActivitySnapshot(deps) });
+  }
+  if (path === "/recent/policy") {
+    const gate = recentActivityMutationGate(deps);
+    if (!gate.ok) {
+      return send(res, gate.status, { ok: false, error: gate.error, reason: gate.reason });
+    }
+    const parsed = validateRecentActivityPolicyBody(body);
+    if (!parsed.ok) return send(res, 400, { ok: false, error: parsed.error });
+    const live = recentActivityLiveSessionIds(deps, gate.workspace);
+    if (!live.ok) {
+      return send(res, live.status, { ok: false, error: live.error, reason: live.reason });
+    }
+    if (!live.ids.has(parsed.source)) {
+      return send(res, 400, {
+        ok: false,
+        error: "source_session_id is not a Session in the active Workspace",
+        reason: "unknown-session-id"
+      });
+    }
+    for (const target of parsed.sharedSessionIds) {
+      if (!live.ids.has(target)) {
+        return send(res, 400, {
+          ok: false,
+          error: "shared_session_ids may only contain Sessions in the active Workspace",
+          reason: "unknown-session-id"
+        });
+      }
+    }
+    // The admin core (when present) keeps policy management available while the
+    // opt-in feature is disabled. The model core remains the read/preview
+    // authority and is still wrapped by the immediate-disable callback.
+    const core = deps.recentActivityAdmin ?? deps.recentActivity;
+    if (!core || typeof core.setSourcePolicy !== "function") {
+      return send(res, 409, {
+        ok: false,
+        error: "recent activity is not active in this runtime; restart after enabling it",
+        reason: "recent-activity-unavailable"
+      });
+    }
+    const policyInput = {
+      mode: parsed.mode,
+      sharedSessionIds: parsed.sharedSessionIds
+    };
+    if (parsed.enabled !== undefined) policyInput.enabled = parsed.enabled;
+    let result;
+    try {
+      result = core.setSourcePolicy({ id: parsed.source }, policyInput);
+    } catch {
+      result = { ok: false, reason: "policy-write-failed" };
+    }
+    if (!result?.ok) {
+      return send(res, 409, {
+        ok: false,
+        error: "the recent activity policy was not saved",
+        reason: typeof result?.reason === "string" ? result.reason : "policy-write-failed"
+      });
+    }
+    const snapshot = await recentActivitySnapshot(deps);
+    return send(res, 200, {
+      ok: true,
+      data: {
+        source_session_id: parsed.source,
+        enabled: result.enabled !== false,
+        mode: result.mode === "owner" || result.mode === "shared" ? result.mode : "self",
+        shared_session_ids: Array.isArray(result.sharedSessionIds) ? result.sharedSessionIds : [],
+        policy: {
+          enabled: result.enabled !== false,
+          mode: result.mode === "owner" || result.mode === "shared" ? result.mode : "self",
+          shared_session_ids: Array.isArray(result.sharedSessionIds) ? result.sharedSessionIds : []
+        },
+        state: snapshot
+      }
+    });
   }
   if (path === "/recent/clear") {
     clearRecentContext();
@@ -1145,6 +1941,10 @@ async function handle(req, res, deps) {
 }
 
 export function mountAdminApi(ctx, deps) {
+  // Live for this mounted plugin instance only. It records that a selection
+  // changed, including a change back to the original ID, so the response cannot
+  // claim the runtime is active before the plugin is remounted.
+  const workspaceState = { changedSinceBoot: false };
   ctx.inject(["webServer", "connection"], (child) => {
     if (!child.webServer || typeof child.webServer.register !== "function") return;
     child.effect(
@@ -1155,7 +1955,9 @@ export function mountAdminApi(ctx, deps) {
           const auth = ownerAuthorized(child.connection, req);
           if (!auth.ok) return send(res, auth.status, { ok: false, error: auth.error });
           try {
-            return await handle(req, res, deps);
+            // `ctx` is the trusted plugin context: the Workspace Registry and
+            // binding validation must never come from request data.
+            return await handle(req, res, { ...deps, ctx, workspaceState });
           } catch (error) {
             return send(res, Number(error?.status) || 500, {
               ok: false,

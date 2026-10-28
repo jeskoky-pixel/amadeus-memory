@@ -114,7 +114,7 @@ function gitState(cwd) {
 
 export function finalizePackage({ root = process.cwd(), distDir = join(root, "..", "dist"), sourceHead, worktreeDirty } = {}) {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const file = join(distDir, `modusensus-dsh-mneme-${pkg.version}.tgz`);
+  const file = join(distDir, `amadeus-memory-${pkg.version}.tgz`);
   if (!existsSync(file)) throw new Error(`missing package: ${file}`);
   const info = archiveInfo(file);
   const git = sourceHead === undefined || worktreeDirty === undefined ? gitState(root) : {};
@@ -128,7 +128,7 @@ export function finalizePackage({ root = process.cwd(), distDir = join(root, "..
     version: pkg.version,
     edition: pkg.amadeus?.edition ?? "",
     upstream: pkg.amadeus?.upstream ?? "",
-    file: `dist/modusensus-dsh-mneme-${pkg.version}.tgz`,
+    file: `dist/amadeus-memory-${pkg.version}.tgz`,
     sha256: info.sha256,
     bytes: info.bytes,
     files: info.files,

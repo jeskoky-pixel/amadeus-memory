@@ -1,7 +1,7 @@
 // 发布闸门：publish 步之后**必须**确认这个版本真的能被 registry 看见，看不见就整轮失败。
 //
 // 为什么需要它：原先这一步是
-//   echo "Published: $(npm view "@modusensus/dsh-mneme@${V}" version)"
+//   echo "Published: $(npm view "@amadeus/memory@${V}" version)"
 // 命令替换里的失败**不会**让 `set -e` 退出。v0.8.16 那次日志白纸黑字写着
 // `npm error code E404 / 404 No match found for version 0.8.16`，step 与 job 却都是绿的。
 // 也就是说「真发不出去」（token 失效、权限不足、npm 侧拒绝）与「发出去了」在 CI 上是同一种
@@ -21,7 +21,7 @@
 
 import { pathToFileURL } from "node:url";
 
-export const PACKAGE_NAME = "@modusensus/dsh-mneme";
+export const PACKAGE_NAME = "@amadeus/memory";
 export const REGISTRY_ORIGIN = "https://registry.npmjs.org";
 
 /** 默认 10 分钟：实测传播 ~4.5 分钟，留一倍余量；超时=发布失败，宁可红也不许假绿。 */
