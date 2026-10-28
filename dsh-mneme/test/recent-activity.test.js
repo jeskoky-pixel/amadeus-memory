@@ -64,6 +64,40 @@ test("trusted Host headers allow ordinary cross-Session sharing while a present 
   db.close();
 });
 
+test("strict QQ mode cannot grant raw recent activity across unrelated Scenes", () => {
+  const db = openDatabase(tempDbPath());
+  const events = [userEvent(1, "group-only activity"), assistantEvent(2, "done"), turnEnd(3)];
+  const group = { ...hostSession("q1", events), header: { agentPreset: "amadeus-qq" } };
+  const ordinary = { ...hostSession("s1"), header: { agentPreset: "standard" } };
+  const otherGroup = { ...hostSession("q2"), header: { agentPreset: "amadeus-qq" } };
+  const trusted = new Map([["q1", group], ["s1", ordinary], ["q2", otherGroup]]);
+  const scenes = {
+    q1: { platform: "qq", kind: "group", botId: "10001", peerId: "20001", id: "10001:20001", verified: true },
+    q2: { platform: "qq", kind: "group", botId: "10001", peerId: "20002", id: "10001:20002", verified: true }
+  };
+  const ctx = { qq: { resolveTrustedSessionScene: id => scenes[id] ?? null } };
+  const gate = createQQModelAccessGate({
+    ctx, config: { sceneIsolationEnabled: true, sceneStrictQQ: true },
+    authorizeWorkspace: session => ({ allowed: trusted.has(session?.id), workspaceId: "ws-a" })
+  });
+  const core = createRecentActivityCore({
+    db, workspaceId: "ws-a", allowSession: gate,
+    resolveTrustedSession: id => trusted.get(id) ?? null,
+    allowCrossSession: (sourceId, targetId) => {
+      const source = scenes[sourceId] ?? null;
+      const target = scenes[targetId] ?? null;
+      return (!source && !target) || (source && target && source.id === target.id);
+    }
+  });
+  assert.equal(core.recordTurnEnd(group, endOf(events, 3), { now: T0 }).ok, true);
+  assert.equal(core.setSourcePolicy(group, { mode: "shared", sharedSessionIds: ["s1"] }).ok, false);
+  assert.equal(core.setSourcePolicy(group, { mode: "shared", sharedSessionIds: ["q2"] }).ok, false);
+  assert.equal(core.readRecentActivity(ordinary, { now: T0 + 1 }).count, 0);
+  assert.equal(core.readRecentActivity(otherGroup, { now: T0 + 1 }).count, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM recent_activity_source_policy").get().n, 0);
+  db.close();
+});
+
 test("missing, mismatched, throwing and revoked trusted identities fail closed", () => {
   const db = openDatabase(tempDbPath());
   const events = [userEvent(1, "trusted identity"), assistantEvent(2, "done"), turnEnd(3)];

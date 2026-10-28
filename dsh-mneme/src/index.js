@@ -20,7 +20,7 @@ import { createApi } from "./api.js";
 // #275 存储生命周期第一批：无损回收（手动入口，不挂启动路径）。
 import { createMaintenance } from "./maintenance.js";
 import { createSettings, RETIRED_FEATURE_FLAGS } from "./settings.js";
-import { configureScene, setSceneReadAclReader } from "./scene.js";
+import { configureScene, mintTrustedScene, setSceneReadAclReader } from "./scene.js";
 import { runWithSceneJob, LEGACY_SCENE_JOB, scopedSleepOutcome } from "./scene-job.js";
 import { configureRecentContext } from "./recent-context.js";
 import { createRecentActivityCore } from "./recent-activity.js";
@@ -358,6 +358,34 @@ export function createRecentActivityOwnerCheck(ctx) {
 }
 
 /**
+ * Raw recent summaries obey the QQ Scene boundary independently of Workspace
+ * membership. The QQ Host is consulted afresh for both exact Session IDs; a
+ * malformed/throwing binding fails closed. Ordinary DSH Sessions may share
+ * with each other, while a verified Owner private Scene may read all sources.
+ */
+export function createRecentActivityPairGate(ctx) {
+  return function allowRecentPair(sourceSessionId, targetSessionId) {
+    try {
+      if (typeof sourceSessionId !== "string" || typeof targetSessionId !== "string") return false;
+      const qq = readOptionalHostService(ctx, "qq");
+      if (qq === undefined || qq === null) return true;
+      if (typeof qq.resolveTrustedSessionScene !== "function") return false;
+      const resolve = (id) => {
+        const raw = qq.resolveTrustedSessionScene(id);
+        return raw === null || raw === undefined ? null : mintTrustedScene(raw);
+      };
+      const source = resolve(sourceSessionId);
+      const target = resolve(targetSessionId);
+      if (target?.platform === "qq" && target.kind === "private" && target.admin === true) return true;
+      if (!source && !target) return true;
+      return Boolean(source && target && source.sceneId === target.sceneId);
+    } catch {
+      return false;
+    }
+  };
+}
+
+/**
  * Mount the standalone recent-activity core over an already-open selected
  * Workspace database and subscribe its trusted `session/event` bridge.
  *
@@ -375,6 +403,8 @@ export function createRecentActivityOwnerCheck(ctx) {
  * @param {() => boolean} [options.isEnabled] live opt-in switch; false denies reads/writes immediately
  * @param {(sessionId: string) => (object|null)} [options.resolveTrustedSession] trusted
  *   Host Session lookup; defaults to the live `ctx.sessions` store
+ * @param {(sourceSessionId: string, targetSessionId: string) => boolean} [options.allowCrossSession]
+ *   optional test override; production defaults to the live QQ Host pair gate
  * @param {(session: object) => boolean} [options.isTrustedOwner] Host owner predicate
  * @param {object} [options.config] core TTL/item/token options
  * @param {object} [options.logger]
@@ -388,6 +418,7 @@ export function createRecentActivityRuntime({
   authorizeModelWork = null,
   isEnabled = null,
   resolveTrustedSession = null,
+  allowCrossSession = null,
   isTrustedOwner = null,
   config = {},
   logger = null,
@@ -413,6 +444,9 @@ export function createRecentActivityRuntime({
   const trustedSessionLookup = typeof resolveTrustedSession === "function"
     ? resolveTrustedSession
     : createTrustedSessionResolver(ctx);
+  const pairGate = typeof allowCrossSession === "function"
+    ? allowCrossSession
+    : createRecentActivityPairGate(ctx);
   let core = null;
   try {
     core = createRecentActivityCore({
@@ -420,6 +454,7 @@ export function createRecentActivityRuntime({
       workspaceId,
       allowSession,
       resolveTrustedSession: trustedSessionLookup,
+      allowCrossSession: pairGate,
       isTrustedOwner: typeof isTrustedOwner === "function" ? isTrustedOwner : null,
       config,
       logger,
@@ -781,6 +816,7 @@ export const apply = (ctx, config) => {
     };
     const isTrustedOwner = createRecentActivityOwnerCheck(ctx);
     const resolveTrustedSession = createTrustedSessionResolver(ctx);
+    const allowCrossSession = createRecentActivityPairGate(ctx);
     const mount = createRecentActivityRuntime({
       ctx,
       db: store.db,
@@ -788,6 +824,7 @@ export const apply = (ctx, config) => {
       authorizeModelWork,
       isEnabled: () => settings.getFeatureFlags().recentActivityEnabled !== false,
       resolveTrustedSession,
+      allowCrossSession,
       isTrustedOwner,
       config: coreConfig,
       logger: ctx.logger
@@ -801,6 +838,7 @@ export const apply = (ctx, config) => {
           workspaceId: activeWorkspaceId,
           allowSession: authorizeModelWork,
           resolveTrustedSession,
+          allowCrossSession,
           isTrustedOwner,
           config: coreConfig,
           logger: ctx.logger

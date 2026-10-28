@@ -364,6 +364,57 @@ test("recent-runtime: live Session Store supplies full identity while QQ remains
   }
 });
 
+test("recent-runtime: production pair gate preserves ordinary sharing and revokes QQ Scene access", () => {
+  const fixture = selectedFixture({ workspaces: [
+    { id: "ws-a", title: "A", sessionIds: ["s1", "s2", "q1", "q2"] }
+  ] });
+  const host = fakeHost();
+  const scenes = new Map([
+    ["q1", { platform: "qq", kind: "group", id: "10001:20001", verified: true }],
+    ["q2", { platform: "qq", kind: "group", id: "10001:20002", verified: true }]
+  ]);
+  host.qq = { resolveTrustedSessionScene: id => scenes.get(id) ?? null };
+  const allowSession = createQQModelAccessGate({
+    ctx: host,
+    config: { sceneIsolationEnabled: true, sceneStrictQQ: true },
+    authorizeWorkspace: fixture.guard.authorize
+  });
+  const runtime = mneme.createRecentActivityRuntime({
+    ctx: host, db: fixture.store.db, workspaceId: "ws-a",
+    authorizeModelWork: allowSession, now: () => T0
+  });
+  try {
+    host.emit({ ...hostSession("q2"), header: { agentPreset: "amadeus-qq" } }, { type: "turn/start" });
+    const s1 = { ...hostSession("s1", turnBlock(1, "ordinary activity")), header: { agentPreset: "standard" } };
+    host.emit(s1, turnEnd(3));
+    assert.equal(runtime.core.setSourcePolicy(s1, { mode: "shared", sharedSessionIds: ["s2"] }).ok, true);
+    assert.equal(runtime.core.readRecentActivity({ id: "s2" }, { now: T0 + 1 }).count, 1);
+
+    const q1 = { ...hostSession("q1", turnBlock(4, "private group activity")), header: { agentPreset: "amadeus-qq" } };
+    host.emit(q1, turnEnd(6));
+    assert.equal(runtime.core.setSourcePolicy(q1, { mode: "shared", sharedSessionIds: ["s2"] }).reason, "scene-sharing-denied");
+    assert.equal(runtime.core.setSourcePolicy(q1, { mode: "shared", sharedSessionIds: ["q2"] }).reason, "scene-sharing-denied");
+    assert.equal(runtime.core.setSourcePolicy(s1, { mode: "shared", sharedSessionIds: ["q1"] }).reason, "scene-sharing-denied");
+
+    // An older stored grant cannot bypass the new read-time Scene boundary.
+    fixture.store.db.prepare(
+      `INSERT INTO recent_activity_source_policy
+       (workspace_id, source_session_id, mode, allowlist, enabled, updated_at)
+       VALUES (?, ?, 'shared', ?, 1, ?)`
+    ).run("ws-a", "q1", JSON.stringify(["s2"]), T0);
+    assert.equal(runtime.core.readRecentActivity({ id: "s2" }, {
+      now: T0 + 1, query: "private group activity"
+    }).count, 0);
+
+    scenes.delete("q1");
+    assert.equal(runtime.core.readRecentActivity({ id: "q1" }, { now: T0 + 1 }).ok, false);
+    assert.equal(runtime.core.readRecentActivity({ id: "s2" }, { now: T0 + 1 }).count, 1);
+  } finally {
+    runtime.dispose();
+    fixture.store.close();
+  }
+});
+
 test("recent-runtime: model tool ignores now/owner/workspaceId/policy fields", async () => {
   const fixture = selectedFixture();
   const host = fakeHost();

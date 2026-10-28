@@ -232,7 +232,18 @@ function accessDecisionForSessionId(allowSession, resolveTrustedSession, session
   return accessDecision(allowSession, trusted.session);
 }
 
-function sharedTargetsDecision(allowSession, sessionIds, resolveTrustedSession) {
+function crossSessionDecision(allowCrossSession, sourceSessionId, targetSessionId) {
+  if (typeof allowCrossSession !== "function") return { allowed: true, reason: "ok" };
+  try {
+    return allowCrossSession(sourceSessionId, targetSessionId) === true
+      ? { allowed: true, reason: "ok" }
+      : { allowed: false, reason: "scene-sharing-denied" };
+  } catch {
+    return { allowed: false, reason: "scene-sharing-denied" };
+  }
+}
+
+function sharedTargetsDecision(allowSession, sessionIds, resolveTrustedSession, sourceSessionId, allowCrossSession) {
   // Every exact target is independently authorized through the same Workspace
   // gate. A GUI can therefore never pre-authorize an unrelated/unknown Session.
   // With a trusted Host resolver the full identity (including the frozen
@@ -240,6 +251,8 @@ function sharedTargetsDecision(allowSession, sessionIds, resolveTrustedSession) 
   for (const sessionId of sessionIds) {
     const decision = accessDecisionForSessionId(allowSession, resolveTrustedSession, sessionId);
     if (!decision.allowed) return decision;
+    const pair = crossSessionDecision(allowCrossSession, sourceSessionId, sessionId);
+    if (!pair.allowed) return pair;
   }
   return { allowed: true, reason: "ok" };
 }
@@ -697,6 +710,9 @@ function denied(reason, extra = {}) {
  * @param {(sessionId: string) => (object|null)} [options.resolveTrustedSession] trusted
  *   Host lookup for the live Session behind an exact stable ID. When supplied, a
  *   lookup miss/mismatch fails closed instead of falling back to an ID-only object.
+ * @param {(sourceSessionId: string, targetSessionId: string) => boolean} [options.allowCrossSession]
+ *   Host-derived pair gate for raw recent activity. A false/throwing gate denies
+ *   cross-Session grants and reads; it is never provided by model arguments.
  * @param {(session: object) => boolean} [options.isTrustedOwner]
  * @param {object} [options.config]
  * @param {() => number} [options.now]
@@ -708,6 +724,7 @@ export function createRecentActivityCore({
   workspaceId = null,
   allowSession = null,
   resolveTrustedSession = null,
+  allowCrossSession = null,
   isTrustedOwner = null,
   config = {},
   now = Date.now,
@@ -956,7 +973,9 @@ export function createRecentActivityCore({
       const targetsBeforeWrite = sharedTargetsDecision(
         allowSession,
         normalized.sharedSessionIds,
-        resolveTrustedSession
+        resolveTrustedSession,
+        sourceSessionId,
+        allowCrossSession
       );
       if (!targetsBeforeWrite.allowed) {
         return { ok: false, reason: targetsBeforeWrite.reason };
@@ -975,7 +994,9 @@ export function createRecentActivityCore({
         const targetsBeforeCommit = sharedTargetsDecision(
           allowSession,
           normalized.sharedSessionIds,
-          resolveTrustedSession
+          resolveTrustedSession,
+          sourceSessionId,
+          allowCrossSession
         );
         if (!targetsBeforeCommit.allowed) {
           rollback("mneme_recent_activity_policy");
@@ -1144,6 +1165,7 @@ export function createRecentActivityCore({
           sourceSessionId
         );
         if (!sourceGate.allowed) continue;
+        if (!crossSessionDecision(allowCrossSession, sourceSessionId, targetSessionId).allowed) continue;
 
         const policy = readPolicy(sourceSessionId);
         if (!policy.ok) continue;
@@ -1188,6 +1210,8 @@ export function createRecentActivityCore({
       let usedTokens = 0;
       let truncated = false;
       for (const row of rows) {
+        if (row.sourceSessionId !== targetSessionId &&
+          !crossSessionDecision(allowCrossSession, row.sourceSessionId, targetSessionId).allowed) continue;
         const summary = typeof row?.summary === "string" ? row.summary : "";
         if (needle && !summary.toLowerCase().includes(needle)) {
           truncated = true;
