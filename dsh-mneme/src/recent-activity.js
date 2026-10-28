@@ -8,7 +8,14 @@
 // Trust model:
 // - Every write/read takes the actual trusted Host Session and an
 //   `allowSession(session)` callback supplied by the mounted runtime.
-// - Stored source Sessions are re-authorized from their exact stable ID via
+// - When the runtime supplies `resolveTrustedSession(id)`, every Session is
+//   re-authorized through that trusted Host lookup before `allowSession` runs.
+//   The returned object must carry the exact requested stable ID; a missing,
+//   throwing or mismatched lookup fails closed. This keeps a frozen
+//   `header.agentPreset` available to the model access boundary for stored
+//   source Sessions and shared targets instead of an ID-only placeholder.
+// - Without a resolver (direct module tests and legacy hosts), stored source
+//   Sessions are re-authorized from their exact stable ID via
 //   `allowSession({ id })`; the core deliberately never retains Host Session
 //   objects or raw chat logs.
 // - `isTrustedOwner(session)` is a Host-authenticated predicate, default false.
@@ -185,11 +192,53 @@ function accessDecision(allowSession, session) {
   }
 }
 
-function sharedTargetsDecision(allowSession, sessionIds) {
+// A resolver is a trusted Host capability, not caller input. It either yields
+// the live trusted Session object for an exact stable ID or nothing. Returning
+// a different ID is treated like a miss so a buggy/hostile lookup cannot swap
+// identity. The `available` flag distinguishes "no resolver" (legacy direct
+// core use) from "resolver present but this ID cannot be verified" (deny).
+function trustedSessionById(resolveTrustedSession, sessionId) {
+  if (typeof resolveTrustedSession !== "function") {
+    return { available: false, session: null };
+  }
+  try {
+    const session = resolveTrustedSession(sessionId);
+    if (sessionIdOf(session) !== sessionId) {
+      return { available: true, session: null };
+    }
+    return { available: true, session };
+  } catch {
+    return { available: true, session: null };
+  }
+}
+
+function accessDecisionForSession(allowSession, resolveTrustedSession, session) {
+  const sessionId = sessionIdOf(session);
+  if (sessionId === null) return { allowed: false, reason: "missing-session-id" };
+  const trusted = trustedSessionById(resolveTrustedSession, sessionId);
+  if (!trusted.available) return accessDecision(allowSession, session);
+  if (trusted.session === null) {
+    return { allowed: false, reason: "session-identity-unavailable" };
+  }
+  return accessDecision(allowSession, trusted.session);
+}
+
+function accessDecisionForSessionId(allowSession, resolveTrustedSession, sessionId) {
+  const trusted = trustedSessionById(resolveTrustedSession, sessionId);
+  if (!trusted.available) return accessDecision(allowSession, { id: sessionId });
+  if (trusted.session === null) {
+    return { allowed: false, reason: "session-identity-unavailable" };
+  }
+  return accessDecision(allowSession, trusted.session);
+}
+
+function sharedTargetsDecision(allowSession, sessionIds, resolveTrustedSession) {
   // Every exact target is independently authorized through the same Workspace
   // gate. A GUI can therefore never pre-authorize an unrelated/unknown Session.
+  // With a trusted Host resolver the full identity (including the frozen
+  // header) is what the access boundary sees, never the caller's ID alone.
   for (const sessionId of sessionIds) {
-    const decision = accessDecision(allowSession, { id: sessionId });
+    const decision = accessDecisionForSessionId(allowSession, resolveTrustedSession, sessionId);
     if (!decision.allowed) return decision;
   }
   return { allowed: true, reason: "ok" };
@@ -645,6 +694,9 @@ function denied(reason, extra = {}) {
  * @param {import("node:sqlite").DatabaseSync} options.db open DatabaseSync
  * @param {string} options.workspaceId stable selected Workspace ID
  * @param {(session: object) => (boolean|{allowed: boolean, reason?: string})} [options.allowSession]
+ * @param {(sessionId: string) => (object|null)} [options.resolveTrustedSession] trusted
+ *   Host lookup for the live Session behind an exact stable ID. When supplied, a
+ *   lookup miss/mismatch fails closed instead of falling back to an ID-only object.
  * @param {(session: object) => boolean} [options.isTrustedOwner]
  * @param {object} [options.config]
  * @param {() => number} [options.now]
@@ -655,6 +707,7 @@ export function createRecentActivityCore({
   db = null,
   workspaceId = null,
   allowSession = null,
+  resolveTrustedSession = null,
   isTrustedOwner = null,
   config = {},
   now = Date.now,
@@ -788,7 +841,7 @@ export function createRecentActivityCore({
       const turnSeq = eventSeq(event);
       if (turnSeq === null) return { ok: false, reason: "missing-event-sequence" };
 
-      const beforeRead = accessDecision(allowSession, session);
+      const beforeRead = accessDecisionForSession(allowSession, resolveTrustedSession, session);
       if (!beforeRead.allowed) return { ok: false, reason: beforeRead.reason };
 
       // The enabled switch is checked before any transcript snapshot. A
@@ -811,8 +864,8 @@ export function createRecentActivityCore({
 
       db.exec("SAVEPOINT mneme_recent_activity_record");
       try {
-        // Recheck the actual Host Session immediately before the write commits.
-        const beforeCommit = accessDecision(allowSession, session);
+        // Recheck the trusted Host Session immediately before the write commits.
+        const beforeCommit = accessDecisionForSession(allowSession, resolveTrustedSession, session);
         if (!beforeCommit.allowed) {
           rollback("mneme_recent_activity_record");
           return { ok: false, reason: beforeCommit.reason };
@@ -884,7 +937,7 @@ export function createRecentActivityCore({
       const sourceSessionId = sessionIdOf(sourceSession);
       if (sourceSessionId === null) return { ok: false, reason: "missing-session-id" };
 
-      const beforeRead = accessDecision(allowSession, sourceSession);
+      const beforeRead = accessDecisionForSession(allowSession, resolveTrustedSession, sourceSession);
       if (!beforeRead.allowed) return { ok: false, reason: beforeRead.reason };
 
       const normalized = normalizePolicyInput(policy);
@@ -902,7 +955,8 @@ export function createRecentActivityCore({
       // current member of this Workspace before anything is persisted.
       const targetsBeforeWrite = sharedTargetsDecision(
         allowSession,
-        normalized.sharedSessionIds
+        normalized.sharedSessionIds,
+        resolveTrustedSession
       );
       if (!targetsBeforeWrite.allowed) {
         return { ok: false, reason: targetsBeforeWrite.reason };
@@ -913,14 +967,15 @@ export function createRecentActivityCore({
 
       db.exec("SAVEPOINT mneme_recent_activity_policy");
       try {
-        const beforeCommit = accessDecision(allowSession, sourceSession);
+        const beforeCommit = accessDecisionForSession(allowSession, resolveTrustedSession, sourceSession);
         if (!beforeCommit.allowed) {
           rollback("mneme_recent_activity_policy");
           return { ok: false, reason: beforeCommit.reason };
         }
         const targetsBeforeCommit = sharedTargetsDecision(
           allowSession,
-          normalized.sharedSessionIds
+          normalized.sharedSessionIds,
+          resolveTrustedSession
         );
         if (!targetsBeforeCommit.allowed) {
           rollback("mneme_recent_activity_policy");
@@ -981,7 +1036,7 @@ export function createRecentActivityCore({
       const sourceSessionId = sessionIdOf(sourceSession);
       if (sourceSessionId === null) return { ok: false, reason: "missing-session-id" };
 
-      const beforeRead = accessDecision(allowSession, sourceSession);
+      const beforeRead = accessDecisionForSession(allowSession, resolveTrustedSession, sourceSession);
       if (!beforeRead.allowed) return { ok: false, reason: beforeRead.reason };
 
       const policy = readPolicy(sourceSessionId);
@@ -1009,7 +1064,7 @@ export function createRecentActivityCore({
       const targetSessionId = sessionIdOf(targetSession);
       if (targetSessionId === null) return denied("missing-session-id");
 
-      const beforeRead = accessDecision(allowSession, targetSession);
+      const beforeRead = accessDecisionForSession(allowSession, resolveTrustedSession, targetSession);
       if (!beforeRead.allowed) return denied(beforeRead.reason);
 
       // A disabled target cannot read its own recent events. Auto-injection
@@ -1025,7 +1080,7 @@ export function createRecentActivityCore({
       const now = resolveNow(normalized.now);
       let recheck = null;
       const requireTargetAllowed = () => {
-        recheck = accessDecision(allowSession, targetSession);
+        recheck = accessDecisionForSession(allowSession, resolveTrustedSession, targetSession);
         if (!recheck.allowed) return false;
         const policy = readPolicy(targetSessionId);
         if (!policy.ok) {
@@ -1081,8 +1136,13 @@ export function createRecentActivityCore({
           continue;
         }
 
-        // Both source and target must still be members of the active Workspace.
-        const sourceGate = accessDecision(allowSession, { id: sourceSessionId });
+        // Both source and target must still resolve to a trusted Session and be
+        // members of the active Workspace. The stored ID is only a lookup key.
+        const sourceGate = accessDecisionForSessionId(
+          allowSession,
+          resolveTrustedSession,
+          sourceSessionId
+        );
         if (!sourceGate.allowed) continue;
 
         const policy = readPolicy(sourceSessionId);

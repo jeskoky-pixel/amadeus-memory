@@ -15,6 +15,7 @@ import {
   setWorkspaceBinding,
   workspaceDataDirFor
 } from "../src/workspace-binding.js";
+import { createQQModelAccessGate } from "../src/qq-model-boundary.js";
 
 // Runtime wiring for the reviewed standalone recent-activity core. These tests
 // use an isolated temporary store and a fake `session/event` bus; no live DSH
@@ -66,14 +67,32 @@ function selectedFixture({ workspaces = baseWorkspaces(), workspaceId = "ws-a" }
 
 function fakeHost() {
   const listeners = new Set();
+  // Synthetic live Session Store. Tests may replace an entry by emitting a
+  // richer Session; the default identities stand in for the Host-owned header.
+  const presets = { q1: "amadeus-qq" };
+  const liveSessions = new Map(
+    ["s1", "s2", "s3", "owner-1", "b1", "q1"].map((id) => [
+      id,
+      {
+        id,
+        header: { agentPreset: presets[id] ?? "standard" },
+        events: [],
+        snapshotEvents() { return []; }
+      }
+    ])
+  );
   return {
     logger: { warn() {}, info() {} },
+    sessions: {
+      get(id) { return liveSessions.get(id) ?? null; }
+    },
     on(name, fn) {
       if (name !== "session/event") throw new Error(`unexpected event: ${name}`);
       listeners.add(fn);
       return () => listeners.delete(fn);
     },
     emit(session, event) {
+      if (session?.id) liveSessions.set(session.id, session);
       for (const fn of [...listeners]) fn(session, event);
     },
     async emitParallel(session, event) {
@@ -291,6 +310,55 @@ test("recent-runtime: injection/tool reveal another Session only after an explic
     assert.equal(narrowedAway.count, 0, "a non-visible source cannot be selected");
   } finally {
     injection.dispose();
+    runtime.dispose();
+    fixture.store.close();
+  }
+});
+
+test("recent-runtime: live Session Store supplies full identity while QQ remains isolated", () => {
+  const fixture = selectedFixture();
+  const host = fakeHost();
+  host.qq = {
+    resolveTrustedSessionScene(id) {
+      return id === "q1"
+        ? { platform: "qq", botId: "10001", kind: "group", peerId: "20001" }
+        : null;
+    }
+  };
+  const allowSession = createQQModelAccessGate({
+    ctx: host,
+    config: { sceneIsolationEnabled: false, sceneStrictQQ: false },
+    authorizeWorkspace: fixture.guard.authorize
+  });
+  const runtime = mneme.createRecentActivityRuntime({
+    ctx: host,
+    db: fixture.store.db,
+    workspaceId: "ws-a",
+    authorizeModelWork: allowSession,
+    now: () => T0
+  });
+  try {
+    const s1 = { ...hostSession("s1", turnBlock(1, "runtime sharing")), header: { agentPreset: "standard" } };
+    host.emit(s1, turnEnd(3));
+    assert.equal(countEvents(fixture.store.db), 1);
+
+    // The runtime derived resolveTrustedSession from ctx.sessions, so the
+    // ordinary target's frozen header reaches the QQ boundary even though the
+    // stored grant is written by ID.
+    assert.equal(
+      runtime.core.setSourcePolicy(s1, { mode: "shared", sharedSessionIds: ["s2"] }, { now: T0 }).ok,
+      true
+    );
+    const visible = runtime.core.readRecentActivity({ id: "s2" }, { now: T0 + 1 });
+    assert.equal(visible.ok, true);
+    assert.equal(visible.count, 1);
+
+    assert.equal(
+      runtime.core.setSourcePolicy(s1, { mode: "shared", sharedSessionIds: ["q1"] }, { now: T0 }).ok,
+      false,
+      "the same runtime denies a QQ target in default Scene mode"
+    );
+  } finally {
     runtime.dispose();
     fixture.store.close();
   }
@@ -607,6 +675,15 @@ test("recent-runtime: full boot registers the surfaces only when the opt-in flag
     const ctx = new Context();
     ctx.provide("tools", { register(def) { registered.push(def); return () => {}; } });
     ctx.provide("commands", { register() { return () => {}; } });
+    // The Host Session Store is the trusted identity source for recent
+    // activity's cross-Session reauthorization.
+    ctx.provide("sessions", {
+      get(id) {
+        return typeof id === "string" && id !== ""
+          ? { id, header: { agentPreset: "standard" }, events: [], snapshotEvents() { return []; } }
+          : null;
+      }
+    });
     ctx.provide("systemPrompt", {
       context(spec) { contexts[spec.name] = spec.text; return () => {}; },
       section() { return () => {}; }

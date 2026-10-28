@@ -298,6 +298,35 @@ function readOptionalHostService(ctx, name) {
 }
 
 /**
+ * Resolve a Session ID through the live DSH Session Store (`ctx.sessions`).
+ *
+ * This is the trusted Host identity source for cross-Session recent activity.
+ * It is deliberately read through `reflect.get` so an older Host without the
+ * service is not an error, and it returns only the live Session object whose
+ * immutable header the Host owns. A missing service, missing Session, throwing
+ * getter or ID mismatch yields null; callers must then fail closed. A caller
+ * can supply an ID as a lookup key, but never the object or header used for
+ * authorization.
+ * @param {object} ctx trusted DSH context
+ * @returns {(sessionId: string) => object|null}
+ */
+export function createTrustedSessionResolver(ctx) {
+  return function resolveTrustedSession(sessionId) {
+    try {
+      if (typeof sessionId !== "string" || sessionId.trim() === "") return null;
+      const sessions = readOptionalHostService(ctx, "sessions");
+      if (typeof sessions?.get !== "function") return null;
+      const session = sessions.get(sessionId);
+      if (session === null || typeof session !== "object") return null;
+      if (session.id !== sessionId) return null;
+      return session;
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
  * Build the Host-authenticated owner predicate for the recent-activity
  * `owner` sharing mode.
  *
@@ -344,6 +373,8 @@ export function createRecentActivityOwnerCheck(ctx) {
  * @param {string} [options.workspaceId] selected stable Workspace ID
  * @param {(session: object) => object} [options.authorizeModelWork] runtime gate
  * @param {() => boolean} [options.isEnabled] live opt-in switch; false denies reads/writes immediately
+ * @param {(sessionId: string) => (object|null)} [options.resolveTrustedSession] trusted
+ *   Host Session lookup; defaults to the live `ctx.sessions` store
  * @param {(session: object) => boolean} [options.isTrustedOwner] Host owner predicate
  * @param {object} [options.config] core TTL/item/token options
  * @param {object} [options.logger]
@@ -356,6 +387,7 @@ export function createRecentActivityRuntime({
   workspaceId = null,
   authorizeModelWork = null,
   isEnabled = null,
+  resolveTrustedSession = null,
   isTrustedOwner = null,
   config = {},
   logger = null,
@@ -374,12 +406,20 @@ export function createRecentActivityRuntime({
     }
     return typeof authorizeModelWork === "function" ? authorizeModelWork(session) : null;
   };
+  // Cross-Session grants must be authorized from the live Host Session behind
+  // the stored ID, never from a caller's ID-only placeholder. The resolver is
+  // read fresh on every check; a missing service or Session fails closed for
+  // ID-derived checks while the actual Session passed by the Host still works.
+  const trustedSessionLookup = typeof resolveTrustedSession === "function"
+    ? resolveTrustedSession
+    : createTrustedSessionResolver(ctx);
   let core = null;
   try {
     core = createRecentActivityCore({
       db,
       workspaceId,
       allowSession,
+      resolveTrustedSession: trustedSessionLookup,
       isTrustedOwner: typeof isTrustedOwner === "function" ? isTrustedOwner : null,
       config,
       logger,
@@ -740,12 +780,14 @@ export const apply = (ctx, config) => {
       maxTokens: persisted.max_tokens
     };
     const isTrustedOwner = createRecentActivityOwnerCheck(ctx);
+    const resolveTrustedSession = createTrustedSessionResolver(ctx);
     const mount = createRecentActivityRuntime({
       ctx,
       db: store.db,
       workspaceId: activeWorkspaceId,
       authorizeModelWork,
       isEnabled: () => settings.getFeatureFlags().recentActivityEnabled !== false,
+      resolveTrustedSession,
       isTrustedOwner,
       config: coreConfig,
       logger: ctx.logger
@@ -758,6 +800,7 @@ export const apply = (ctx, config) => {
           db: store.db,
           workspaceId: activeWorkspaceId,
           allowSession: authorizeModelWork,
+          resolveTrustedSession,
           isTrustedOwner,
           config: coreConfig,
           logger: ctx.logger

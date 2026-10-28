@@ -2,7 +2,7 @@
 
 Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权的长期信息，在对话时检索相关记忆，并提供可视化的记忆、标签权重、实体关系和备份管理。此版本继承 Mneme 的插件 ID 与数据格式，方便已有用户升级。
 
-> `1.0.0` 已完成四插件联合验收，见 [联合验收报告](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/main/docs/verification/AMADEUS_V1_FOUR_PLUGIN_ACCEPTANCE.md)。尚未公开发行或部署到生产 DSH。
+> 稳定版 `1.0.0` 已完成四插件联合验收；当前 PR #5 的候选包为 `@amadeus/memory@1.0.1`，仍在 v1.1 联合验收，尚未公开发行或部署到生产 DSH。历史验收见 [联合验收报告](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/main/docs/verification/AMADEUS_V1_FOUR_PLUGIN_ACCEPTANCE.md)。
 
 ## 日常使用
 
@@ -16,7 +16,7 @@ The enhancement was merged into `main` through [Memory PR #1](https://github.com
 
 ## Package and installation
 
-- Source package: `dsh-mneme/`, package name `@modusensus/dsh-mneme`, version `1.0.0` (same plugin ID/data path as upstream 0.9.4).
+- Source package: `dsh-mneme/`. The current PR candidate is `@amadeus/memory@1.0.1`, retaining plugin ID `dsh-mneme` and the original data path. The merged stable release remains `@modusensus/dsh-mneme@1.0.0` until PR #5 passes acceptance.
 - The verified `1.0.0` archive is `dist/modusensus-dsh-mneme-1.0.0.tgz`; its SHA-256 and four-plugin acceptance are recorded in the [compatibility matrix](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/main/docs/FOUR_PLUGIN_COMPATIBILITY.md). The earlier RC archive and its acceptance boundaries remain in [`MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md`](docs/verification/MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md).
 - Native DSH Settings entry: **Amadeus 记忆 / Amadeus Memory** (overview, automatic memory, Embedding, Tag/entity preferences, link to the full Memory panel).
 - In an isolated DSH Desktop Profile, choose and verify a dedicated `memoryDir` **before enabling** the bundle, then use Plugin Manager **Install bundle** with this archive. Set `apiToken` only if the optional trusted intake API is needed. The source package can also be linked during development.

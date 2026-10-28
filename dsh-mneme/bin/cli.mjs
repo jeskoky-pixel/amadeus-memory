@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dsh-mneme CLI —— @modusensus/dsh-mneme 外部 API 命令行客户端
+ * dsh-mneme CLI —— @amadeus/memory 外部 API 命令行客户端
  *
  * 零依赖 ESM（Node >= 20，使用全局 fetch）。
  * 配置优先级：命令行 --url/--token > 环境变量 DSH_MNEME_URL / DSH_MNEME_TOKEN
@@ -44,7 +44,7 @@ function readPkgVersion() {
 
 const PKG_VERSION = readPkgVersion();
 
-const USAGE = `${CLI_NAME} —— DSH 记忆插件（@modusensus/dsh-mneme）外部 API 命令行客户端
+const USAGE = `${CLI_NAME} —— DSH 记忆插件（@amadeus/memory）外部 API 命令行客户端
 
 用法：
   ${CLI_NAME} <命令> [参数] [选项]

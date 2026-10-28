@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkWorkspaceAccess } from "../src/workspace-gate.js";
+import { createQQModelAccessGate } from "../src/qq-model-boundary.js";
 import {
   createRecentActivityCore,
   estimateRecentActivityTokens,
@@ -35,6 +36,131 @@ test.after(() => {
   for (const dir of tempDirs) {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
   }
+});
+
+test("trusted Host headers allow ordinary cross-Session sharing while a present QQ Host keeps QQ isolated", () => {
+  const db = openDatabase(tempDbPath());
+  const events = [userEvent(1, "ordinary DSH work"), assistantEvent(2, "completed"), turnEnd(3)];
+  const source = { ...hostSession("s1", events), header: { agentPreset: "standard" } };
+  const target = { ...hostSession("s2"), header: { agentPreset: "standard" } };
+  const qqSession = { ...hostSession("q1"), header: { agentPreset: "amadeus-qq" } };
+  const trusted = new Map([["s1", source], ["s2", target], ["q1", qqSession]]);
+  const ctx = { qq: { resolveTrustedSessionScene: id => id === "q1"
+    ? { platform: "qq", botId: "10001", kind: "group", peerId: "20001" }
+    : null } };
+  const allowSession = createQQModelAccessGate({
+    ctx, config: { sceneIsolationEnabled: false, sceneStrictQQ: false },
+    authorizeWorkspace: session => ({ allowed: trusted.has(session?.id), workspaceId: "ws-a" })
+  });
+  const core = createRecentActivityCore({
+    db, workspaceId: "ws-a", allowSession,
+    resolveTrustedSession: id => trusted.get(id) ?? null
+  });
+  assert.equal(core.recordTurnEnd(source, endOf(events, 3), { now: T0 }).ok, true);
+  assert.equal(core.setSourcePolicy(source, { mode: "shared", sharedSessionIds: ["s2"] }).ok, true);
+  assert.equal(core.readRecentActivity(target, { now: T0 + 1 }).count, 1);
+  assert.equal(core.setSourcePolicy(source, { mode: "shared", sharedSessionIds: ["q1"] }).ok, false,
+    "a QQ target cannot be authorized by an ID-only placeholder or an ordinary preset");
+  db.close();
+});
+
+test("missing, mismatched, throwing and revoked trusted identities fail closed", () => {
+  const db = openDatabase(tempDbPath());
+  const events = [userEvent(1, "trusted identity"), assistantEvent(2, "done"), turnEnd(3)];
+  const source = { ...hostSession("s1", events), header: { agentPreset: "standard" } };
+  const target = { ...hostSession("s2"), header: { agentPreset: "standard" } };
+  const trusted = new Map([["s1", source], ["s2", target]]);
+  const ctx = { qq: { resolveTrustedSessionScene: () => null } };
+  const allowSession = createQQModelAccessGate({
+    ctx, config: { sceneIsolationEnabled: false, sceneStrictQQ: false },
+    authorizeWorkspace: session => ({ allowed: trusted.has(session?.id), workspaceId: "ws-a" })
+  });
+  let mode = "ok";
+  const resolveTrustedSession = id => {
+    if (mode === "throw") throw new Error("host unavailable");
+    const hit = trusted.get(id);
+    if (mode === "mismatch") return trusted.get("s1") ?? null;
+    if (mode === "no-header") return hit ? { id: hit.id } : null;
+    if (mode === "revoked-source" && id === "s1") return null;
+    return hit ?? null;
+  };
+  const core = createRecentActivityCore({
+    db, workspaceId: "ws-a", allowSession, resolveTrustedSession
+  });
+  assert.equal(core.recordTurnEnd(source, endOf(events, 3), { now: T0 }).ok, true);
+  assert.equal(core.setSourcePolicy(source, { mode: "shared", sharedSessionIds: ["s2"] }).ok, true);
+  assert.equal(core.readRecentActivity(target, { now: T0 + 1 }).count, 1);
+
+  // The target's trusted object lacks the frozen header: a present QQ Host
+  // cannot verify ordinary provenance, so the read is denied rather than
+  // falling back to the caller's object.
+  mode = "no-header";
+  assert.equal(core.readRecentActivity(target, { now: T0 + 1 }).ok, false);
+  assert.equal(core.readRecentActivity(target, { now: T0 + 1 }).reason, "qq-preset-unverified");
+
+  // A lookup that swaps in another Session's object is a miss.
+  mode = "mismatch";
+  assert.equal(core.readRecentActivity(target, { now: T0 + 1 }).reason, "session-identity-unavailable");
+  mode = "throw";
+  assert.equal(core.readRecentActivity(target, { now: T0 + 1 }).reason, "session-identity-unavailable");
+
+  // Revoking the stored source hides its already-granted summary on the next read.
+  mode = "revoked-source";
+  const revoked = core.readRecentActivity(target, { now: T0 + 1 });
+  assert.equal(revoked.ok, true);
+  assert.equal(revoked.count, 0, "a source that no longer resolves must not be read");
+
+  mode = "ok";
+  assert.equal(
+    core.setSourcePolicy(source, { mode: "shared", sharedSessionIds: ["ghost"] }).ok,
+    false,
+    "an unknown target never becomes a shared grant"
+  );
+  db.close();
+});
+
+test("a stored QQ source cannot be shared out or re-authorized while QQ is unverified", () => {
+  const db = openDatabase(tempDbPath());
+  const qqEvents = [userEvent(1, "qq private topic"), assistantEvent(2, "qq reply"), turnEnd(3)];
+  const qqSource = { ...hostSession("q1", qqEvents), header: { agentPreset: "amadeus-qq" } };
+  const ordinarySource = {
+    ...hostSession("s1", [userEvent(1, "ordinary"), assistantEvent(2, "reply"), turnEnd(3)]),
+    header: { agentPreset: "standard" }
+  };
+  const target = { ...hostSession("s2"), header: { agentPreset: "standard" } };
+  const trusted = new Map([["q1", qqSource], ["s1", ordinarySource], ["s2", target]]);
+  const ctx = { qq: { resolveTrustedSessionScene: id => id === "q1"
+    ? { platform: "qq", botId: "10001", kind: "group", peerId: "20001" }
+    : null } };
+  const gate = createQQModelAccessGate({
+    ctx, config: { sceneIsolationEnabled: false, sceneStrictQQ: false },
+    authorizeWorkspace: session => ({ allowed: trusted.has(session?.id), workspaceId: "ws-a" })
+  });
+  // Synthetic setup writer: records the QQ source and its explicit grant without
+  // consulting the model gate. The reads below use the real gateway.
+  const setupCore = createRecentActivityCore({
+    db, workspaceId: "ws-a", allowSession: () => true,
+    resolveTrustedSession: id => trusted.get(id) ?? null
+  });
+  assert.equal(setupCore.recordTurnEnd(qqSource, endOf(qqEvents, 3), { now: T0 }).ok, true);
+  assert.equal(setupCore.setSourcePolicy(qqSource, {
+    mode: "shared", sharedSessionIds: ["s2"]
+  }).ok, true);
+
+  const core = createRecentActivityCore({
+    db, workspaceId: "ws-a", allowSession: gate,
+    resolveTrustedSession: id => trusted.get(id) ?? null
+  });
+  const hidden = core.readRecentActivity(target, { now: T0 + 1 });
+  assert.equal(hidden.ok, true);
+  assert.equal(hidden.count, 0, "an unverified QQ source is never visible to an ordinary Session");
+  assert.equal(core.setSourcePolicy(qqSource, {
+    mode: "shared", sharedSessionIds: ["s2"]
+  }).ok, false, "a QQ source cannot create a cross-Session grant in default mode");
+  assert.equal(core.setSourcePolicy(ordinarySource, {
+    mode: "shared", sharedSessionIds: ["q1"]
+  }).ok, false, "a QQ target remains isolated even when named by an ordinary source");
+  db.close();
 });
 
 function registryCtx(workspaces) {

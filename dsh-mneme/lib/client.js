@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: "@modusensus/dsh-mneme",
+  id: "@amadeus/memory",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
@@ -976,7 +976,7 @@ window.__ModuleLoader__.load({
         "memory.settings.extapi.copied": "已复制",
         "memory.settings.serve.title": "独立服务 dsh-mneme-serve",
         "memory.settings.serve.desc": "不启动 DSH 也能以 HTTP 方式访问同一份记忆库（无 LLM 数据面）。",
-        "memory.settings.serve.cmd": "npx -p @modusensus/dsh-mneme dsh-mneme-serve --memory-dir <记忆库目录> --port <端口>",
+        "memory.settings.serve.cmd": "npx -p @amadeus/memory dsh-mneme-serve --memory-dir <记忆库目录> --port <端口>",
         "memory.settings.serve.copy": "复制",
         "memory.settings.serve.copied": "已复制",
         "memory.settings.serve.hint": "与「外部访问 API」同源：同一套路由与鉴权，指向同一记忆库目录时，调用方应使用面板这张令牌（通常有效，非承诺）。两者默认抢同一端口，二选一或用 --port 错开。",
@@ -985,7 +985,7 @@ window.__ModuleLoader__.load({
         "memory.settings.mcp.snippet": "{ \"mcpServers\": { \"dsh-mneme\": { \"command\": \"dsh-mneme-mcp\", \"env\": { \"DSH_MNEME_TOKEN\": \"<外部访问 API 的 token>\" } } } }",
         "memory.settings.mcp.copy": "复制",
         "memory.settings.mcp.copied": "已复制",
-        "memory.settings.mcp.hint": "数据面走「外部访问 API」（默认 127.0.0.1:8790，Bearer），token 就是上面那张；可用 DSH_MNEME_URL / DSH_MNEME_TOKEN 环境变量或 ~/.dsh-mneme/cli.json 覆盖。command 需在 PATH 上（随 @modusensus/dsh-mneme 安装自带）。",
+        "memory.settings.mcp.hint": "数据面走「外部访问 API」（默认 127.0.0.1:8790，Bearer），token 就是上面那张；可用 DSH_MNEME_URL / DSH_MNEME_TOKEN 环境变量或 ~/.dsh-mneme/cli.json 覆盖。command 需在 PATH 上（随 @amadeus/memory 安装自带）。",
         "memory.settings.extapi.savedHint": "已保存，重启 DSH 后生效",
         "memory.settings.extapi.invalidPort": "端口需为 1-65535 的数字",
         "memory.tab.rejected_solution": "被否决方案",
@@ -1008,10 +1008,11 @@ window.__ModuleLoader__.load({
         "memory.features.group.dream": "它怎么用回来",
         "memory.features.group.scope": "不同会话之间",
         "memory.features.group.scene": "场景、近期与核心记忆",
+        "memory.features.sceneGuide": "QQ 记忆要同时打开下面两个开关：场景隔离记录可信场景归属，严格 QQ 模式才允许 QQ 会话使用长期记忆；只开一个都会拒绝 QQ 模型访问。升级旧库前先停写并整体复制旧 memoryDir 到一个新的隔离目录，确认新实例能读到数据再停用旧库；不要原地复用或让两个实例同时写同一份 memory.db。",
         "memory.features.sceneIsolationEnabled": "按 QQ 场景隔离记忆",
-        "memory.features.sceneIsolationEnabled.hint": "开：来自可信 Host 的场景记忆只在该场景可见；关：保持原有行为。需要 Host 提供可信场景身份",
+        "memory.features.sceneIsolationEnabled.hint": "开：记录并过滤可信 Host 的场景归属；只开这一项还不足以让 QQ 会话使用长期记忆，还需打开严格 QQ 场景模式",
         "memory.features.sceneStrictQQ": "严格 QQ 场景模式",
-        "memory.features.sceneStrictQQ.hint": "开：跨场景普通记忆、图谱和普通 HTTP 内容接口全部拒绝；autoDream 与 Sleep 暂停，可信 QQ Session 的自动摘要仍可运行。默认关",
+        "memory.features.sceneStrictQQ.hint": "开：跨场景普通记忆、图谱和普通 HTTP 内容接口全部拒绝；autoDream 与 Sleep 暂停，可信 QQ Session 的自动摘要仍可运行。必须与场景隔离同时打开。默认关",
         "memory.features.recentContextEnabled": "近期上下文（10 分钟）",
         "memory.features.recentContextEnabled.hint": "开：在内存中保留有限近期事件，仅在授权方向注入；不调用嵌入/模型，不写长期记忆",
         "memory.features.coreMemoryEnabled": "核心记忆（受保护）",
@@ -2185,7 +2186,7 @@ window.__ModuleLoader__.load({
         "memory.settings.extapi.copied": "Copied",
         "memory.settings.serve.title": "Standalone service: dsh-mneme-serve",
         "memory.settings.serve.desc": "Reach the same memory library over HTTP without starting DSH (no LLM data plane).",
-        "memory.settings.serve.cmd": "npx -p @modusensus/dsh-mneme dsh-mneme-serve --memory-dir <memory-dir> --port <port>",
+        "memory.settings.serve.cmd": "npx -p @amadeus/memory dsh-mneme-serve --memory-dir <memory-dir> --port <port>",
         "memory.settings.serve.copy": "Copy",
         "memory.settings.serve.copied": "Copied",
         "memory.settings.serve.hint": "Shares routes and auth with the external API: when pointing at the same memory directory, callers should use the panel's token (expected to work, not guaranteed). Both default to the same port — enable one or offset with --port.",
@@ -2194,7 +2195,7 @@ window.__ModuleLoader__.load({
         "memory.settings.mcp.snippet": "{ \"mcpServers\": { \"dsh-mneme\": { \"command\": \"dsh-mneme-mcp\", \"env\": { \"DSH_MNEME_TOKEN\": \"<token from External API above>\" } } } }",
         "memory.settings.mcp.copy": "Copy",
         "memory.settings.mcp.copied": "Copied",
-        "memory.settings.mcp.hint": "Data plane is the external API (default 127.0.0.1:8790, Bearer) — the token is the one above; override with DSH_MNEME_URL / DSH_MNEME_TOKEN env vars or ~/.dsh-mneme/cli.json. The command must be on PATH (installed with @modusensus/dsh-mneme).",
+        "memory.settings.mcp.hint": "Data plane is the external API (default 127.0.0.1:8790, Bearer) — the token is the one above; override with DSH_MNEME_URL / DSH_MNEME_TOKEN env vars or ~/.dsh-mneme/cli.json. The command must be on PATH (installed with @amadeus/memory).",
         "memory.settings.extapi.savedHint": "Saved. Takes effect after restarting DSH",
         "memory.settings.extapi.invalidPort": "Port must be a number between 1 and 65535",
         "memory.tab.rejected_solution": "Rejected solutions",
@@ -2216,10 +2217,11 @@ window.__ModuleLoader__.load({
         "memory.features.group.dream": "How it comes back",
         "memory.features.group.scope": "Between sessions",
         "memory.features.group.scene": "Scene, recent and core memories",
+        "memory.features.sceneGuide": "QQ memory requires both switches below: scene isolation records trusted scene provenance, and strict QQ mode is the only mode that lets a QQ Session use long-term memory. Either switch alone denies QQ model access. Before upgrading an old library, stop writes and copy the whole old memoryDir into a new isolated directory; verify the new instance reads it before retiring the old one. Do not reuse the old path in place or run two instances against one memory.db.",
         "memory.features.sceneIsolationEnabled": "Isolate memories by QQ scene",
-        "memory.features.sceneIsolationEnabled.hint": "On: memories from a trusted Host scene are visible only there. Off: legacy behavior. Requires a trusted Host scene identity",
+        "memory.features.sceneIsolationEnabled.hint": "On: record and filter trusted Host scene provenance. This alone is not enough for a QQ Session to use long-term memory; strict QQ scene mode must also be on",
         "memory.features.sceneStrictQQ": "Strict QQ scene mode",
-        "memory.features.sceneStrictQQ.hint": "On: cross-scene memory, graph and ordinary HTTP content routes are denied; autoDream and Sleep pause, while trusted QQ Session summarization may still run. Off by default",
+        "memory.features.sceneStrictQQ.hint": "On: cross-scene memory, graph and ordinary HTTP content routes are denied; autoDream and Sleep pause, while trusted QQ Session summarization may still run. Must be combined with scene isolation. Off by default",
         "memory.features.recentContextEnabled": "Recent context (10 min)",
         "memory.features.recentContextEnabled.hint": "On: keep a bounded in-memory recent-event buffer, injected only in the authorized direction. No embedding/LLM and no long-term write",
         "memory.features.coreMemoryEnabled": "Core memory (protected)",
@@ -2742,7 +2744,7 @@ window.__ModuleLoader__.load({
     // --dsw-font-* scale, so the page reads as a first-party view beside
     // Chat / Trajectory (flat layer-1 canvas, hairline column separators,
     // text-turns-brand-blue active states — no boxed panels).
-    const CSS_TAG = "@modusensus/dsh-mneme/drawer.css";
+    const CSS_TAG = "@amadeus/memory/drawer.css";
     const css = [
       // --- explorer shell: container queries let the toolbar adapt to the
       // better-sidebar workbench pane (~500px) as well as the 1240px sheet ---
@@ -2993,7 +2995,7 @@ window.__ModuleLoader__.load({
       ".mneme-topentry-native .mneme-topentry-label{white-space:nowrap}",
       "html[data-windows-titlebar] .mneme-topentry .mneme-topentry-rail{left:84px}",
       // 菜单让位只在「收起 + 入口确实挂在标题栏里」时生效；展开态完全不碰宿主变量。
-      "html[data-windows-titlebar]:has([data-sidebar-collapsed=true]):has([data-plugin-entry=\"@modusensus/dsh-mneme\"]){--dsh-windows-menu-start:120px}",
+      "html[data-windows-titlebar]:has([data-sidebar-collapsed=true]):has([data-plugin-entry=\"@amadeus/memory\"]){--dsh-windows-menu-start:120px}",
       // --- 功能开关：一行一开关，Claude 式安静排版 ---
       ".mneme-featgroup{flex:none;font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--mneme-fg-dim);margin:16px 0 2px}",
       ".mneme-featrow{display:flex;align-items:center;gap:14px;padding:11px 2px;border-bottom:1px solid var(--dsw-alias-border-l1)}",
@@ -3456,7 +3458,7 @@ window.__ModuleLoader__.load({
     ].join("\n");
     if (typeof document !== "undefined" && document.querySelector(`style[data-plugin-css="${CSS_TAG}"]`) === null) {
       const tag = document.createElement("style");
-      tag.dataset.plugin = "@modusensus/dsh-mneme";
+      tag.dataset.plugin = "@amadeus/memory";
       tag.dataset.pluginCss = CSS_TAG;
       tag.textContent = css;
       document.head.appendChild(tag);
@@ -4774,6 +4776,11 @@ window.__ModuleLoader__.load({
               // 只可能经 flagRow 渲染（test/inject-parent-gate.test.js 的门）。
               const renderGroup = (g) => h(react.Fragment, { key: g.key },
                 h("div", { className: "mneme-featgroup" }, t(`memory.features.${g.key}`)),
+                // First-run safety guidance for QQ operators: both Scene switches
+                // are required, and an old library must be migrated by an
+                // isolated copy rather than reused in place.
+                g.key === "group.scene" && h("div", { className: "mneme-set-hint" },
+                  t("memory.features.sceneGuide")),
                 g.items.map(flagRow),
                 // 子块按组尾追加。distillSub 紧跟在 core 组最后一行
                 // （distillRecords.enabled）之后，天数行才贴着它的总闸。
@@ -5168,7 +5175,7 @@ window.__ModuleLoader__.load({
     function memoryConfigForm(ctx) {
       const service = ctx && ctx.configForms;
       if (!service || typeof service.get !== "function") return null;
-      for (const ns of ["dsh-mneme", "@modusensus/dsh-mneme"]) {
+      for (const ns of ["dsh-mneme", "@amadeus/memory"]) {
         try {
           const form = service.get(ns);
           if (form) return form;
@@ -10991,7 +10998,7 @@ window.__ModuleLoader__.load({
             // 变动都重新落位并重读类名；宿主/皮肤异步改写类名也靠这条同步，否则
             // portal 按钮会停留在捕获时刻的旧类上（宽度/对齐失配）。
             created = document.createElement("div");
-            created.dataset.pluginEntry = "@modusensus/dsh-mneme";
+            created.dataset.pluginEntry = "@amadeus/memory";
             place(region);
             setHost(created);
             sync(region);

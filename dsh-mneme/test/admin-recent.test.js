@@ -74,6 +74,20 @@ function setup({
         return { items: state.sessionItems };
       }
     },
+    // Live Session Store used as the trusted identity source for cross-Session
+    // recent-activity authorization. It follows the mutable registry/session
+    // lists so moved-Session tests exercise the same Host path as production.
+    sessions: {
+      get(id) {
+        const known = new Set([
+          ...state.workspaces.flatMap((workspace) => workspace.sessionIds ?? []),
+          ...state.sessionItems.map((item) => item.sessionId)
+        ]);
+        return typeof id === "string" && known.has(id)
+          ? { id, header: { agentPreset: "standard" }, events: [], snapshotEvents() { return []; } }
+          : null;
+      }
+    },
     logger: { warn() {}, info() {} },
     webServer: {
       register(route) {
@@ -88,7 +102,8 @@ function setup({
       }
     },
     inject(_names, apply) { apply(ctx); },
-    effect(fn) { return fn(); }
+    effect(fn) { return fn(); },
+    on(_name, _fn) { return () => {}; }
   };
 
   const store = createStore(":memory:");
@@ -108,7 +123,7 @@ function setup({
       maxTokens: persisted.max_tokens
     };
     runtime = createRecentActivityRuntime({
-      ctx: { on() { return () => {}; } },
+      ctx,
       db: store.db,
       workspaceId: activeWorkspaceId,
       authorizeModelWork: guard.authorize,
@@ -122,6 +137,7 @@ function setup({
       db: store.db,
       workspaceId: activeWorkspaceId,
       allowSession: guard.authorize,
+      resolveTrustedSession: (sessionId) => ctx.sessions.get(sessionId),
       isTrustedOwner: () => false,
       config: coreConfig,
       now: () => T0

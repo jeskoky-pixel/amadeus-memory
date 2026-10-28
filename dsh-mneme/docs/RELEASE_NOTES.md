@@ -1,5 +1,13 @@
 # Amadeus Memory 发行说明
 
+## 1.0.1 发行身份与近期活动授权修复
+
+- npm 包名改为 `@amadeus/memory`，版本 `1.0.1`；插件 ID 仍为 `dsh-mneme`，默认数据路径仍为 `~/.dsh/memory`，SQLite schema、配置键与 feature flags 不迁移。上游署名、`LICENSE` 与 `UPSTREAM.md` 保持不变。
+- 修复 QQ Host 存在时近期活动的跨 Session 授权：受信源 Session 与共享目标不再以 `{ id }` 占位符送入 QQ 模型边界，而是先经进程内 `ctx.sessions` 的 live Session Store 解析出完整 Host 身份（含冻结的 `header.agentPreset`），再执行 Workspace 与 QQ 双重授权。解析缺失、ID 不匹配、抛错或动态撤销一律 fail closed，不回退到调用方提供的 ID 或 header。
+- 新增回归覆盖：普通 DSH Session 在 QQ Host 存在时仍可显式共享；QQ 源/目标在默认模式下不可见；缺失/不可信 header、错配身份、抛错与动态撤销均拒绝；运行时从 `ctx.sessions` 派生解析器。
+- 升级/回滚：先停旧实例，将整个旧 `memoryDir` 复制到隔离目录，再安装 `@amadeus/memory@1.0.1` 并指向副本；不要同时运行旧 `@modusensus/dsh-mneme` 与新包。详细步骤见 [INSTALL](INSTALL.md) 与 [备份与回滚](BACKUP_ROLLBACK.md)。
+- 已知限制：跨 Session 授权需要 Host 提供 live `ctx.sessions.get(id)`；历史/非 live Session 或旧 Host 无此服务时，按 ID 重建的授权 fail closed（普通单 Session 读写不受影响）。自动化测试不替代真实 Desktop/QQ Profile 验收。
+
 ## 1.0.0 版本收口
 
 - 沿用 `@modusensus/dsh-mneme` 包名、`dsh-mneme` 插件 ID 与现有数据库升级路径；本次只将通过验收的 RC 收口为正式版本号，不新增记忆能力。

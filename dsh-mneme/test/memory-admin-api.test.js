@@ -119,7 +119,7 @@ test("overview reports truthful bounded status without secrets or memory bodies"
     const data = out.json.data;
     assert.equal(data.memories.active, 1);
     assert.equal(data.memories.total, 1);
-    assert.equal(data.package.name, "@modusensus/dsh-mneme");
+    assert.equal(data.package.name, "@amadeus/memory");
     assert.equal(data.package.edition, "enhanced");
     assert.equal(data.runtime.auto_dream, true);
     assert.equal(data.semantic.index.embedded, 3);

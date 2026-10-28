@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * dsh-mneme-mcp —— @modusensus/dsh-mneme stdio MCP server (v1, issue #181)
+ * dsh-mneme-mcp —— @amadeus/memory stdio MCP server (v1, issue #181)
  *
  * 零依赖 ESM（Node >= 20，全局 fetch）。任何 MCP 客户端（Claude Code / Cursor /
  * 任意支持 Model Context Protocol 的 host）以 stdio 挂载本进程，即可获得与 DSH

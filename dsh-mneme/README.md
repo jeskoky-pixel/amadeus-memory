@@ -2,13 +2,13 @@
 
 # dsh-mneme
 
-[![npm version](https://img.shields.io/npm/v/@modusensus/dsh-mneme?color=blue&label=npm)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
+[![npm version](https://img.shields.io/npm/v/@amadeus/memory?color=blue&label=npm)](https://www.npmjs.com/package/@amadeus/memory)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Awesome](https://awesome-dsh-plugin.com/badge.svg)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 [![tests](https://img.shields.io/badge/tests-695%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
 [![CI](https://img.shields.io/github/actions/workflow/status/slow-stack/mneme/ci.yml)](https://github.com/slow-stack/mneme/actions)
 [![node](https://img.shields.io/badge/node-22%2B-blue)](https://nodejs.org)
-[![npm downloads](https://img.shields.io/npm/d18m/@modusensus/dsh-mneme.svg?color=blue&label=downloads)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
+[![npm downloads](https://img.shields.io/npm/d18m/@amadeus/memory.svg?color=blue&label=downloads)](https://www.npmjs.com/package/@amadeus/memory)
 [![coverage](https://img.shields.io/codecov/c/github/slow-stack/mneme/main)](https://codecov.io/gh/slow-stack/mneme)
 
 > 给 DeepSeek Harness 的跨会话记忆插件：让 Agent 记住你、记住项目、自动整理记忆。**Mneme**（Μνήμη）——希腊记忆女神 Mnemosyne 之名，掌管记忆与梦境，正如 autoDream 在后台巩固记忆。
@@ -25,7 +25,7 @@
 
 ```bash
 # 30 秒上手
-dsh plugin --profile web add @modusensus/dsh-mneme
+dsh plugin --profile web add @amadeus/memory
 dsh web
 ```
 
@@ -222,9 +222,10 @@ Amadeus 分支在实体层之上增加三块**默认不影响旧行为**的能�
 配置键、API、迁移/回滚与合成基准见
 [Amadeus 记忆增强文档](docs/AMADEUS_MEMORY_ENHANCER.md)。
 
-### Amadeus Memory 产品化（1.0.0）
+### Amadeus Memory 产品化（1.0.1）
 
-- **发行身份**：同包名 `@modusensus/dsh-mneme`、同插件 ID `dsh-mneme` 的增强版本，升级继承原 `memoryDir`、配置、Embedding 与 SQLite；不是第二个 Memory 包，不能与上游同时启用。上游/许可见 `UPSTREAM.md` 与 `LICENSE`。
+- **发行身份**：npm 包名 `@amadeus/memory@1.0.1`，插件 ID 仍为 `dsh-mneme`，默认数据路径仍为 `~/.dsh/memory`。升级继承原 `memoryDir`、配置、Embedding 与 SQLite；旧 `@modusensus/dsh-mneme` 与新包不能同时启用。上游署名/许可见 `UPSTREAM.md` 与 `LICENSE`。升级与回滚见 [INSTALL](docs/INSTALL.md) 和 [备份回滚](docs/BACKUP_ROLLBACK.md)。
+- **QQ 首次运行**：`sceneIsolationEnabled` 记录可信场景归属，`sceneStrictQQ` 才允许 QQ 会话使用长期记忆；两项必须同时开启，只开一个会 fail closed。旧库迁移用整目录隔离副本，确认新实例后再停旧库；不要原地复用或双实例同写。
 - **系统设置入口**：DSH 设置左侧 **Amadeus 记忆 / Amadeus Memory**，提供运行概览、记忆搜索/新建/编辑/归档/删除、安全备份/恢复、自动记忆/autoDream/Sleep、注入参数、Embedding 状态与配置、Tag/实体偏好、打开原完整面板。
 - **配置权威**：结构参数走 DSH Config Forms（与 Plugin Manager 同源）；运行时开关与原面板共用既有 feature flags；偏好权重复用既有表；Embedding 密钥不回传浏览器。
 - **动态数据**：`/api/amadeus-memory/admin/*` 使用 same-origin + DSH Connection owner + 写请求 marker；记忆正文只返回给已认证 owner 的列表/编辑器，不写日志或备份元数据，不返回明文 Embedding 密钥。
