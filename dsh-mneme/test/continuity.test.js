@@ -271,8 +271,8 @@ test("#249 N3：门控不调模型（静态锁）与挂载点的父开关在前"
   // 挂载点（`src/index.js`）是本功能唯一的生产入口：父开关必须在前、子项在后，否则「默认关」
   // 只剩 Config 里的默认值撑着，接线漏一次没人发现。
   const index = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(index, /if \(cfg\.autoInject && injectChildEnabled\(cfg, "continuityRescueEnabled"\)\) \{/);
-  assert.match(index, /disposers\.push\(createContinuityRescue\(ctx, store\)\)/);
+  assert.match(index, /if \(activeWorkspaceId && runtimeCfg\.autoInject && injectChildEnabled\(runtimeCfg, "continuityRescueEnabled"\)\) \{/);
+  assert.match(index, /disposers\.push\(createContinuityRescue\(ctx, store, authorizeModelWork\)\)/);
 });
 
 test("#249 N3：reject 放行且不消费边缘；缺 session 不抛", async () => {

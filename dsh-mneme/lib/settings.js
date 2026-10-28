@@ -2,6 +2,7 @@
 // rules the agent must follow), and custom slash commands. Stored in the same
 // SQLite database via dedicated tables, isolated from the memories store.
 import { randomUUID } from "node:crypto";
+import { RECENT_ACTIVITY_LIMITS } from "./recent-activity.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS user_settings (
@@ -185,6 +186,10 @@ const FEATURE_FLAG_BOOLEANS = [
   "recentContextTtlMs",
   "recentContextMaxEvents",
   "recentContextMaxTokens",
+  // Mneme-lite cross-Session recent activity: opt-in, default off. Mounts a
+  // separate core over the selected Workspace DB, one prompt block and one
+  // read-only model tool.
+  "recentActivityEnabled",
   "coreMemoryEnabled",
   // Issue #471：政策轴——作用域级可逆闸门（scopeState）。与上面两个键是两条不同的
   // 轴：那两个管「这条记忆属于谁」（事实轴），这两个管「这个作用域现在通不通」
@@ -253,6 +258,16 @@ const FEATURE_FLAG_BOOLEANS = [
   // 读上百行记忆；产物只回草稿，绝不写 user_settings。进 LIGHT_MODE_OFF（预设关）。
   "profileExtractEnabled"
 ];
+// Mneme-lite runtime retirement: these historical opt-ins stay in the config
+// schema and feature-flag whitelist for compatibility with existing databases,
+// but the Workspace-bound runtime never activates them again. Persisted stale
+// values are read as false so the panel/API cannot report a capability that is
+// no longer wired. No historical tables, columns or API modules are removed.
+export const RETIRED_FEATURE_FLAGS = Object.freeze([
+  "recentContextEnabled",
+  "trustedIntakeEnabled"
+]);
+
 // 整数开关的闭区间，与 config.js 里 z.natural().min().max() 对齐。
 const FEATURE_FLAG_INT_RANGES = {
   distillRateLimitIntervalMs: [0, 60000],
@@ -434,6 +449,83 @@ function validateFlag(key, value) {
   throw new TypeError(`unknown feature flag "${key}"`);
 }
 
+// --- persisted recent-activity configuration --------------------------------
+// This is a separate kv entry (`recent_activity`) in the selected Workspace's
+// settings store, not a feature flag. The four values are the exact bounds the
+// recent core supports; invalid input throws before any write so a caller can
+// validate a whole patch atomically. `recentActivityEnabled` remains a feature
+// flag because it gates mounting, while these values tune a mounted core.
+const RECENT_ACTIVITY_DEFAULTS = Object.freeze({
+  ttl_hours: RECENT_ACTIVITY_LIMITS.DEFAULT_TTL_HOURS,
+  auto_inject: true,
+  max_items: RECENT_ACTIVITY_LIMITS.DEFAULT_MAX_ITEMS,
+  max_tokens: RECENT_ACTIVITY_LIMITS.DEFAULT_MAX_TOKENS
+});
+const RECENT_ACTIVITY_TTL_HOURS = new Set(RECENT_ACTIVITY_LIMITS.TTL_HOURS);
+const RECENT_ACTIVITY_CONFIG_KEYS = new Set(Object.keys(RECENT_ACTIVITY_DEFAULTS));
+
+function validateRecentActivityConfigValue(key, value) {
+  if (key === "ttl_hours") {
+    if (!Number.isInteger(value) || !RECENT_ACTIVITY_TTL_HOURS.has(value)) {
+      throw new TypeError("recent activity ttl_hours must be one of 1, 6, 24, 72");
+    }
+    return value;
+  }
+  if (key === "auto_inject") {
+    if (typeof value !== "boolean") {
+      throw new TypeError("recent activity auto_inject must be a boolean");
+    }
+    return value;
+  }
+  if (key === "max_items") {
+    if (!Number.isInteger(value) || value < 1 || value > RECENT_ACTIVITY_LIMITS.MAX_ITEMS) {
+      throw new TypeError(`recent activity max_items must be an integer in [1, ${RECENT_ACTIVITY_LIMITS.MAX_ITEMS}]`);
+    }
+    return value;
+  }
+  if (key === "max_tokens") {
+    if (!Number.isInteger(value) ||
+      value < RECENT_ACTIVITY_LIMITS.MIN_MAX_TOKENS ||
+      value > RECENT_ACTIVITY_LIMITS.MAX_MAX_TOKENS) {
+      throw new TypeError(
+        `recent activity max_tokens must be an integer in [${RECENT_ACTIVITY_LIMITS.MIN_MAX_TOKENS}, ${RECENT_ACTIVITY_LIMITS.MAX_MAX_TOKENS}]`
+      );
+    }
+    return value;
+  }
+  throw new TypeError(`unknown recent activity setting "${key}"`);
+}
+
+function validateRecentActivityConfigPatch(patch) {
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new TypeError("recent activity settings patch must be a plain object");
+  }
+  const clean = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (!RECENT_ACTIVITY_CONFIG_KEYS.has(key)) {
+      throw new TypeError(`unknown recent activity setting "${key}"`);
+    }
+    clean[key] = validateRecentActivityConfigValue(key, value);
+  }
+  return clean;
+}
+
+// Read-side tolerance: an old/corrupt kv value never blocks settings access.
+// Unknown or out-of-range fields fall back to the documented default.
+function sanitizeRecentActivityConfig(raw) {
+  const out = { ...RECENT_ACTIVITY_DEFAULTS };
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const key of RECENT_ACTIVITY_CONFIG_KEYS) {
+    if (raw[key] === undefined) continue;
+    try {
+      out[key] = validateRecentActivityConfigValue(key, raw[key]);
+    } catch {
+      // Keep the safe default for this field.
+    }
+  }
+  return out;
+}
+
 /** 清洗已存的 feature_flags 对象：只保留白名单键，类型/范围损坏的键丢弃。 */
 function sanitizeFlags(raw) {
   const out = {};
@@ -462,6 +554,11 @@ function sanitizeFlags(raw) {
   }
   for (const [key, allowed] of Object.entries(FEATURE_FLAG_ENUMS)) {
     if (allowed.includes(raw[key])) out[key] = raw[key];
+  }
+  // Keep the historical keys readable but never effective. Only normalize keys
+  // that are actually present so an untouched settings store still reads as {}.
+  for (const key of RETIRED_FEATURE_FLAGS) {
+    if (Object.hasOwn(out, key)) out[key] = false;
   }
   return out;
 }
@@ -685,8 +782,36 @@ export function createSettings(db) {
       for (const [key, value] of Object.entries(patch)) {
         merged[key] = validateFlag(key, value);
       }
+      // A retired key remains accepted for wire compatibility, but an attempt to
+      // re-enable it stores false instead of leaving a misleading true behind.
+      for (const key of RETIRED_FEATURE_FLAGS) {
+        if (Object.hasOwn(merged, key)) merged[key] = false;
+      }
       setSetting("feature_flags", JSON.stringify(merged));
       return merged;
+    },
+
+    /**
+     * Persisted recent-activity tuning (kv "recent_activity"). Returns the
+     * documented defaults when unset; a corrupt value degrades per field rather
+     * than throwing. The write path validates every supplied field before it
+     * touches the kv entry, so an invalid patch leaves the previous config
+     * unchanged.
+     */
+    getRecentActivityConfig() {
+      const raw = getSetting("recent_activity");
+      if (!raw) return { ...RECENT_ACTIVITY_DEFAULTS };
+      try {
+        return sanitizeRecentActivityConfig(JSON.parse(raw));
+      } catch {
+        return { ...RECENT_ACTIVITY_DEFAULTS };
+      }
+    },
+    setRecentActivityConfig(patch) {
+      const incoming = validateRecentActivityConfigPatch(patch);
+      const next = { ...this.getRecentActivityConfig(), ...incoming };
+      setSetting("recent_activity", JSON.stringify(next));
+      return next;
     }
   };
 }

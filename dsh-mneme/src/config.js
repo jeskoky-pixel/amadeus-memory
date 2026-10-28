@@ -547,8 +547,9 @@ export const Config = z.object({
   // bounded geometric product clamped to [0.6, 1.6] with a relevance floor.
   memoryPreferenceEnabled: z.boolean().default(false),
   // Amadeus memory enhancer — trusted own-experience intake (POST /intake).
-  // Off by default: this is a write surface for Life and requires an explicit
-  // scope + trusted provenance metadata. It reuses the normal save/dedupe path.
+  // Retired in the Workspace-bound Mneme-lite runtime: the key and its API
+  // modules remain for compatibility with existing configs and data, but the
+  // runtime forces the effective value false. It is never a live write surface.
   trustedIntakeEnabled: z.boolean().default(false),
   // 图召回轴（issue #219）：查询文本命中实体名时，把该实体挂联的记忆并入
   // 检索融合池（与 BM25 同级的确认/回填信号）。默认关=检索行为与 #219 前
@@ -902,11 +903,21 @@ export const Config = z.object({
   // sharing remains disabled until the Bridge supplies a trusted contract.
   sceneIsolationEnabled: z.boolean().default(false),
   sceneStrictQQ: z.boolean().default(false),
-  // Recent Context: bounded in-memory events; never embedding/LLM/long-term.
+  // Recent Context: retired in the Workspace-bound Mneme-lite runtime. The
+  // historical in-memory buffer module and its keys stay for compatibility, but
+  // runtimeCfg forces this false so stale flags cannot re-activate it. The
+  // separate Workspace-bound recentActivityEnabled module is unaffected.
   recentContextEnabled: z.boolean().default(false),
   recentContextTtlMs: z.natural().min(60000).max(600000).default(10 * 60 * 1000),
   recentContextMaxEvents: z.natural().min(1).max(20).default(20),
   recentContextMaxTokens: z.natural().min(100).max(500).default(500),
+  // Mneme-lite Recent Activity (cross-Session): opt-in only. Mounts a separate
+  // core over the selected Workspace's isolated DB plus a trusted turn/end
+  // listener, one prompt block and one read-only tool. It never feeds Hot
+  // Memory, Dream/Sleep, long-term memories or retrieval; when off (default)
+  // none of those surfaces exist and original behavior is byte-for-byte
+  // unchanged. Also a feature flag (settings.js) so the panel can flip it.
+  recentActivityEnabled: z.boolean().default(false),
   // Protected core memories; creation is restricted to a trusted admin-private
   // scene (or authenticated owner API), never a model-supplied privilege.
   coreMemoryEnabled: z.boolean().default(false),
@@ -1049,6 +1060,10 @@ const LIGHT_MODE_OFF = [
   // 是「小模型 / 小上下文 / 少常驻路径」，这与一个每事件都过一遍的监听器相冲突。
   // 默认关，这里只是轻量预设再确认一次；用户显式勾选仍然赢（合并顺序同上面两条）。
   "actionRunEnabled",
+  // Mneme-lite 跨会话近期活动：同样挂 session/event 热路径，并额外增加一段常驻
+  // 注入文本；与轻量档「少常驻路径、少上下文」的取向相反。默认关，轻量预设再确认
+  // 一次；用户显式勾选仍然赢（合并顺序同上面几条）。
+  "recentActivityEnabled",
   // #497：轻量档不开画像提取——一次调用要读上百行记忆再生成一段画像，与低资源档
   // 互斥（同 preInjectGate.enabled 的定性）。默认关，这里只是预设再确认一次；
   // 用户显式勾选仍然赢（合并顺序同 continuityRescueEnabled）。

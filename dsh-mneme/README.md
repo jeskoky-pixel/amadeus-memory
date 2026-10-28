@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/@modusensus/dsh-mneme?color=blue&label=npm)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Awesome](https://awesome-dsh-plugin.com/badge.svg)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
-[![tests](https://img.shields.io/badge/tests-540%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
+[![tests](https://img.shields.io/badge/tests-695%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/3)
 [![CI](https://img.shields.io/github/actions/workflow/status/slow-stack/mneme/ci.yml)](https://github.com/slow-stack/mneme/actions)
 [![node](https://img.shields.io/badge/node-22%2B-blue)](https://nodejs.org)
 [![npm downloads](https://img.shields.io/npm/d18m/@modusensus/dsh-mneme.svg?color=blue&label=downloads)](https://www.npmjs.com/package/@modusensus/dsh-mneme)
@@ -49,7 +49,7 @@ dsh web
   - 逐 type 记录 `committed / failed / pending` 回执，健康端点区分 `ok / degraded / unknown`
   - 状态写失败不静默：同步失败落日志并留债务，重启自动收敛
 
-### 模型工具（默认注册 13 个；全数 15 个，`memory_core_save` / `memory_organize` 各自 opt-in）
+### 模型工具（默认注册 13 个；全数 16 个，`memory_core_save` / `memory_organize` / `memory_recent_activity` 各自 opt-in）
 
 启用 `strictScope` 时，库级的 `memory_preference_get` 和 `memory_identity_lookup`
 不注册，以免跨会话暴露未标注 scope 的实体别名与全局偏好。
@@ -72,6 +72,7 @@ dsh web
 | `memory_register_document` | 登记 agent 产长文档的指针行（#230：摘要 + `doc_path` + evidence 落 `document` 类型；正文留在磁盘、由 agent 自管，注册口唯一，旁路写入被拒） |
 | `memory_organize` | 主动整理（#231，**要 `organizeEnabled` 打开才注册**）：`mode=dryRun` 先出比对报告（每条候选 `exact` / `near` / `new` + 命中行，**不写一行库**、只留审计回执），agent 判断后 `mode=apply` 引用那份报告的 `run_id` 落地。两种「不要它」要分清——**`discard`** = 这条候选不写，什么都不动（只进回执）；**`archive`** = 把报告标为被取代的那条**既有行**归档（可恢复，绝不物理删除）。没有比对过的候选写不进库，一份报告也只许落地一次 |
 | `memory_runtime` | 本地推理运行时的状态 / 供给 / 校验（v0.7.32，自管运行时三档取件） |
+| `memory_recent_activity` | 查询当前选定工作区内、按来源 Session 权限授权的近期活动摘要；只读，启用 `recentActivityEnabled` 后注册，不返回原始聊天记录。 |
 
 ### 工作流（M.O.，v0.9 beta）
 
@@ -699,7 +700,7 @@ src/
 ├── service.js        # 领域逻辑（去重合并、注入筛选、写入钩子、scope 加权/硬过滤、冲突队列）
 ├── scope.js          # 作用域解析（agentPreset + workspace registry 反查，issue #17）
 ├── config.js         # schemastery 配置 schema
-├── tools.js          # 13 个默认模型工具（defineTool；memory_core_save 需 coreMemoryEnabled，memory_organize 需 organizeEnabled）
+├── tools.js          # 13 个默认模型工具（defineTool；memory_core_save、memory_organize、memory_recent_activity 各需对应功能开关）
 ├── user-settings.js  # 「用户设置」注入块（人格 → 画像 → 规则）的唯一渲染处，注入与面板预览共用
 ├── profile-extract.js # 从活跃记忆提取「助手眼中的用户」画像草稿（只出草稿，不写 user_settings）
 ├── organize.js       # agent 主动整理：dryRun 比对报告 → agent 判断 → apply 落库（筛除=归档不删，留 dream_runs 回执）
@@ -718,7 +719,7 @@ src/
 ├── api.js            # HTTP 路由（Web 面板数据通道，含 /conflicts 冲突队列）
 └── index.js          # 插件接线
 lib/                  # src 的同步分发产物（npm run sync，prepack 钩子在发布时自动跑；一致性由 scripts/check-sync.js 在 CI 与 release.yml 校验——它只查不同步；唯一手写例外 lib/client.js——Web 面板 bundle，sync 不覆盖）
-test/                 # 540 个测试（审计与三轴线压测不变量；src↔lib 一致性由 scripts/check-sync.js 发布闸门校验）
+test/                 # 695 个测试（审计与三轴线压测不变量；src↔lib 一致性由 scripts/check-sync.js 发布闸门校验）
 scripts/              # e2e-dsh.js 端到端演示 · stress-dsh.js 三轴线压测 · sync-lib.js 同步 · check-sync.js 发布闸门 · benchmark-recall.js / benchmark-embed.js / benchmark-rerank.js 基准 · sync-test-badge.mjs 测试徽章 · build-runtime-manifest.mjs 运行时清单
 ```
 
@@ -727,7 +728,7 @@ scripts/              # e2e-dsh.js 端到端演示 · stress-dsh.js 三轴线压
 ```bash
 cd dsh-mneme
 npm install        # 安装 peer 依赖（以 devDependencies 形式，用于本地测试）
-npm test           # 运行 540 个测试
+npm test           # 运行 695 个测试
 npm run test:all              # full suite; current Windows result is not green
 npm run test:upstream-release # upstream release-only suite; expected non-green
 npm run test:compat-windows   # Windows symlink/spawn capability probe

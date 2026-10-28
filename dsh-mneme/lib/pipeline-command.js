@@ -228,12 +228,33 @@ function describeStatus(status, language) {
 }
 
 /**
+ * 未授权会话的回执。文案留在本模块，而不是 STR：`src/lang.js` 是既有命令文案
+ * 的共享表，但这里只需要一条 fail-closed 回执，不必为一个新表面扩散改动。
+ */
+const MO_RUN_DENIED = Object.freeze({
+  zh: "无权使用 /mo-run：当前会话不属于这个 Workspace，命令未执行。",
+  en: "/mo-run is not available: this session is not authorized for this Workspace; nothing was executed."
+});
+
+/**
  * 造命令的 handler。
  *
  * handler 的返回值走 DSH 的 CommandResult 契约：**只作 UI 回执，不会进模型上下文**。
  * 这个功能的目的是记账，不是给模型派活，所以不需要 `agent.followup`。
  */
-export function createMoRunHandler({ recorder, language = () => "zh" } = {}) {
+export function createMoRunHandler({ recorder, language = () => "zh", authorizeModelWork = null } = {}) {
+  const authorize = typeof authorizeModelWork === "function" ? authorizeModelWork : null;
+
+  function sessionAllowed(invocation) {
+    if (!authorize) return true;
+    try {
+      // The Session is the trusted invocation subject, never parsed command text.
+      return authorize(invocation?.agent?.session)?.allowed === true;
+    } catch {
+      return false;
+    }
+  }
+
   return (invocation) => {
     const lang = language();
     try {
@@ -242,6 +263,11 @@ export function createMoRunHandler({ recorder, language = () => "zh" } = {}) {
 
       if (parsed.action === "help") {
         return { kind: "success", text: STR.moRunUsage[lang] };
+      }
+      // Non-help actions may open/stop/confirm/read recorder state. Deny before
+      // the recorder sees the Session at all.
+      if (!sessionAllowed(invocation)) {
+        return { kind: "error", text: MO_RUN_DENIED[lang] ?? MO_RUN_DENIED.zh };
       }
       if (parsed.action === "start") {
         if (!parsed.pipelineId) return { kind: "error", text: STR.moRunUsage[lang] };
@@ -267,13 +293,13 @@ export function createMoRunHandler({ recorder, language = () => "zh" } = {}) {
  *
  * 返回 disposer（与仓库其它注册点一致）；没注册时返回 null。
  */
-export function registerMoRunCommand({ ctx, recorder, enabled, language = () => "zh" }) {
+export function registerMoRunCommand({ ctx, recorder, enabled, language = () => "zh", authorizeModelWork = null }) {
   if (enabled !== true) return null;
   if (typeof ctx?.commands?.register !== "function") return null;
   return ctx.commands.register({
     name: MO_RUN_COMMAND,
     description: STR.moRunDescription[language()],
     input: { hint: STR.moRunInputHint[language()] },
-    handler: createMoRunHandler({ recorder, language })
+    handler: createMoRunHandler({ recorder, language, authorizeModelWork })
   });
 }

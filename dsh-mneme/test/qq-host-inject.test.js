@@ -86,3 +86,26 @@ test('all packaged QQ presets keep the trusted Scene gate and suppress unscoped 
     }
   } finally { f.store.close(); resetSceneStateForTests(); }
 });
+
+test('custom QQ Preset needs a verified Host binding before memory injection', () => {
+  resetSceneStateForTests();
+  configureScene({ enabled: true, strictQQ: true });
+  const f = fixture();
+  try {
+    f.service.saveWithDedupe({ type: 'history', title: 'Legacy secret', content: 'Unscoped data', importance: 5 });
+    f.settings.setProfile('Private profile');
+    assert.equal(f.render('memory', 'custom-session', 'renamed-qq-preset'), '');
+    assert.equal(f.render('user-settings', 'custom-session', 'renamed-qq-preset'), '');
+
+    const scene = mintTrustedScene({ platform: 'qq', kind: 'group', id: '10001:20001', verified: true });
+    runWithTrustedScene(scene, () => f.service.saveWithDedupe({
+      type: 'history', title: 'Group memory', content: 'Allowed data', importance: 5
+    }));
+    f.setQQ({ resolveTrustedSessionScene: () => ({
+      platform: 'qq', kind: 'group', id: '10001:20001', verified: true
+    }) });
+    const text = f.render('memory', 'custom-session', 'renamed-qq-preset');
+    assert.match(text, /Group memory/);
+    assert.doesNotMatch(text, /Legacy secret/);
+  } finally { f.store.close(); resetSceneStateForTests(); }
+});

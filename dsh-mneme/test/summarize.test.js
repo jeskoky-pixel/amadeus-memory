@@ -10,6 +10,7 @@ import { createStore } from "../src/store.js";
 import { createService } from "../src/service.js";
 import { createSummarizer, parseSummaryJson, parsePeakSpec, isInPeakWindow, nextOffPeakAt } from "../src/summarize.js";
 import { createSettings } from "../src/settings.js";
+import { initializeWorkspaceDataDir, setWorkspaceBinding } from "../src/workspace-binding.js";
 
 // Issue #239 第 4 项：可注入的假时钟 + 定时器——错峰队列的测试必须能「推进时间」，
 // 真实 setTimeout 会让补跑路径要么测不到、要么拖慢测试。
@@ -1698,6 +1699,9 @@ function readTables(dbPath) {
 /** 装配 + 派发 turn/end + 拆掉装配（不给宿主留开着的手柄）。 */
 async function bootAndDistill(config, session) {
   const ctx = minimalHost();
+  ctx.provide("workspaceRegistry", {
+    list: () => [{ id: "ws-distill", title: "Distill test", sessionIds: [session.id] }]
+  });
   const fiber = ctx.plugin(mneme, config);
   await fiber;
   // ctx.parallel 会等所有监听器跑完；summarize.js 的监听器 return 了这次写入的
@@ -1707,9 +1711,19 @@ async function bootAndDistill(config, session) {
   await fiber.dispose();
 }
 
+function prepareDistillWorkspace(dir, sessionId) {
+  const registry = { workspaceRegistry: {
+    list: () => [{ id: "ws-distill", title: "Distill test", sessionIds: [sessionId] }]
+  } };
+  assert.equal(setWorkspaceBinding({ memoryDir: dir, workspaceId: "ws-distill", ctx: registry }).ok, true);
+  const isolated = initializeWorkspaceDataDir(dir);
+  assert.equal(isolated.ok, true);
+  return isolated.path;
+}
+
 test("distill records grow from the settings face all the way to disk", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mneme-distill-on-"));
-  const dbPath = join(dir, "memory.db");
+  const dbPath = join(prepareDistillWorkspace(dir, "s-distill-on"), "memory.db");
   try {
     // 第一环：用产品自己的设置面写 kv，等价于面板 PUT /api/dsh-mneme/features。
     const seed = createStore(dbPath);
@@ -1739,7 +1753,7 @@ test("distill records grow from the settings face all the way to disk", async ()
 
 test("the same assembly writes nothing when the flag was never set", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mneme-distill-off-"));
-  const dbPath = join(dir, "memory.db");
+  const dbPath = join(prepareDistillWorkspace(dir, "s-distill-off"), "memory.db");
   try {
     // 连 createStore 都不预先起：一个全新的库就是「从没碰过设置面」的真实形态。
     await bootAndDistill(

@@ -78,6 +78,11 @@ test("包 README 的「模型工具」表与 tools.js 注册表一致", () => {
   assert.ok(declared.length >= 10, `tools.js 的工具名解析失败（只看到 ${declared.length} 个）——先修这条守卫，别改表`);
   const optIn = [...toolsSrc.matchAll(/if \(config\?\.(\w+) !== true\) hiddenTools\.add\("([a-z_]+)"\)/g)]
     .map((m) => ({ key: m[1], tool: m[2] }));
+  // Recent activity is assembled only when its optional core exists, rather
+  // than being placed in the base array and hidden afterwards.
+  if (/if \(recentActivity && config\?\.recentActivityEnabled === true\)/.test(toolsSrc)) {
+    optIn.push({ key: "recentActivityEnabled", tool: "memory_recent_activity" });
+  }
   const defaultCount = declared.length - optIn.length;
 
   const heading = pkgReadme.match(/^### 模型工具（([^）]*)）$/m);

@@ -341,7 +341,7 @@ window.__ModuleLoader__.load({
         "memory.am.memory.content": "正文",
         "memory.am.memory.importance": "重要度（1–5）",
         "memory.am.memory.tags": "标签（英文逗号分隔）",
-        "memory.am.memory.tagsHint": "普通标签可手工编辑；事件标签只能由受信 intake 生成。",
+        "memory.am.memory.tagsHint": "普通标签可手工编辑；受保护的事件标签无法通过普通管理伪造。",
         "memory.am.memory.tagsPlaceholder": "项目, 工作",
         "memory.am.memory.type.preference": "偏好",
         "memory.am.memory.type.project": "项目",
@@ -381,6 +381,141 @@ window.__ModuleLoader__.load({
         "memory.am.recent.count": "缓冲事件数",
         "memory.am.recent.clear": "清空近期缓冲",
         "memory.am.recent.cleared": "近期缓冲已清空",
+        "memory.am.workspace.title": "工作区",
+        "memory.am.workspace.hint": "Amadeus Memory 同一时间只使用一个工作区。切换会立即停止旧工作区提供模型记忆；旧数据保留，重启或重载插件后新工作区才会生效。",
+        "memory.am.workspace.selectLabel": "选择工作区",
+        "memory.am.workspace.choose": "请选择一个工作区…",
+        "memory.am.workspace.none": "尚未选择工作区",
+        "memory.am.workspace.untitled": "未命名工作区",
+        "memory.am.workspace.sessions": "Session 数",
+        "memory.am.workspace.selected": "已选择",
+        "memory.am.workspace.active": "当前运行",
+        "memory.am.workspace.activeNone": "运行时尚未绑定工作区",
+        "memory.am.workspace.selectedUnknown": "已选择的工作区不在当前注册表中",
+        "memory.am.workspace.pendingBadge": "待重启",
+        "memory.am.workspace.pending": "选择已保存。重启或重载 Amadeus Memory 插件后，新工作区才会激活；当前运行时仍指向旧工作区，并会立即拒绝模型记忆操作。旧工作区数据未被删除或迁移。",
+        "memory.am.workspace.save": "保存选择",
+        "memory.am.workspace.saving": "保存中…",
+        "memory.am.workspace.cancel": "取消",
+        "memory.am.workspace.sameSelection": "已是当前选择，无需保存。",
+        "memory.am.workspace.invalidSelection": "所选工作区不在当前注册表中，请重新选择。",
+        "memory.am.workspace.registryUnavailable": "工作区注册表不可用，暂时无法切换或保存。",
+        "memory.am.workspace.registryEmpty": "当前工作区注册表为空，暂时没有可选择的项目。",
+        "memory.am.workspace.reason": "原因代码",
+        "memory.am.workspace.loadFailed": "读取工作区失败",
+        "memory.am.workspace.saveFailed": "保存工作区选择失败",
+        "memory.am.workspace.savedPending": "已保存；重启或重载插件后生效。",
+        "memory.am.workspace.savedNoChange": "选择未变化，无需重启。",
+        "memory.am.workspace.confirmTitle": "确认切换工作区？",
+        "memory.am.workspace.confirmTarget": "将选择“{title}”。",
+        "memory.am.workspace.confirmStop": "保存后，当前运行时会立即停止为旧工作区提供模型记忆。",
+        "memory.am.workspace.confirmRetained": "旧工作区的数据会保留，不会被删除、合并或迁移。",
+        "memory.am.workspace.confirmRestart": "必须重启或重载 Amadeus Memory 插件，新工作区才会生效；保存不会自动切换当前运行时。",
+        "memory.am.workspace.confirmAction": "确认切换",
+        "memory.am.recentActivity.title": "跨会话近期动态",
+        "memory.am.recentActivity.hint": "按 Workspace 隔离：Session 可选择是否参与，并决定近期摘要的共享范围。预览始终由服务器按目标 Session 的权限过滤。",
+        "memory.am.recentActivity.summaryTitle": "近期动态概览",
+        "memory.am.recentActivity.workspaceSelected": "已选择 Workspace",
+        "memory.am.recentActivity.workspaceActive": "运行中 Workspace",
+        "memory.am.recentActivity.workspaceNone": "尚未选择工作区",
+        "memory.am.recentActivity.enabled": "已启用",
+        "memory.am.recentActivity.disabled": "已停用",
+        "memory.am.recentActivity.configuredOn": "配置为启用",
+        "memory.am.recentActivity.configuredOff": "配置为停用",
+        "memory.am.recentActivity.pendingBadge": "待重启",
+        "memory.am.recentActivity.pending": "配置已保存，但当前运行时尚未切换；重启或重载 Amadeus Memory 插件后完全生效。",
+        "memory.am.recentActivity.participating": "参与 Session",
+        "memory.am.recentActivity.summaries": "摘要条数",
+        "memory.am.recentActivity.lastUpdated": "最后更新",
+        "memory.am.recentActivity.storage": "近似占用",
+        "memory.am.recentActivity.injectionBudget": "注入预算",
+        "memory.am.recentActivity.previewTokens": "估算注入 Token",
+        "memory.am.recentActivity.policyCount": "已保存策略",
+        "memory.am.recentActivity.sources": "来源分布",
+        "memory.am.recentActivity.never": "从未更新",
+        "memory.am.recentActivity.unknown": "未知",
+        "memory.am.recentActivity.sessionsTitle": "Session 参与与共享",
+        "memory.am.recentActivity.sessionsHint": "列表来自 owner API。可按标题或稳定 Session ID 过滤；点击一行编辑。",
+        "memory.am.recentActivity.searchLabel": "搜索 Session",
+        "memory.am.recentActivity.searchPlaceholder": "按标题或精确 Session ID 过滤",
+        "memory.am.recentActivity.sessionsEmpty": "当前 Workspace 没有可管理的 Session。",
+        "memory.am.recentActivity.searchEmpty": "没有匹配的 Session。",
+        "memory.am.recentActivity.sessionId": "稳定 ID",
+        "memory.am.recentActivity.lastActive": "最近活动",
+        "memory.am.recentActivity.participatingBadge": "参与中",
+        "memory.am.recentActivity.pausedBadge": "已暂停",
+        "memory.am.recentActivity.modeSelf": "仅自己",
+        "memory.am.recentActivity.modeOwner": "仅 Owner",
+        "memory.am.recentActivity.modeShared": "指定 Session",
+        "memory.am.recentActivity.modeOwnerGated": "（服务器确认绑定后生效）",
+        "memory.am.recentActivity.detailTitle": "Session 共享设置",
+        "memory.am.recentActivity.detailHint": "保存只提交此 Session 的精确策略；权限仍由服务器执行。",
+        "memory.am.recentActivity.participation": "参与跨会话近期动态",
+        "memory.am.recentActivity.participationHint": "关闭后，此 Session 不再写入或读取跨 Session 近期摘要。",
+        "memory.am.recentActivity.modeLabel": "共享模式",
+        "memory.am.recentActivity.modeSelfHint": "只保留给自己，不提供给其他 Session。",
+        "memory.am.recentActivity.modeOwnerHint": "仅在服务器确认可信 Owner 绑定时提供给 Owner 目标；否则安全降级。",
+        "memory.am.recentActivity.modeSharedHint": "只提供给下方勾选的 Session。",
+        "memory.am.recentActivity.ownerDegraded": "当前状态未声明可信 Owner 绑定。Owner 模式由服务器安全降级；界面不会把它显示为已生效。",
+        "memory.am.recentActivity.sharedLabel": "共享给（精确 Session ID）",
+        "memory.am.recentActivity.sharedHint": "仅勾选的其他 Session 可读取此 Session 的近期摘要；列表有上限。",
+        "memory.am.recentActivity.sharedEmpty": "没有其他可选 Session。",
+        "memory.am.recentActivity.sharedUnknown": "既有但当前列表不可用的 Session（保留精确 ID）",
+        "memory.am.recentActivity.sharedSelected": "已选 {count} 个 Session",
+        "memory.am.recentActivity.sharedLimit": "共享 Session 最多 32 个。",
+        "memory.am.recentActivity.savePolicy": "保存共享设置",
+        "memory.am.recentActivity.saving": "保存中…",
+        "memory.am.recentActivity.policySaved": "共享设置已保存，预览已刷新。",
+        "memory.am.recentActivity.policyInvalid": "请检查 Session 共享设置后再保存。",
+        "memory.am.recentActivity.policyModeInvalid": "请选择有效的共享模式。",
+        "memory.am.recentActivity.policySharedInvalid": "共享列表包含无效、重复或过多的 Session ID。",
+        "memory.am.recentActivity.selectSession": "选择一个 Session 以编辑。",
+        "memory.am.recentActivity.closeDetail": "收起设置",
+        "memory.am.recentActivity.previewTitle": "服务器权限预览",
+        "memory.am.recentActivity.previewHint": "预览以目标 Session 的权限在服务器过滤，仅返回安全摘要，不显示原始对话。",
+        "memory.am.recentActivity.previewTarget": "预览目标 Session",
+        "memory.am.recentActivity.previewChoose": "选择要预览的 Session…",
+        "memory.am.recentActivity.previewRefresh": "刷新预览",
+        "memory.am.recentActivity.previewEmpty": "此目标暂无可见的近期摘要。",
+        "memory.am.recentActivity.previewDenied": "服务器未授权此预览。",
+        "memory.am.recentActivity.previewTruncated": "结果已按条数或 Token 预算截断。",
+        "memory.am.recentActivity.previewCount": "条数",
+        "memory.am.recentActivity.previewEstimated": "估算 Token",
+        "memory.am.recentActivity.previewSource": "来源",
+        "memory.am.recentActivity.kindConversation": "对话摘要",
+        "memory.am.recentActivity.kindAgentAction": "代理操作摘要",
+        "memory.am.recentActivity.configTitle": "全局配置",
+        "memory.am.recentActivity.configHint": "这些开关只影响当前 Workspace 的近期动态；不会更改 Session 热记忆。",
+        "memory.am.recentActivity.featureEnabled": "启用跨会话近期动态",
+        "memory.am.recentActivity.ttlLabel": "保留时长",
+        "memory.am.recentActivity.ttl1": "1 小时",
+        "memory.am.recentActivity.ttl6": "6 小时",
+        "memory.am.recentActivity.ttl24": "24 小时",
+        "memory.am.recentActivity.ttl72": "72 小时",
+        "memory.am.recentActivity.autoInject": "自动注入近期动态",
+        "memory.am.recentActivity.autoInjectHint": "在授权方向自动注入服务器过滤后的近期摘要；不会注入原始对话。",
+        "memory.am.recentActivity.maxItems": "最多摘要条数（1–10）",
+        "memory.am.recentActivity.maxTokens": "Token 预算（100–800）",
+        "memory.am.recentActivity.validationEnabled": "请选择是否启用。",
+        "memory.am.recentActivity.validationTtl": "保留时长必须是 1、6、24 或 72 小时。",
+        "memory.am.recentActivity.validationAutoInject": "请选择是否自动注入。",
+        "memory.am.recentActivity.validationMaxItems": "摘要条数必须是 1–10 的整数。",
+        "memory.am.recentActivity.validationMaxTokens": "Token 预算必须是 100–800 的整数。",
+        "memory.am.recentActivity.saveConfig": "保存全局配置",
+        "memory.am.recentActivity.configSaved": "全局配置已保存。",
+        "memory.am.recentActivity.configPendingSaved": "全局配置已保存；重启或重载插件后完全生效。",
+        "memory.am.recentActivity.strategyTitle": "摘要策略（固定、确定性）",
+        "memory.am.recentActivity.strategy": "每个已完成的对话轮次结束后，服务器按固定规则确定性生成受长度约束的摘要；不调用模型自由生成，不返回原始对话。",
+        "memory.am.recentActivity.loadFailed": "读取跨会话近期动态失败",
+        "memory.am.recentActivity.saveFailed": "保存跨会话近期动态设置失败",
+        "memory.am.recentActivity.previewFailed": "读取预览失败",
+        "memory.am.recentActivity.backendError": "服务器返回错误；未显示可能包含路径或敏感信息的详情。",
+        "memory.am.recentActivity.reasonSourceDisabled": "目标 Session 已暂停参与",
+        "memory.am.recentActivity.reasonAccessDenied": "服务器拒绝访问此 Session",
+        "memory.am.recentActivity.reasonInvalidPolicy": "策略无效或不可读",
+        "memory.am.recentActivity.reasonMissingSession": "缺少目标 Session ID",
+        "memory.am.recentActivity.reasonUnavailable": "近期动态存储暂不可用",
+        "memory.am.recentActivity.reasonUnknown": "未识别的安全原因代码",
         "memory.am.graph.title": "场景知识图谱（只读）",
         "memory.am.graph.scope": "选择场景",
         "memory.am.graph.choose": "请选择场景",
@@ -444,7 +579,7 @@ window.__ModuleLoader__.load({
         "memory.am.tabs.status": "状态",
         "memory.am.tabs.settings": "设置",
         "memory.am.memoryView.longTerm": "长期记忆",
-        "memory.am.memoryView.recent": "近期上下文",
+        "memory.am.memoryView.recent": "跨会话近期动态",
         "memory.am.settings.general": "基础",
         "memory.am.settings.personalization": "个性化",
         "memory.personalization.profile": "用户画像",
@@ -1419,7 +1554,7 @@ window.__ModuleLoader__.load({
         "memory.am.memory.content": "Content",
         "memory.am.memory.importance": "Importance (1–5)",
         "memory.am.memory.tags": "Tags (comma-separated)",
-        "memory.am.memory.tagsHint": "Ordinary tags are editable; event tags can only be minted by trusted intake.",
+        "memory.am.memory.tagsHint": "Ordinary tags can be edited; protected event tags cannot be forged through ordinary management.",
         "memory.am.memory.tagsPlaceholder": "project, work",
         "memory.am.memory.type.preference": "Preference",
         "memory.am.memory.type.project": "Project",
@@ -1459,6 +1594,141 @@ window.__ModuleLoader__.load({
         "memory.am.recent.count": "Buffered events",
         "memory.am.recent.clear": "Clear recent buffer",
         "memory.am.recent.cleared": "Recent buffer cleared",
+        "memory.am.workspace.title": "Workspace",
+        "memory.am.workspace.hint": "Amadeus Memory uses exactly one Workspace at a time. Changing it immediately stops the old Workspace from serving model memory; its data is retained, and the new Workspace activates only after a plugin restart or reload.",
+        "memory.am.workspace.selectLabel": "Select Workspace",
+        "memory.am.workspace.choose": "Choose a Workspace…",
+        "memory.am.workspace.none": "No Workspace selected yet",
+        "memory.am.workspace.untitled": "Untitled Workspace",
+        "memory.am.workspace.sessions": "Sessions",
+        "memory.am.workspace.selected": "Selected",
+        "memory.am.workspace.active": "Active now",
+        "memory.am.workspace.activeNone": "No Workspace bound at runtime",
+        "memory.am.workspace.selectedUnknown": "The selected Workspace is not in the current Registry",
+        "memory.am.workspace.pendingBadge": "Restart pending",
+        "memory.am.workspace.pending": "Selection saved. Restart or reload the Amadeus Memory plugin to activate the new Workspace; the running runtime still points at the old Workspace and immediately denies model memory operations. The old data was not deleted or migrated.",
+        "memory.am.workspace.save": "Save selection",
+        "memory.am.workspace.saving": "Saving…",
+        "memory.am.workspace.cancel": "Cancel",
+        "memory.am.workspace.sameSelection": "This is already the selected Workspace; nothing to save.",
+        "memory.am.workspace.invalidSelection": "The selected Workspace is not in the current Registry. Choose again.",
+        "memory.am.workspace.registryUnavailable": "The Workspace Registry is unavailable, so selection and saving are disabled.",
+        "memory.am.workspace.registryEmpty": "The Workspace Registry is empty; there is nothing to select yet.",
+        "memory.am.workspace.reason": "Reason code",
+        "memory.am.workspace.loadFailed": "Failed to load Workspaces",
+        "memory.am.workspace.saveFailed": "Failed to save Workspace selection",
+        "memory.am.workspace.savedPending": "Saved; restart or reload the plugin to activate it.",
+        "memory.am.workspace.savedNoChange": "Selection unchanged; no restart needed.",
+        "memory.am.workspace.confirmTitle": "Change Workspace?",
+        "memory.am.workspace.confirmTarget": "You are selecting “{title}”.",
+        "memory.am.workspace.confirmStop": "After saving, the running runtime immediately stops serving model memory for the old Workspace.",
+        "memory.am.workspace.confirmRetained": "Data in the old Workspace is retained; it is not deleted, merged, or migrated.",
+        "memory.am.workspace.confirmRestart": "You must restart or reload the Amadeus Memory plugin before the new Workspace activates; saving does not switch the running runtime.",
+        "memory.am.workspace.confirmAction": "Confirm change",
+        "memory.am.recentActivity.title": "Cross-Session recent activity",
+        "memory.am.recentActivity.hint": "Workspace-isolated: each Session can opt in and choose how far its recent summaries travel. Every preview is filtered server-side for the target Session.",
+        "memory.am.recentActivity.summaryTitle": "Recent activity summary",
+        "memory.am.recentActivity.workspaceSelected": "Selected Workspace",
+        "memory.am.recentActivity.workspaceActive": "Active Workspace",
+        "memory.am.recentActivity.workspaceNone": "No Workspace selected yet",
+        "memory.am.recentActivity.enabled": "Enabled",
+        "memory.am.recentActivity.disabled": "Disabled",
+        "memory.am.recentActivity.configuredOn": "Configured on",
+        "memory.am.recentActivity.configuredOff": "Configured off",
+        "memory.am.recentActivity.pendingBadge": "Restart pending",
+        "memory.am.recentActivity.pending": "The configuration was saved, but the running runtime has not switched yet; restart or reload the Amadeus Memory plugin to apply it fully.",
+        "memory.am.recentActivity.participating": "Participating Sessions",
+        "memory.am.recentActivity.summaries": "Summaries",
+        "memory.am.recentActivity.lastUpdated": "Last update",
+        "memory.am.recentActivity.storage": "Approximate storage",
+        "memory.am.recentActivity.injectionBudget": "Injection budget",
+        "memory.am.recentActivity.previewTokens": "Estimated injection Tokens",
+        "memory.am.recentActivity.policyCount": "Saved policies",
+        "memory.am.recentActivity.sources": "Sources",
+        "memory.am.recentActivity.never": "Never updated",
+        "memory.am.recentActivity.unknown": "Unknown",
+        "memory.am.recentActivity.sessionsTitle": "Session participation and sharing",
+        "memory.am.recentActivity.sessionsHint": "The list comes from the owner API. Filter by title or stable Session ID, then click a row to edit.",
+        "memory.am.recentActivity.searchLabel": "Search Sessions",
+        "memory.am.recentActivity.searchPlaceholder": "Filter by title or exact Session ID",
+        "memory.am.recentActivity.sessionsEmpty": "This Workspace has no manageable Sessions.",
+        "memory.am.recentActivity.searchEmpty": "No matching Sessions.",
+        "memory.am.recentActivity.sessionId": "Stable ID",
+        "memory.am.recentActivity.lastActive": "Last active",
+        "memory.am.recentActivity.participatingBadge": "Participating",
+        "memory.am.recentActivity.pausedBadge": "Paused",
+        "memory.am.recentActivity.modeSelf": "Self only",
+        "memory.am.recentActivity.modeOwner": "Owner only",
+        "memory.am.recentActivity.modeShared": "Selected Sessions",
+        "memory.am.recentActivity.modeOwnerGated": "(active only after server-confirmed binding)",
+        "memory.am.recentActivity.detailTitle": "Session sharing settings",
+        "memory.am.recentActivity.detailHint": "Save submits only this Session's exact policy; the server still enforces permissions.",
+        "memory.am.recentActivity.participation": "Participate in cross-Session recent activity",
+        "memory.am.recentActivity.participationHint": "When off, this Session neither writes nor reads cross-Session recent summaries.",
+        "memory.am.recentActivity.modeLabel": "Sharing mode",
+        "memory.am.recentActivity.modeSelfHint": "Keep summaries for this Session only; never offer them to other Sessions.",
+        "memory.am.recentActivity.modeOwnerHint": "Offer to Owner targets only after the server confirms a trusted Owner binding; otherwise degrade safely.",
+        "memory.am.recentActivity.modeSharedHint": "Offer only to the Sessions checked below.",
+        "memory.am.recentActivity.ownerDegraded": "The current state does not declare a trusted Owner binding. Owner mode is safely degraded by the server; the UI does not present it as active.",
+        "memory.am.recentActivity.sharedLabel": "Share with (exact Session IDs)",
+        "memory.am.recentActivity.sharedHint": "Only the checked other Sessions may read this Session's recent summaries; the list is bounded.",
+        "memory.am.recentActivity.sharedEmpty": "No other Sessions are available.",
+        "memory.am.recentActivity.sharedUnknown": "Existing Session absent from the current list (exact ID retained)",
+        "memory.am.recentActivity.sharedSelected": "{count} Sessions selected",
+        "memory.am.recentActivity.sharedLimit": "At most 32 shared Sessions.",
+        "memory.am.recentActivity.savePolicy": "Save sharing settings",
+        "memory.am.recentActivity.saving": "Saving…",
+        "memory.am.recentActivity.policySaved": "Sharing settings saved; the preview was refreshed.",
+        "memory.am.recentActivity.policyInvalid": "Check the Session sharing settings before saving.",
+        "memory.am.recentActivity.policyModeInvalid": "Choose a valid sharing mode.",
+        "memory.am.recentActivity.policySharedInvalid": "The shared list contains invalid, duplicate, or too many Session IDs.",
+        "memory.am.recentActivity.selectSession": "Select a Session to edit.",
+        "memory.am.recentActivity.closeDetail": "Collapse settings",
+        "memory.am.recentActivity.previewTitle": "Server permission preview",
+        "memory.am.recentActivity.previewHint": "The preview is filtered server-side for the target Session and returns safe summaries only, never raw chat.",
+        "memory.am.recentActivity.previewTarget": "Preview target Session",
+        "memory.am.recentActivity.previewChoose": "Choose a Session to preview…",
+        "memory.am.recentActivity.previewRefresh": "Refresh preview",
+        "memory.am.recentActivity.previewEmpty": "No visible recent summaries for this target.",
+        "memory.am.recentActivity.previewDenied": "The server did not authorize this preview.",
+        "memory.am.recentActivity.previewTruncated": "Results were truncated by the item or Token budget.",
+        "memory.am.recentActivity.previewCount": "Items",
+        "memory.am.recentActivity.previewEstimated": "Estimated Tokens",
+        "memory.am.recentActivity.previewSource": "Source",
+        "memory.am.recentActivity.kindConversation": "Conversation summary",
+        "memory.am.recentActivity.kindAgentAction": "Agent action summary",
+        "memory.am.recentActivity.configTitle": "Global configuration",
+        "memory.am.recentActivity.configHint": "These switches affect recent activity in the current Workspace only; Session hot memory is unchanged.",
+        "memory.am.recentActivity.featureEnabled": "Enable cross-Session recent activity",
+        "memory.am.recentActivity.ttlLabel": "Retention",
+        "memory.am.recentActivity.ttl1": "1 hour",
+        "memory.am.recentActivity.ttl6": "6 hours",
+        "memory.am.recentActivity.ttl24": "24 hours",
+        "memory.am.recentActivity.ttl72": "72 hours",
+        "memory.am.recentActivity.autoInject": "Auto-inject recent activity",
+        "memory.am.recentActivity.autoInjectHint": "Inject server-filtered recent summaries in authorized directions; raw chat is never injected.",
+        "memory.am.recentActivity.maxItems": "Maximum summaries (1–10)",
+        "memory.am.recentActivity.maxTokens": "Token budget (100–800)",
+        "memory.am.recentActivity.validationEnabled": "Choose whether to enable it.",
+        "memory.am.recentActivity.validationTtl": "Retention must be 1, 6, 24 or 72 hours.",
+        "memory.am.recentActivity.validationAutoInject": "Choose whether to auto-inject.",
+        "memory.am.recentActivity.validationMaxItems": "Maximum summaries must be an integer from 1 to 10.",
+        "memory.am.recentActivity.validationMaxTokens": "Token budget must be an integer from 100 to 800.",
+        "memory.am.recentActivity.saveConfig": "Save global configuration",
+        "memory.am.recentActivity.configSaved": "Global configuration saved.",
+        "memory.am.recentActivity.configPendingSaved": "Global configuration saved; restart or reload the plugin to apply it fully.",
+        "memory.am.recentActivity.strategyTitle": "Summarization strategy (fixed, deterministic)",
+        "memory.am.recentActivity.strategy": "After each completed turn, the server deterministically derives a length-bounded summary with fixed rules; it never asks a model to freely generate one and never returns raw chat.",
+        "memory.am.recentActivity.loadFailed": "Failed to load cross-Session recent activity",
+        "memory.am.recentActivity.saveFailed": "Failed to save cross-Session recent activity settings",
+        "memory.am.recentActivity.previewFailed": "Failed to load the preview",
+        "memory.am.recentActivity.backendError": "The server returned an error; details that could contain paths or sensitive data were suppressed.",
+        "memory.am.recentActivity.reasonSourceDisabled": "The target Session is paused",
+        "memory.am.recentActivity.reasonAccessDenied": "The server denied access to this Session",
+        "memory.am.recentActivity.reasonInvalidPolicy": "The policy is invalid or unreadable",
+        "memory.am.recentActivity.reasonMissingSession": "The target Session ID is missing",
+        "memory.am.recentActivity.reasonUnavailable": "Recent-activity storage is currently unavailable",
+        "memory.am.recentActivity.reasonUnknown": "Unrecognized safe reason code",
         "memory.am.graph.title": "Scene knowledge graph (read-only)",
         "memory.am.graph.scope": "Select scene",
         "memory.am.graph.choose": "Choose a scene",
@@ -1522,7 +1792,7 @@ window.__ModuleLoader__.load({
         "memory.am.tabs.status": "Status",
         "memory.am.tabs.settings": "Settings",
         "memory.am.memoryView.longTerm": "Long-term",
-        "memory.am.memoryView.recent": "Recent",
+        "memory.am.memoryView.recent": "Cross-Session recent activity",
         "memory.am.settings.general": "General",
         "memory.am.settings.personalization": "Personalization",
         "memory.personalization.profile": "User profile",
@@ -4028,7 +4298,7 @@ window.__ModuleLoader__.load({
       // 自动沉淀（写提议到记忆库）、执行记账（/mo-run 开窗）。各自默认关，
       // 开了任何一个都不会顺带打开另一个——写能力必须由人一项一项点。
       { key: "group.mo", items: ["actionPipelineEnabled", "actionNudgeEnabled"] },
-      { key: "group.enhance", items: ["entityExtractionEnabled", "memoryPreferenceEnabled", "trustedIntakeEnabled", "codingRetrospect", "rerankEnabled", "resilientModelDownload", "searchSemanticDedup", "bm25SearchEnabled", "heatEnabled", "documentMemoryEnabled",
+      { key: "group.enhance", items: ["entityExtractionEnabled", "memoryPreferenceEnabled", "codingRetrospect", "rerankEnabled", "resilientModelDownload", "searchSemanticDedup", "bm25SearchEnabled", "heatEnabled", "documentMemoryEnabled",
         // 人格定义页（beta）：注入总闸。分组随 enhance（行为开关，非座位闸门）；
         // 人格内容在设置页「个性化」区的人格卡。
         // 严格寻址是同一条链上的第二个口径开关（只在总闸打开时起作用）。
@@ -4036,7 +4306,7 @@ window.__ModuleLoader__.load({
       { key: "group.dream", items: ["sleepModeEnabled"] },
       // v0.8.0 A4（issue #17）：作用域隔离组——标注总开关 + 严格硬过滤。
       { key: "group.scope", items: ["scopeEnabled", "strictScope"] },
-      { key: "group.scene", items: ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"] }
+      { key: "group.scene", items: ["sceneIsolationEnabled", "sceneStrictQQ", "coreMemoryEnabled"] }
     ];
     const FEATURE_ADVANCED_BOOLS = ["hybridInject", "selectiveInjectEnabled", "adaptiveThresholdEnabled", "reflectionUpdateEnabled", "reflectionFailureTracking", "conflictFreezeEnabled", "trustEpistemicWeighting"];
     // 字符串键（blur/Enter 提交，空串合法 = 跟随默认）：巩固模型与语义
@@ -4836,10 +5106,10 @@ window.__ModuleLoader__.load({
     ];
     const AM_FEATURE_KEYS = [
       "autoInject", "hotMemoryEnabled", "autoSummarize", "autoDream", "sleepModeEnabled",
-      "memoryPreferenceEnabled", "trustedIntakeEnabled", "entityExtractionEnabled", "rerankEnabled"
+      "memoryPreferenceEnabled", "entityExtractionEnabled", "rerankEnabled"
     ];
     const AM_SCENE_FEATURE_KEYS = [
-      "sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"
+      "sceneIsolationEnabled", "sceneStrictQQ", "coreMemoryEnabled"
     ];
     // Keep this list aligned with store.js TYPES minus document (document rows
     // must be minted by registerDocument, not by the ordinary editor).
@@ -5327,6 +5597,223 @@ window.__ModuleLoader__.load({
       // actually in the viewport and the AX tree.
       if (reactDom && typeof document !== "undefined") return reactDom.createPortal(tree, document.body);
       return tree;
+    }
+
+    // --- Mneme-lite Workspace selection -------------------------------------
+    // One owner control inside the existing Memory view. The list is always
+    // populated from the owner GET route; the native <select> submits an exact
+    // Registry ID and never treats a title as authorization. A change needs an
+    // explicit second step before POST because the old runtime stops serving
+    // model memory immediately and only a plugin restart activates the new one.
+    const WORKSPACE_REASON_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
+
+    function workspaceSafeReason(value) {
+      if (typeof value !== "string") return "";
+      const reason = value.trim();
+      return WORKSPACE_REASON_RE.test(reason) ? reason : "";
+    }
+
+    function workspaceList(data) {
+      if (!data || data.registry_available !== true) return [];
+      const rows = Array.isArray(data.workspaces) ? data.workspaces : [];
+      const seen = new Set();
+      const items = [];
+      for (const row of rows) {
+        if (!row || typeof row.id !== "string" || row.id.trim() === "" || seen.has(row.id)) continue;
+        seen.add(row.id);
+        const rawCount = Number(row.session_count);
+        items.push({
+          id: row.id,
+          title: typeof row.title === "string" && row.title.trim() !== "" ? row.title.trim() : "",
+          session_count: Number.isFinite(rawCount) && rawCount > 0 ? Math.trunc(rawCount) : 0
+        });
+      }
+      return items;
+    }
+
+    function workspaceCardModel(data, draftId) {
+      const available = !!data && data.registry_available === true;
+      const items = workspaceList(data);
+      const selectedId = data && typeof data.selected_workspace_id === "string" && data.selected_workspace_id !== ""
+        ? data.selected_workspace_id : null;
+      const activeId = data && typeof data.active_workspace_id === "string" && data.active_workspace_id !== ""
+        ? data.active_workspace_id : null;
+      const draft = typeof draftId === "string" ? draftId : "";
+      const selectedItem = items.find((item) => item.id === selectedId) || null;
+      const activeItem = items.find((item) => item.id === activeId) || null;
+      const draftItem = items.find((item) => item.id === draft) || null;
+      // A mismatch is pending even if the server did not flag it; the running
+      // runtime never moves automatically, so the card must not imply it did.
+      const mismatch = (selectedId || null) !== (activeId || null);
+      const pending = !!data && (data.pending_remount === true || data.restart_required === true || mismatch);
+      const valid = available && !!draftItem;
+      const same = valid && selectedId === draft;
+      const diagnostic = workspaceSafeReason(data && data.registry_error)
+        || workspaceSafeReason(data && data.binding_diagnostic);
+      return {
+        available,
+        loading: data == null,
+        items,
+        selectedId,
+        activeId,
+        selectedItem,
+        activeItem,
+        draftId: draft,
+        draftItem,
+        valid,
+        same,
+        pending,
+        canSave: available && valid && !same,
+        diagnostic
+      };
+    }
+
+    function AmadeusWorkspaceCard({ t }) {
+      const [data, setData] = useState(null);
+      const [draft, setDraft] = useState("");
+      const [confirming, setConfirming] = useState(false);
+      const [saving, setSaving] = useState(false);
+      const [notice, setNotice] = useState("");
+      const [error, setError] = useState("");
+      const [loading, setLoading] = useState(true);
+      const requestRef = useRef(0);
+      const view = workspaceCardModel(data, draft);
+      const labelFor = (item) => item
+        ? `${item.title || t("memory.am.workspace.untitled")} · ${t("memory.am.workspace.sessions")}: ${item.session_count}`
+        : "";
+
+      const load = useCallback(async () => {
+        const requestId = ++requestRef.current;
+        setLoading(true);
+        setError("");
+        try {
+          const next = await adminJson("/workspace");
+          if (requestRef.current !== requestId) return;
+          setData(next);
+          setDraft(next && typeof next.selected_workspace_id === "string" ? next.selected_workspace_id : "");
+        } catch (reason) {
+          if (requestRef.current !== requestId) return;
+          setError(`${t("memory.am.workspace.loadFailed")}: ${String(reason && reason.message ? reason.message : reason)}`);
+        } finally {
+          if (requestRef.current === requestId) setLoading(false);
+        }
+      }, [t]);
+
+      useEffect(() => { load(); }, [load]);
+
+      const askConfirm = () => {
+        if (!view.canSave || saving) return;
+        setNotice("");
+        setError("");
+        setConfirming(true);
+      };
+
+      const save = async () => {
+        if (!view.canSave || saving) return;
+        setSaving(true);
+        setError("");
+        try {
+          const posted = await adminJson("/workspace", {
+            method: "POST",
+            body: JSON.stringify({ workspace_id: view.draftId, confirm: true })
+          });
+          setData(posted);
+          setNotice(posted && posted.changed === true
+            ? t("memory.am.workspace.savedPending")
+            : t("memory.am.workspace.savedNoChange"));
+          setConfirming(false);
+          // Re-read the persisted state instead of trusting the POST echo: the
+          // active runtime deliberately stays on the old Workspace.
+          try {
+            const fresh = await adminJson("/workspace");
+            setData(fresh);
+            setDraft(fresh && typeof fresh.selected_workspace_id === "string" ? fresh.selected_workspace_id : "");
+          } catch (reason) {
+            setError(`${t("memory.am.workspace.loadFailed")}: ${String(reason && reason.message ? reason.message : reason)}`);
+          }
+        } catch (reason) {
+          setError(`${t("memory.am.workspace.saveFailed")}: ${String(reason && reason.message ? reason.message : reason)}`);
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      const selectedText = view.selectedItem ? labelFor(view.selectedItem)
+        : view.selectedId ? t("memory.am.workspace.selectedUnknown")
+          : "";
+      const activeText = view.activeItem ? labelFor(view.activeItem)
+        : view.activeId ? t("memory.am.workspace.selectedUnknown")
+          : t("memory.am.workspace.activeNone");
+      const unavailableReason = view.diagnostic
+        ? ` · ${t("memory.am.workspace.reason")}: ${view.diagnostic}` : "";
+
+      return h("div", { className: "mneme-set-card", role: "group", "aria-label": t("memory.am.workspace.title") },
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+          t("memory.am.workspace.title"),
+          view.pending && h("span", { className: "mneme-badge mneme-badge--pending", style: { marginLeft: 8 } },
+            t("memory.am.workspace.pendingBadge"))),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.workspace.hint")),
+        loading && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } }, t("memory.am.loading")),
+        !loading && data && h("div", null,
+          !view.available && h("div", { className: "mneme-set-hint", style: { marginTop: 8, color: "var(--mneme-danger)" } },
+            `${t("memory.am.workspace.registryUnavailable")}${unavailableReason}`),
+          view.available && view.items.length === 0 && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+            t("memory.am.workspace.registryEmpty")),
+          h("label", { style: { display: "block", marginTop: 10 } },
+            h("span", { className: "mneme-set-hint", style: { display: "block", marginBottom: 4 } },
+              t("memory.am.workspace.selectLabel")),
+            h("select", {
+              className: "mneme-set-input",
+              value: view.draftId,
+              disabled: !view.available || view.items.length === 0 || saving,
+              style: { marginBottom: 0 },
+              onChange: (event) => {
+                setDraft(event.target.value);
+                setConfirming(false);
+                setNotice("");
+                setError("");
+              }
+            },
+              h("option", { value: "" }, t("memory.am.workspace.choose")),
+              view.items.map((item) => h("option", { key: item.id, value: item.id },
+                labelFor(item) + (item.id === view.selectedId ? ` · ${t("memory.am.workspace.selected")}` : ""))))),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8, flexWrap: "wrap" } },
+            h("span", { className: "mneme-badge " + (view.selectedId ? "mneme-badge--scope" : "mneme-badge--default") },
+              view.selectedId ? t("memory.am.workspace.selected") : t("memory.am.workspace.none")),
+            selectedText && h("span", { className: "mneme-set-hint" }, selectedText)),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 4, gap: 8, flexWrap: "wrap" } },
+            h("span", { className: "mneme-badge mneme-badge--default" }, t("memory.am.workspace.active")),
+            h("span", { className: "mneme-set-hint" }, activeText)),
+          view.pending && h("div", { className: "mneme-pending", role: "status" },
+            h("span", { className: "mneme-pending-dot", "aria-hidden": "true" }),
+            h("span", null, t("memory.am.workspace.pending"))),
+          view.available && view.draftId !== "" && !view.valid && h("div", { className: "mneme-set-hint", style: { marginTop: 8, color: "var(--mneme-danger)" } },
+            t("memory.am.workspace.invalidSelection")),
+          view.same && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+            t("memory.am.workspace.sameSelection")),
+          notice && h("div", { className: "mneme-saved", style: { marginTop: 8 }, role: "status" }, notice),
+          error && h("div", { className: "mneme-set-hint", style: { marginTop: 8, color: "var(--mneme-danger)" }, role: "alert" }, error),
+          confirming
+            ? h("div", { className: "mneme-maintwarn", role: "group", "aria-label": t("memory.am.workspace.confirmTitle") },
+              h("div", { className: "mneme-maintwarnhead" }, t("memory.am.workspace.confirmTitle")),
+              h("div", { className: "mneme-set-hint", style: { marginTop: 6, color: "var(--dsw-alias-label-secondary)" } },
+                t("memory.am.workspace.confirmTarget").replace("{title}", labelFor(view.draftItem) || t("memory.am.workspace.untitled"))),
+              h("ul", { style: { margin: "8px 0 0 18px", padding: 0, fontSize: 12, lineHeight: 1.7, color: "var(--dsw-alias-label-secondary)" } },
+                h("li", null, t("memory.am.workspace.confirmStop")),
+                h("li", null, t("memory.am.workspace.confirmRetained")),
+                h("li", null, t("memory.am.workspace.confirmRestart"))),
+              h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+                h("button", { className: "mneme-btn mneme-btndangerconfirm", disabled: saving, onClick: save },
+                  saving ? t("memory.am.workspace.saving") : t("memory.am.workspace.confirmAction")),
+                h("button", { className: "mneme-btn", disabled: saving, onClick: () => setConfirming(false) },
+                  t("memory.am.workspace.cancel"))))
+            : h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8 } },
+              h("button", { className: "mneme-btn", disabled: !view.canSave || saving, onClick: askConfirm },
+                saving ? t("memory.am.workspace.saving") : t("memory.am.workspace.save")))),
+        !loading && error && !data && h("div", { className: "mneme-set-hint", style: { marginTop: 8, color: "var(--mneme-danger)" }, role: "alert" }, error),
+        !loading && h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8 } },
+          h("button", { className: "mneme-btn", disabled: loading || saving, onClick: load },
+            t("memory.am.refresh"))));
     }
 
     function AmadeusMemorySettings({ ctx, t, settingsOnly = false }) {
@@ -6380,22 +6867,26 @@ window.__ModuleLoader__.load({
           h("div", { className: "mneme-set-hint" }, t("memory.am.recent.hotHint")),
           h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
             `${t("memory.am.recent.hotState")}: ${features ? (flagOn("hotMemoryEnabled") ? t("memory.am.enabled") : t("memory.am.disabled")) : t("memory.am.loading")}`)),
-        h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } }, t("memory.am.recent.trustedTitle")),
-        h("div", { className: "mneme-set-card" },
-          h("div", { className: "mneme-set-hint" }, t("memory.am.recent.trustedHint")),
-          recentStatus ? h("div", null,
-            h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
-              `${recentStatus.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.ttl")}: ${(Number(recentStatus.ttl_ms) / 60000).toFixed(Number(recentStatus.ttl_ms) % 60000 ? 1 : 0)} · ${t("memory.am.recent.count")}: ${recentStatus.total_events}`),
-            (recentStatus.scenes || []).map((row) => h("div", { key: row.scene, className: "mneme-set-hint" }, `${row.scene}: ${row.count}`)),
-            h("button", { className: "mneme-btn", disabled: !!memBusy || !recentStatus.enabled, onClick: clearRecent },
-              memBusy === "recent" ? t("memory.am.loading") : t("memory.am.recent.clear")))
-            : h("div", { className: "mneme-set-hint" }, t("memory.am.loading"))));
+        recentActivityHasState(recentStatus)
+          ? h(AmadeusRecentActivityCard, { t })
+          : h("div", null,
+            h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } }, t("memory.am.recent.trustedTitle")),
+            h("div", { className: "mneme-set-card" },
+              h("div", { className: "mneme-set-hint" }, t("memory.am.recent.trustedHint")),
+              recentStatus ? h("div", null,
+                h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+                  `${recentStatus.enabled ? t("memory.am.recent.enabled") : t("memory.am.recent.disabled")} · ${t("memory.am.recent.ttl")}: ${(Number(recentStatus.ttl_ms) / 60000).toFixed(Number(recentStatus.ttl_ms) % 60000 ? 1 : 0)} · ${t("memory.am.recent.count")}: ${recentStatus.total_events}`),
+                (recentStatus.scenes || []).map((row) => h("div", { key: row.scene, className: "mneme-set-hint" }, `${row.scene}: ${row.count}`)),
+                h("button", { className: "mneme-btn", disabled: !!memBusy || !recentStatus.enabled, onClick: clearRecent },
+                  memBusy === "recent" ? t("memory.am.loading") : t("memory.am.recent.clear")))
+                : h("div", { className: "mneme-set-hint" }, t("memory.am.loading")))));
       return h("div", { className: "mneme-set" }, h("div", { className: "mneme-set-inner" },
         h("div", { className: "mneme-set-title" }, t("memory.am.title")),
         h("div", { className: "mneme-set-desc" }, t("memory.am.subtitle")),
         error && h("div", { className: "mneme-set-hint", style: { color: "var(--mneme-danger)", marginBottom: 10 } }, error),
         message && h("div", { className: "mneme-saved", style: { marginBottom: 10 } }, message),
         renderTabs(topTabs, panelTab, setPanelTab, t("memory.am.tabs.memory")),
+        !settingsOnly && panelTab === "memory" && h(AmadeusWorkspaceCard, { t }),
         !settingsOnly && panelTab === "memory" && renderTabs(memoryTabs, memoryView, setMemoryView, t("memory.am.tabs.memory")),
         !settingsOnly && h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, gap: 8 } },
           h("button", { className: "mneme-btn", onClick: () => setExplorerOpen(true) }, t("memory.explorer.title"))),
@@ -11775,10 +12266,886 @@ window.__ModuleLoader__.load({
       }, "dsh-mneme: action-pipeline gate");
     }
 
+    // --- Mneme-lite cross-Session recent activity ---------------------------
+    // Owner management for the additive recent-activity core. Every read/write
+    // goes through the same-origin owner `adminJson` helper; the client never
+    // simulates permissions, never receives raw transcripts, and never treats a
+    // Session title as authorization. A policy always submits the exact stable
+    // Session ID from the server list.
+    const RECENT_ACTIVITY_MODES = new Set(["self", "owner", "shared"]);
+    const RECENT_ACTIVITY_TTL_HOURS = [1, 6, 24, 72];
+    const RECENT_ACTIVITY_MAX_SHARED = 32;
+    const RECENT_ACTIVITY_REASON_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/;
+    const RECENT_ACTIVITY_ERROR_RE = /^(?:HTTP \d{3}|[A-Za-z0-9][A-Za-z0-9._:-]{0,79})$/;
+
+    function recentActivitySafeReason(value) {
+      if (typeof value !== "string") return "";
+      const reason = value.trim();
+      return RECENT_ACTIVITY_REASON_RE.test(reason) ? reason : "";
+    }
+
+    function recentActivitySafeError(value) {
+      const text = String(value && value.message !== undefined ? value.message : value ?? "").trim();
+      return RECENT_ACTIVITY_ERROR_RE.test(text) ? text : "";
+    }
+
+    function recentActivityHasState(data) {
+      return !!data && typeof data === "object" && !Array.isArray(data) && (
+        Array.isArray(data.sessions)
+        || (data.config && typeof data.config === "object")
+        || (data.stats && typeof data.stats === "object")
+        || data.active_workspace_id !== undefined
+        || data.selected_workspace_id !== undefined
+        || data.configured_enabled !== undefined
+        || data.pending_restart !== undefined
+      );
+    }
+
+    function recentActivityStableId(value) {
+      return typeof value === "string" && value.trim() !== "" ? value : null;
+    }
+
+    function recentActivityCount(value, fallback = 0) {
+      if (value === null || value === undefined || value === "") return fallback;
+      const number = Number(value);
+      return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : fallback;
+    }
+
+    function recentActivityConfig(data) {
+      const raw = data && typeof data.config === "object" && data.config ? data.config : {};
+      const ttl = Number(raw.ttl_hours ?? raw.ttlHours);
+      const items = recentActivityCount(raw.max_items ?? raw.maxItems, 3);
+      const tokens = recentActivityCount(raw.max_tokens ?? raw.maxTokens, 300);
+      return {
+        ttl_hours: RECENT_ACTIVITY_TTL_HOURS.includes(ttl) ? ttl : 24,
+        auto_inject: raw.auto_inject === true || raw.autoInject === true,
+        max_items: Math.min(10, Math.max(1, items)),
+        max_tokens: Math.min(800, Math.max(100, tokens))
+      };
+    }
+
+    function recentActivityStats(data) {
+      const raw = data && typeof data.stats === "object" && data.stats ? data.stats : {};
+      const rows = Array.isArray(raw.source_counts) ? raw.source_counts
+        : Array.isArray(raw.sourceCounts) ? raw.sourceCounts : [];
+      const seen = new Set();
+      const sourceCounts = [];
+      for (const row of rows) {
+        const id = recentActivityStableId(row && (row.source_session_id ?? row.sourceSessionId));
+        if (!id || seen.has(id) || sourceCounts.length >= 500) continue;
+        seen.add(id);
+        sourceCounts.push({ sourceSessionId: id, count: recentActivityCount(row && row.count, 0) });
+      }
+      const last = raw.last_updated ?? raw.lastUpdated ?? raw.lastUpdatedAt;
+      return {
+        event_count: recentActivityCount(raw.event_count ?? raw.eventCount, 0),
+        source_counts: sourceCounts,
+        last_updated: last === null || last === undefined || last === "" ? null : last,
+        summary_bytes: recentActivityCount(raw.summary_bytes ?? raw.summaryBytes, 0),
+        policy_count: recentActivityCount(raw.policy_count ?? raw.policyCount, 0)
+      };
+    }
+
+    function recentActivitySessions(data) {
+      const rows = data && Array.isArray(data.sessions) ? data.sessions : [];
+      const seen = new Set();
+      const items = [];
+      for (const row of rows) {
+        const id = recentActivityStableId(row && row.id);
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const rawShared = Array.isArray(row.shared_session_ids) ? row.shared_session_ids
+          : Array.isArray(row.sharedSessionIds) ? row.sharedSessionIds : [];
+        const shared = [];
+        const sharedSeen = new Set();
+        for (const value of rawShared) {
+          if (typeof value !== "string" || value.trim() === "" || value === id || sharedSeen.has(value)) continue;
+          sharedSeen.add(value);
+          shared.push(value);
+        }
+        const mode = RECENT_ACTIVITY_MODES.has(row.mode) ? row.mode : "self";
+        items.push({
+          id,
+          title: typeof row.title === "string" ? row.title.trim() : "",
+          last_active_at: row.last_active_at ?? row.lastActiveAt ?? null,
+          enabled: row.enabled === true,
+          enabled_known: typeof row.enabled === "boolean",
+          mode,
+          mode_known: RECENT_ACTIVITY_MODES.has(row.mode),
+          shared_session_ids: shared
+        });
+      }
+      return items;
+    }
+
+    function recentActivityPendingRestart(data) {
+      if (!data || typeof data !== "object") return false;
+      if (data.pending_restart === true || data.pendingRestart === true) return true;
+      if (typeof data.pending_restart === "string" && data.pending_restart.trim() !== "") return true;
+      if (typeof data.enabled === "boolean" && typeof data.configured_enabled === "boolean"
+        && data.enabled !== data.configured_enabled) return true;
+      return false;
+    }
+
+    function recentActivityOwnerAvailable(data) {
+      if (!data || typeof data !== "object") return false;
+      return !!(
+        data.owner_binding_available === true
+        || data.ownerBindingAvailable === true
+        || data.owner_available === true
+        || data.trusted_owner_available === true
+        || data.trusted_owner === true
+        || (data.owner_binding && typeof data.owner_binding === "object" && data.owner_binding.available === true)
+      );
+    }
+
+    function recentActivitySummary(data) {
+      const sessions = recentActivitySessions(data);
+      const config = recentActivityConfig(data);
+      const stats = recentActivityStats(data);
+      return {
+        selected_workspace_id: recentActivityStableId(data && data.selected_workspace_id),
+        active_workspace_id: recentActivityStableId(data && data.active_workspace_id),
+        enabled: !!data && data.enabled === true,
+        configured_enabled: !!data && data.configured_enabled === true,
+        pending_restart: recentActivityPendingRestart(data),
+        owner_available: recentActivityOwnerAvailable(data),
+        config,
+        stats,
+        session_count: sessions.length,
+        participating_count: sessions.filter((session) => session.enabled).length
+      };
+    }
+
+    function recentActivityConfigDraft(data) {
+      const config = recentActivityConfig(data);
+      return {
+        enabled: !!data && data.enabled === true,
+        ttl_hours: config.ttl_hours,
+        auto_inject: config.auto_inject,
+        max_items: config.max_items,
+        max_tokens: config.max_tokens
+      };
+    }
+
+    function recentActivityValidateConfig(draft) {
+      const errors = {};
+      const enabled = draft && draft.enabled;
+      if (typeof enabled !== "boolean") errors.enabled = "memory.am.recentActivity.validationEnabled";
+      const ttl = Number(draft && draft.ttl_hours);
+      if (!RECENT_ACTIVITY_TTL_HOURS.includes(ttl)) errors.ttl_hours = "memory.am.recentActivity.validationTtl";
+      const autoInject = draft && draft.auto_inject;
+      if (typeof autoInject !== "boolean") errors.auto_inject = "memory.am.recentActivity.validationAutoInject";
+      const rawItems = draft && draft.max_items;
+      const items = typeof rawItems === "string" && rawItems.trim() === "" ? NaN : Number(rawItems);
+      if (!Number.isInteger(items) || items < 1 || items > 10) errors.max_items = "memory.am.recentActivity.validationMaxItems";
+      const rawTokens = draft && draft.max_tokens;
+      const tokens = typeof rawTokens === "string" && rawTokens.trim() === "" ? NaN : Number(rawTokens);
+      if (!Number.isInteger(tokens) || tokens < 100 || tokens > 800) errors.max_tokens = "memory.am.recentActivity.validationMaxTokens";
+      return {
+        ok: Object.keys(errors).length === 0,
+        errors,
+        values: {
+          enabled: enabled === true,
+          ttl_hours: ttl,
+          auto_inject: autoInject === true,
+          max_items: items,
+          max_tokens: tokens
+        }
+      };
+    }
+
+    function recentActivityPolicyDraft(session) {
+      return {
+        enabled: !!session && session.enabled === true,
+        mode: session && RECENT_ACTIVITY_MODES.has(session.mode) ? session.mode : "self",
+        shared_session_ids: session && Array.isArray(session.shared_session_ids)
+          ? session.shared_session_ids.filter((id) => typeof id === "string" && id !== session.id)
+          : []
+      };
+    }
+
+    function recentActivityValidatePolicy(draft, sourceSessionId) {
+      const errors = {};
+      if (typeof (draft && draft.enabled) !== "boolean") {
+        errors.enabled = "memory.am.recentActivity.policyInvalid";
+      }
+      const mode = draft && draft.mode;
+      if (!RECENT_ACTIVITY_MODES.has(mode)) {
+        errors.mode = "memory.am.recentActivity.policyModeInvalid";
+      }
+      let shared = [];
+      if (mode === "shared") {
+        const raw = draft && draft.shared_session_ids;
+        if (!Array.isArray(raw)) {
+          errors.shared_session_ids = "memory.am.recentActivity.policySharedInvalid";
+        } else {
+          const seen = new Set();
+          let invalid = false;
+          for (const value of raw) {
+            if (typeof value !== "string" || value.trim() === "") { invalid = true; continue; }
+            if (value === sourceSessionId || seen.has(value)) continue;
+            seen.add(value);
+            shared.push(value);
+          }
+          if (invalid || shared.length > RECENT_ACTIVITY_MAX_SHARED) {
+            errors.shared_session_ids = "memory.am.recentActivity.policySharedInvalid";
+          }
+        }
+      }
+      return {
+        ok: Object.keys(errors).length === 0,
+        errors,
+        values: {
+          enabled: draft && draft.enabled === true,
+          mode,
+          shared_session_ids: mode === "shared" ? shared : []
+        }
+      };
+    }
+
+    function recentActivityPreview(data) {
+      const raw = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+      const ok = raw.ok !== false;
+      let items = [];
+      if (ok && Array.isArray(raw.items)) {
+        items = raw.items.slice(0, 100).map((row) => {
+          const sourceSessionId = recentActivityStableId(row && row.sourceSessionId);
+          if (!sourceSessionId) return null;
+          const occurred = Number(row.occurredAt);
+          return {
+            sourceSessionId,
+            kind: row.kind === "agent_action" ? "agent_action" : "conversation",
+            summary: typeof row.summary === "string" ? row.summary.slice(0, 800) : "",
+            occurredAt: Number.isFinite(occurred) ? occurred : null,
+            estimatedTokens: recentActivityCount(row.estimatedTokens, 0)
+          };
+        }).filter(Boolean);
+      }
+      const fallbackTokens = items.reduce((sum, item) => sum + item.estimatedTokens, 0);
+      return {
+        ok,
+        reason: recentActivitySafeReason(raw.reason),
+        items,
+        count: recentActivityCount(raw.count, items.length),
+        estimatedTokens: recentActivityCount(raw.estimatedTokens, fallbackTokens),
+        truncated: raw.truncated === true
+      };
+    }
+
+    function recentActivityFilterSessions(sessions, query) {
+      const list = Array.isArray(sessions) ? sessions : [];
+      const needle = String(query ?? "").trim().toLowerCase();
+      if (!needle) return list.slice();
+      return list.filter((session) => String(session.title || "").toLowerCase().includes(needle)
+        || session.id.toLowerCase().includes(needle));
+    }
+
+    function recentActivityTimestamp(value) {
+      if (value === null || value === undefined || value === "") return "";
+      const raw = String(value).trim();
+      if (!raw) return "";
+      const numeric = Number(raw);
+      const ms = /^\d+(?:\.\d+)?$/.test(raw) ? numeric : Date.parse(raw);
+      if (!Number.isFinite(ms)) return "";
+      try {
+        return new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+      } catch {
+        return "";
+      }
+    }
+
+    function recentActivityBytes(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0) return "—";
+      if (number < 1024) return `${Math.round(number)} B`;
+      return `${(number / 1024).toFixed(number < 10240 ? 1 : 0)} KiB`;
+    }
+
+    function recentActivitySessionLabel(session) {
+      if (!session) return "";
+      return session.title || session.id || "";
+    }
+
+    function recentActivityModeLabelKey(mode) {
+      if (mode === "owner") return "memory.am.recentActivity.modeOwner";
+      if (mode === "shared") return "memory.am.recentActivity.modeShared";
+      return "memory.am.recentActivity.modeSelf";
+    }
+
+    function recentActivityReasonText(reason, t) {
+      const code = recentActivitySafeReason(reason);
+      if (code === "source-disabled") return t("memory.am.recentActivity.reasonSourceDisabled");
+      if (code === "missing-session-id") return t("memory.am.recentActivity.reasonMissingSession");
+      if (code === "invalid-policy" || code === "policy-read-failed" || code === "policy-write-failed") {
+        return t("memory.am.recentActivity.reasonInvalidPolicy");
+      }
+      if (code === "access-denied" || code === "access-check-unavailable"
+        || code === "access-check-failed" || code === "workspace-mismatch") {
+        return t("memory.am.recentActivity.reasonAccessDenied");
+      }
+      if (code === "storage-unavailable" || code === "stats-failed") {
+        return t("memory.am.recentActivity.reasonUnavailable");
+      }
+      const unknown = t("memory.am.recentActivity.reasonUnknown");
+      return code ? `${unknown} (${code})` : unknown;
+    }
+
+    function AmadeusRecentActivityCard({ t }) {
+      const [state, setState] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [loadError, setLoadError] = useState("");
+      const [notice, setNotice] = useState("");
+      const [configDraft, setConfigDraft] = useState(null);
+      const [configBusy, setConfigBusy] = useState(false);
+      const [configError, setConfigError] = useState("");
+      const [query, setQuery] = useState("");
+      const [selectedId, setSelectedId] = useState("");
+      const [policyDraft, setPolicyDraft] = useState(null);
+      const [policyBusy, setPolicyBusy] = useState(false);
+      const [policyError, setPolicyError] = useState("");
+      const [policyNotice, setPolicyNotice] = useState("");
+      const [previewTarget, setPreviewTarget] = useState("");
+      const [preview, setPreview] = useState(null);
+      const [previewBusy, setPreviewBusy] = useState(false);
+      const [previewError, setPreviewError] = useState("");
+      const [pendingRestart, setPendingRestart] = useState(false);
+      const requestRef = useRef(0);
+      const previewRef = useRef(0);
+
+      const applyState = (next, pendingHint = false) => {
+        const nextSessions = recentActivitySessions(next);
+        setState(next);
+        setConfigDraft(recentActivityConfigDraft(next));
+        setPolicyDraft(null);
+        setSelectedId((previous) => nextSessions.some((session) => session.id === previous) ? previous : "");
+        setPreviewTarget((previous) => nextSessions.some((session) => session.id === previous)
+          ? previous
+          : (nextSessions[0]?.id || ""));
+        setPendingRestart(pendingHint === true || recentActivityPendingRestart(next));
+      };
+
+      const load = useCallback(async () => {
+        const requestId = ++requestRef.current;
+        setLoading(true);
+        setLoadError("");
+        try {
+          const data = await adminJson("/recent");
+          if (requestRef.current !== requestId) return;
+          applyState(data);
+        } catch (reason) {
+          if (requestRef.current !== requestId) return;
+          const detail = recentActivitySafeError(reason);
+          setLoadError(`${t("memory.am.recentActivity.loadFailed")}: ${detail || t("memory.am.recentActivity.backendError")}`);
+        } finally {
+          if (requestRef.current === requestId) setLoading(false);
+        }
+      }, [t]);
+
+      useEffect(() => { load(); }, [load]);
+
+      const loadPreview = useCallback(async (targetId) => {
+        if (typeof targetId !== "string" || targetId === "") return;
+        const requestId = ++previewRef.current;
+        setPreviewBusy(true);
+        setPreviewError("");
+        try {
+          const data = await adminJson(`/recent/preview?target_session_id=${encodeURIComponent(targetId)}&include_self=false`);
+          if (previewRef.current !== requestId) return;
+          setPreview(data);
+        } catch (reason) {
+          if (previewRef.current !== requestId) return;
+          const detail = recentActivitySafeError(reason);
+          setPreviewError(`${t("memory.am.recentActivity.previewFailed")}: ${detail || t("memory.am.recentActivity.backendError")}`);
+        } finally {
+          if (previewRef.current === requestId) setPreviewBusy(false);
+        }
+      }, [t]);
+
+      const sessions = recentActivitySessions(state);
+      const summary = recentActivitySummary(state);
+      const draft = configDraft || recentActivityConfigDraft(state);
+      const configCheck = recentActivityValidateConfig(draft);
+      const filteredSessions = recentActivityFilterSessions(sessions, query);
+      const selected = sessions.find((session) => session.id === selectedId) || null;
+      const currentPolicy = policyDraft || (selected ? recentActivityPolicyDraft(selected) : null);
+      const policyCheck = selected && currentPolicy
+        ? recentActivityValidatePolicy(currentPolicy, selected.id)
+        : { ok: false, errors: {}, values: null };
+      const previewView = preview ? recentActivityPreview(preview) : null;
+      const pending = pendingRestart || summary.pending_restart;
+
+      const selectSession = (session) => {
+        setSelectedId(session.id);
+        setPolicyDraft(recentActivityPolicyDraft(session));
+        setPolicyError("");
+        setPolicyNotice("");
+      };
+
+      const saveConfig = async () => {
+        if (configBusy) return;
+        if (!configCheck.ok) {
+          const key = Object.values(configCheck.errors)[0];
+          setConfigError(t(key));
+          return;
+        }
+        setConfigBusy(true);
+        setConfigError("");
+        setNotice("");
+        try {
+          const posted = await adminJson("/recent/config", {
+            method: "POST",
+            body: JSON.stringify(configCheck.values)
+          });
+          const postedPending = recentActivityPendingRestart(posted);
+          setNotice(postedPending
+            ? t("memory.am.recentActivity.configPendingSaved")
+            : t("memory.am.recentActivity.configSaved"));
+          let fresh = posted;
+          try {
+            fresh = await adminJson("/recent");
+          } catch {
+            // The POST echo is still useful when the re-read fails.
+          }
+          if (recentActivityHasState(fresh)) applyState(fresh, postedPending);
+          else if (recentActivityHasState(posted)) applyState(posted, postedPending);
+          setPendingRestart(postedPending || pending);
+          if (previewTarget) await loadPreview(previewTarget);
+        } catch (reason) {
+          const detail = recentActivitySafeError(reason);
+          setConfigError(`${t("memory.am.recentActivity.saveFailed")}: ${detail || t("memory.am.recentActivity.backendError")}`);
+        } finally {
+          setConfigBusy(false);
+        }
+      };
+
+      const savePolicy = async () => {
+        if (!selected || !currentPolicy || policyBusy) return;
+        if (!policyCheck.ok) {
+          const key = Object.values(policyCheck.errors)[0];
+          setPolicyError(t(key));
+          return;
+        }
+        setPolicyBusy(true);
+        setPolicyError("");
+        setPolicyNotice("");
+        try {
+          const posted = await adminJson("/recent/policy", {
+            method: "POST",
+            body: JSON.stringify({
+              source_session_id: selected.id,
+              enabled: policyCheck.values.enabled,
+              mode: policyCheck.values.mode,
+              shared_session_ids: policyCheck.values.shared_session_ids
+            })
+          });
+          const postedPending = recentActivityPendingRestart(posted);
+          let fresh = posted;
+          try {
+            fresh = await adminJson("/recent");
+          } catch {
+            // Keep the POST echo for pending state when the re-read fails.
+          }
+          if (recentActivityHasState(fresh)) applyState(fresh, postedPending);
+          else if (recentActivityHasState(posted)) applyState(posted, postedPending);
+          setPendingRestart(postedPending || pending);
+          setPolicyNotice(t("memory.am.recentActivity.policySaved"));
+          if (previewTarget) await loadPreview(previewTarget);
+        } catch (reason) {
+          const detail = recentActivitySafeError(reason);
+          setPolicyError(`${t("memory.am.recentActivity.saveFailed")}: ${detail || t("memory.am.recentActivity.backendError")}`);
+        } finally {
+          setPolicyBusy(false);
+        }
+      };
+
+      const updatePolicy = (patch) => {
+        const base = currentPolicy || (selected ? recentActivityPolicyDraft(selected) : {
+          enabled: false, mode: "self", shared_session_ids: []
+        });
+        setPolicyDraft({ ...base, ...patch });
+        setPolicyError("");
+        setPolicyNotice("");
+      };
+
+      const toggleShared = (id) => {
+        if (!currentPolicy) return;
+        const list = Array.isArray(currentPolicy.shared_session_ids) ? currentPolicy.shared_session_ids : [];
+        if (!list.includes(id) && list.length >= RECENT_ACTIVITY_MAX_SHARED) {
+          setPolicyError(t("memory.am.recentActivity.sharedLimit"));
+          return;
+        }
+        setPolicyDraft({
+          ...currentPolicy,
+          shared_session_ids: list.includes(id) ? list.filter((value) => value !== id) : [...list, id]
+        });
+        setPolicyError("");
+        setPolicyNotice("");
+      };
+
+      const metric = (label, value) => h("div", {
+        key: label,
+        style: { flex: "1 1 180px", minWidth: 0, overflowWrap: "anywhere" }
+      },
+        h("div", { className: "mneme-set-hint" }, label),
+        h("div", { className: "mneme-set-ruletext" }, value));
+
+      const sourceText = summary.stats.source_counts.slice(0, 6).map((row) => {
+        const match = sessions.find((session) => session.id === row.sourceSessionId);
+        return `${match ? recentActivitySessionLabel(match) : row.sourceSessionId}: ${row.count}`;
+      });
+      if (summary.stats.source_counts.length > 6) sourceText.push(`+${summary.stats.source_counts.length - 6}`);
+      const statusText = summary.enabled
+        ? t("memory.am.recentActivity.enabled")
+        : t("memory.am.recentActivity.disabled");
+      const configuredText = summary.configured_enabled
+        ? t("memory.am.recentActivity.configuredOn")
+        : t("memory.am.recentActivity.configuredOff");
+
+      const summaryCard = () => h("div", {
+        className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.summaryTitle")
+      },
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+          t("memory.am.recentActivity.summaryTitle"),
+          pending && h("span", { className: "mneme-badge mneme-badge--pending", style: { marginLeft: 8 } },
+            t("memory.am.recentActivity.pendingBadge"))),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.hint")),
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8, flexWrap: "wrap" } },
+          metric(t("memory.am.recentActivity.workspaceSelected"),
+            summary.selected_workspace_id || t("memory.am.recentActivity.workspaceNone")),
+          metric(t("memory.am.recentActivity.workspaceActive"),
+            summary.active_workspace_id || t("memory.am.recentActivity.workspaceNone")),
+          metric(t("memory.am.recentActivity.enabled"),
+            summary.enabled === summary.configured_enabled
+              ? statusText
+              : `${statusText} · ${configuredText}`),
+          metric(t("memory.am.recentActivity.participating"),
+            `${summary.participating_count} / ${summary.session_count}`),
+          metric(t("memory.am.recentActivity.summaries"), String(summary.stats.event_count)),
+          metric(t("memory.am.recentActivity.policyCount"), String(summary.stats.policy_count)),
+          metric(t("memory.am.recentActivity.lastUpdated"),
+            recentActivityTimestamp(summary.stats.last_updated) || t("memory.am.recentActivity.never")),
+          metric(t("memory.am.recentActivity.storage"), recentActivityBytes(summary.stats.summary_bytes)),
+          metric(t("memory.am.recentActivity.injectionBudget"), `${summary.config.max_tokens}`),
+          metric(t("memory.am.recentActivity.previewTokens"),
+            previewView ? String(previewView.estimatedTokens) : `≤ ${summary.config.max_tokens}`)),
+        sourceText.length > 0 && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+          `${t("memory.am.recentActivity.sources")}: ${sourceText.join(" · ")}`),
+        pending && h("div", { className: "mneme-pending", role: "status" },
+          h("span", { className: "mneme-pending-dot", "aria-hidden": "true" }),
+          h("span", null, t("memory.am.recentActivity.pending"))));
+
+      const sessionRow = (session) => h("button", {
+        key: session.id,
+        type: "button",
+        className: "mneme-set-row",
+        "aria-pressed": String(session.id === selectedId),
+        style: {
+          display: "block", width: "100%", textAlign: "left", cursor: "pointer",
+          flexWrap: "wrap", marginBottom: 6,
+          borderColor: session.id === selectedId ? "var(--dsw-alias-state-business-primary)" : undefined
+        },
+        onClick: () => selectSession(session)
+      },
+        h("div", { style: { flex: "1 1 240px", minWidth: 0, overflowWrap: "anywhere" } },
+          h("div", { className: "mneme-set-ruletext" }, recentActivitySessionLabel(session)),
+          h("div", { className: "mneme-set-hint" },
+            `${t("memory.am.recentActivity.sessionId")}: ${session.id}`),
+          h("div", { className: "mneme-set-hint" },
+            `${t("memory.am.recentActivity.lastActive")}: ${recentActivityTimestamp(session.last_active_at) || t("memory.am.recentActivity.unknown")}`)),
+        h("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+          h("span", { className: "mneme-badge " + (session.enabled ? "mneme-badge--default" : "mneme-badge--pending") },
+            session.enabled
+              ? t("memory.am.recentActivity.participatingBadge")
+              : t("memory.am.recentActivity.pausedBadge")),
+          h("span", { className: "mneme-badge mneme-badge--scope" },
+            t(recentActivityModeLabelKey(session.mode)))));
+
+      const sessionListCard = () => h("div", {
+        className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.sessionsTitle")
+      },
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+          t("memory.am.recentActivity.sessionsTitle")),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.sessionsHint")),
+        h("label", { className: "mneme-set-hint", style: { display: "block", marginTop: 8 } },
+          t("memory.am.recentActivity.searchLabel"),
+          h("input", {
+            className: "mneme-set-input", type: "search", value: query,
+            placeholder: t("memory.am.recentActivity.searchPlaceholder"),
+            onChange: (event) => setQuery(event.target.value)
+          })),
+        sessions.length === 0 && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+          t("memory.am.recentActivity.sessionsEmpty")),
+        sessions.length > 0 && filteredSessions.length === 0
+          && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+            t("memory.am.recentActivity.searchEmpty")),
+        h("div", { style: { marginTop: 10 } }, filteredSessions.map(sessionRow)));
+
+      const policyDetailCard = () => {
+        if (!selected || !currentPolicy) {
+          return h("div", { className: "mneme-set-card" },
+            h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.selectSession")));
+        }
+        const others = sessions.filter((session) => session.id !== selected.id);
+        const known = new Set(others.map((session) => session.id));
+        const sharedIds = Array.isArray(currentPolicy.shared_session_ids) ? currentPolicy.shared_session_ids : [];
+        const unknownShared = sharedIds.filter((id) => !known.has(id));
+        const shownOthers = [...others]
+          .sort((a, b) => Number(sharedIds.includes(b.id)) - Number(sharedIds.includes(a.id)))
+          .slice(0, RECENT_ACTIVITY_MAX_SHARED);
+        const modeHintKey = currentPolicy.mode === "owner"
+          ? "memory.am.recentActivity.modeOwnerHint"
+          : currentPolicy.mode === "shared"
+            ? "memory.am.recentActivity.modeSharedHint"
+            : "memory.am.recentActivity.modeSelfHint";
+        return h("div", {
+          className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.detailTitle")
+        },
+          h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+            t("memory.am.recentActivity.detailTitle")),
+          h("div", { className: "mneme-set-ruletext" }, recentActivitySessionLabel(selected)),
+          h("div", { className: "mneme-set-hint" },
+            `${t("memory.am.recentActivity.sessionId")}: ${selected.id}`),
+          h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.detailHint")),
+          h("label", { className: "mneme-set-hint", style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8 } },
+            h("input", {
+              type: "checkbox", checked: currentPolicy.enabled,
+              onChange: (event) => updatePolicy({ enabled: event.target.checked })
+            }),
+            t("memory.am.recentActivity.participation")),
+          h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.participationHint")),
+          h("label", { className: "mneme-set-hint", style: { display: "block", marginTop: 8 } },
+            t("memory.am.recentActivity.modeLabel"),
+            h("select", {
+              className: "mneme-set-input", value: currentPolicy.mode,
+              onChange: (event) => updatePolicy({ mode: event.target.value })
+            },
+              h("option", { value: "self" }, t("memory.am.recentActivity.modeSelf")),
+              h("option", { value: "owner" },
+                `${t("memory.am.recentActivity.modeOwner")} ${t("memory.am.recentActivity.modeOwnerGated")}`),
+              h("option", { value: "shared" }, t("memory.am.recentActivity.modeShared")))),
+          h("div", { className: "mneme-set-hint" }, t(modeHintKey)),
+          !summary.owner_available && h("div", {
+            className: "mneme-set-hint",
+            style: { color: "var(--mneme-warning, var(--mneme-danger))" }
+          }, t("memory.am.recentActivity.ownerDegraded")),
+          currentPolicy.mode === "shared" && h("fieldset", {
+            className: "mneme-set-card", style: { marginTop: 10, paddingTop: 8 }
+          },
+            h("legend", { className: "mneme-set-hint" }, t("memory.am.recentActivity.sharedLabel")),
+            h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.sharedHint")),
+            others.length > RECENT_ACTIVITY_MAX_SHARED && h("div", { className: "mneme-set-hint" },
+              t("memory.am.recentActivity.sharedLimit")),
+            others.length === 0 && h("div", { className: "mneme-set-hint" },
+              t("memory.am.recentActivity.sharedEmpty")),
+            shownOthers.map((session) => h("label", {
+              key: session.id,
+              className: "mneme-set-hint",
+              style: { display: "flex", alignItems: "flex-start", gap: 6, overflowWrap: "anywhere" }
+            },
+              h("input", {
+                type: "checkbox", value: session.id,
+                checked: sharedIds.includes(session.id),
+                onChange: () => toggleShared(session.id)
+              }),
+              h("span", null, `${recentActivitySessionLabel(session)} · ${t("memory.am.recentActivity.sessionId")}: ${session.id}`))),
+            unknownShared.map((id) => h("label", {
+              key: `unknown-${id}`,
+              className: "mneme-set-hint",
+              style: { display: "flex", alignItems: "flex-start", gap: 6, overflowWrap: "anywhere" }
+            },
+              h("input", { type: "checkbox", value: id, checked: true, disabled: true, readOnly: true }),
+              h("span", null, `${t("memory.am.recentActivity.sharedUnknown")} · ${id}`))),
+            h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+              t("memory.am.recentActivity.sharedSelected").replace("{count}", String(sharedIds.length)))),
+          !policyCheck.ok && Object.keys(policyCheck.errors).length > 0 && h("div", {
+            className: "mneme-set-hint", role: "alert",
+            style: { marginTop: 8, color: "var(--mneme-danger)" }
+          }, Object.values(policyCheck.errors).map((key) => h("div", { key }, t(key)))),
+          policyNotice && h("div", { className: "mneme-saved", style: { marginTop: 8 }, role: "status" }, policyNotice),
+          policyError && h("div", {
+            className: "mneme-set-hint", role: "alert",
+            style: { marginTop: 8, color: "var(--mneme-danger)" }
+          }, policyError),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8, flexWrap: "wrap" } },
+            h("button", {
+              className: "mneme-btn", disabled: policyBusy || !policyCheck.ok, onClick: savePolicy
+            }, policyBusy ? t("memory.am.recentActivity.saving") : t("memory.am.recentActivity.savePolicy")),
+            h("button", {
+              className: "mneme-btn", disabled: policyBusy,
+              onClick: () => { setSelectedId(""); setPolicyDraft(null); setPolicyError(""); setPolicyNotice(""); }
+            }, t("memory.am.recentActivity.closeDetail"))));
+      };
+
+      const previewCard = () => h("div", {
+        className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.previewTitle")
+      },
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+          t("memory.am.recentActivity.previewTitle")),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.previewHint")),
+        h("label", { className: "mneme-set-hint", style: { display: "block", marginTop: 8 } },
+          t("memory.am.recentActivity.previewTarget"),
+          h("select", {
+            className: "mneme-set-input", value: previewTarget,
+            disabled: sessions.length === 0,
+            onChange: (event) => {
+              const value = event.target.value;
+              setPreviewTarget(value);
+              setPreview(null);
+              setPreviewError("");
+              if (value) loadPreview(value);
+            }
+          },
+            h("option", { value: "" }, t("memory.am.recentActivity.previewChoose")),
+            sessions.map((session) => h("option", { key: session.id, value: session.id },
+              `${recentActivitySessionLabel(session)} · ${session.id}`)))),
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8, flexWrap: "wrap" } },
+          h("button", {
+            className: "mneme-btn", disabled: !previewTarget || previewBusy,
+            onClick: () => loadPreview(previewTarget)
+          }, previewBusy ? t("memory.am.recentActivity.saving") : t("memory.am.recentActivity.previewRefresh"))),
+        previewError && h("div", {
+          className: "mneme-set-hint", role: "alert",
+          style: { marginTop: 8, color: "var(--mneme-danger)" }
+        }, previewError),
+        !previewTarget && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+          t("memory.am.recentActivity.previewChoose")),
+        previewBusy && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+          t("memory.am.loading")),
+        previewView && !previewView.ok && h("div", {
+          className: "mneme-set-hint", role: "status",
+          style: { marginTop: 8, color: "var(--mneme-warning, var(--mneme-danger))" }
+        }, `${t("memory.am.recentActivity.previewDenied")} ${recentActivityReasonText(previewView.reason, t)}`),
+        previewView && previewView.ok && h("div", null,
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8, flexWrap: "wrap" } },
+            metric(t("memory.am.recentActivity.previewCount"), String(previewView.count)),
+            metric(t("memory.am.recentActivity.previewEstimated"), String(previewView.estimatedTokens))),
+          previewView.truncated && h("div", { className: "mneme-set-hint", style: { marginTop: 6 } },
+            t("memory.am.recentActivity.previewTruncated")),
+          previewView.items.length === 0 && h("div", { className: "mneme-set-hint", style: { marginTop: 8 } },
+            t("memory.am.recentActivity.previewEmpty")),
+          h("div", { style: { marginTop: 8 } },
+            previewView.items.map((item, index) => {
+              const source = sessions.find((session) => session.id === item.sourceSessionId);
+              return h("div", {
+                key: `${item.sourceSessionId}-${item.occurredAt ?? "x"}-${index}`,
+                className: "mneme-set-row", style: { flexWrap: "wrap" }
+              },
+                h("div", { style: { flex: "1 1 260px", minWidth: 0, overflowWrap: "anywhere" } },
+                  h("div", { className: "mneme-set-ruletext" }, item.summary),
+                  h("div", { className: "mneme-set-hint" },
+                    `${t("memory.am.recentActivity.previewSource")}: ${source ? recentActivitySessionLabel(source) : item.sourceSessionId}`
+                    + ` · ${item.sourceSessionId}`
+                    + ` · ${t(item.kind === "agent_action"
+                      ? "memory.am.recentActivity.kindAgentAction"
+                      : "memory.am.recentActivity.kindConversation")}`
+                    + ` · ${recentActivityTimestamp(item.occurredAt) || t("memory.am.recentActivity.unknown")}`
+                    + ` · ${t("memory.am.recentActivity.previewEstimated")}: ${item.estimatedTokens}`)));
+            }))));
+
+      const configCard = () => h("div", {
+        className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.configTitle")
+      },
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+          t("memory.am.recentActivity.configTitle")),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.configHint")),
+        h("label", { className: "mneme-set-hint", style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8 } },
+          h("input", {
+            type: "checkbox", checked: draft.enabled === true,
+            onChange: (event) => setConfigDraft({ ...draft, enabled: event.target.checked })
+          }),
+          t("memory.am.recentActivity.featureEnabled")),
+        h("label", { className: "mneme-set-hint", style: { display: "block", marginTop: 8 } },
+          t("memory.am.recentActivity.ttlLabel"),
+          h("select", {
+            className: "mneme-set-input", value: String(draft.ttl_hours),
+            onChange: (event) => setConfigDraft({ ...draft, ttl_hours: event.target.value })
+          },
+            RECENT_ACTIVITY_TTL_HOURS.map((hours) => h("option", { key: hours, value: String(hours) },
+              t(`memory.am.recentActivity.ttl${hours}`))))),
+        h("label", { className: "mneme-set-hint", style: { display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8 } },
+          h("input", {
+            type: "checkbox", checked: draft.auto_inject === true,
+            onChange: (event) => setConfigDraft({ ...draft, auto_inject: event.target.checked })
+          }),
+          t("memory.am.recentActivity.autoInject")),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.autoInjectHint")),
+        h("label", { className: "mneme-set-hint", style: { display: "block", marginTop: 8 } },
+          t("memory.am.recentActivity.maxItems"),
+          h("input", {
+            className: "mneme-set-input", type: "number", min: 1, max: 10, step: 1,
+            value: draft.max_items ?? "",
+            onChange: (event) => setConfigDraft({ ...draft, max_items: event.target.value })
+          })),
+        h("label", { className: "mneme-set-hint", style: { display: "block", marginTop: 8 } },
+          t("memory.am.recentActivity.maxTokens"),
+          h("input", {
+            className: "mneme-set-input", type: "number", min: 100, max: 800, step: 50,
+            value: draft.max_tokens ?? "",
+            onChange: (event) => setConfigDraft({ ...draft, max_tokens: event.target.value })
+          })),
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 10 } },
+          t("memory.am.recentActivity.strategyTitle")),
+        h("div", { className: "mneme-set-hint" }, t("memory.am.recentActivity.strategy")),
+        !configCheck.ok && h("div", { className: "mneme-set-hint", role: "alert", style: { marginTop: 8, color: "var(--mneme-danger)" } },
+          Object.values(configCheck.errors).map((key) => h("div", { key }, t(key)))),
+        notice && h("div", { className: "mneme-saved", style: { marginTop: 8 }, role: "status" }, notice),
+        configError && h("div", {
+          className: "mneme-set-hint", role: "alert",
+          style: { marginTop: 8, color: "var(--mneme-danger)" }
+        }, configError),
+        h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 10, gap: 8, flexWrap: "wrap" } },
+          h("button", {
+            className: "mneme-btn", disabled: configBusy, onClick: saveConfig
+          }, configBusy ? t("memory.am.recentActivity.saving") : t("memory.am.recentActivity.saveConfig")),
+          h("button", { className: "mneme-btn", disabled: loading || configBusy, onClick: load },
+            t("memory.am.refresh"))));
+
+      if (!state) {
+        return h("div", { className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.title") },
+          h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } }, t("memory.am.recentActivity.title")),
+          loading && h("div", { className: "mneme-set-hint" }, t("memory.am.loading")),
+          !loading && loadError && h("div", {
+            className: "mneme-set-hint", role: "alert",
+            style: { color: "var(--mneme-danger)" }
+          }, loadError),
+          h("div", { className: "mneme-set-row", style: { border: "none", padding: 0, marginTop: 8, gap: 8 } },
+            h("button", { className: "mneme-btn", disabled: loading, onClick: load },
+              t("memory.am.refresh"))));
+      }
+
+      return h("div", {
+        className: "mneme-set-card", role: "group", "aria-label": t("memory.am.recentActivity.title")
+      },
+        h("div", { className: "mneme-set-grouphead", style: { marginTop: 0 } },
+          t("memory.am.recentActivity.title"),
+          pending && h("span", { className: "mneme-badge mneme-badge--pending", style: { marginLeft: 8 } },
+            t("memory.am.recentActivity.pendingBadge"))),
+        loadError && h("div", {
+          className: "mneme-set-hint", role: "alert",
+          style: { marginTop: 8, color: "var(--mneme-danger)" }
+        }, loadError),
+        h("div", { style: { display: "flex", flexDirection: "column", gap: 12, marginTop: 10 } },
+          summaryCard(),
+          sessionListCard(),
+          policyDetailCard(),
+          previewCard(),
+          configCard()));
+    }
+
     exports.apply = apply;
     exports.inject = inject;
     if (typeof globalThis !== "undefined" && globalThis.__DSH_MNEME_TEST__ === true) {
-      exports.__test = { configFormTransition };
+      exports.__test = {
+        configFormTransition, workspaceCardModel, workspaceSafeReason, workspaceList, AmadeusWorkspaceCard,
+        AmadeusRecentActivityCard, recentActivityHasState, recentActivityConfig, recentActivityStats,
+        recentActivitySessions, recentActivitySummary, recentActivityPendingRestart,
+        recentActivityOwnerAvailable, recentActivityConfigDraft, recentActivityValidateConfig,
+        recentActivityPolicyDraft, recentActivityValidatePolicy, recentActivityPreview,
+        recentActivityFilterSessions, recentActivityTimestamp, recentActivityBytes,
+        recentActivitySessionLabel, recentActivitySafeReason, recentActivitySafeError,
+        recentActivityReasonText
+      };
     }
     return module.exports;
   }

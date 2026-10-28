@@ -236,13 +236,20 @@ test("scene change during LLM generation rejects the write", async () => {
   }
 });
 
-test("index keeps the strict-QQ summarizer enabled and runs Dream/Sleep per Scene", () => {
+test("index keeps the strict-QQ summarizer and routes Dream/Sleep through the lite or per-Scene path", () => {
   const src = readFileSync(new URL("../src/index.js", import.meta.url), "utf8");
-  assert.match(src, /const strictQQScene = cfg\.sceneIsolationEnabled === true && cfg\.sceneStrictQQ === true/);
+  assert.match(src, /const strictQQScene = runtimeCfg\.sceneIsolationEnabled === true && runtimeCfg\.sceneStrictQQ === true/);
   assert.match(src, /!strictQQScene && sceneUnsafeDerivation\(\)/);
   assert.match(src, /function listBackgroundSceneScopes\(\)/);
   assert.match(src, /runWithSceneJob\(scope, \(\) => dream\.runDream/);
   assert.match(src, /runWithSceneJob\(scope, \(\) => runSleep/);
+  // The common lite path calls the original Mneme functions directly; the
+  // per-Scene wrappers above remain the compatibility path for tagged rows or
+  // explicit Scene isolation.
+  assert.match(src, /if \(!sceneUnsafeDerivation\(\)\) return dream\.runDream\(ctx, service, runtimeCfg\);/);
+  assert.match(src, /return runSleep\(ctx, service, runtimeCfg, ctx\.logger, \{ embedder, vectorIndex \}, signal\);/);
+  assert.match(src, /return runScopedDreams\(\);/);
+  assert.match(src, /return runScopedSleep\(signal\);/);
   assert.doesNotMatch(src, /if \(cfg\.autoDream && !sceneUnsafeDerivation\(\)\)/);
   assert.doesNotMatch(src, /if \(cfg\.sleepModeEnabled && !sceneUnsafeDerivation\(\)\)/);
 });

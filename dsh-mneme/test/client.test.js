@@ -10,12 +10,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const clientSource = readFileSync(join(root, "lib/client.js"), "utf8");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-test("native Memory settings exposes Scene, Recent and Core switches through owner API", () => {
-  const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "recentContextEnabled", "coreMemoryEnabled"];
+test("native Memory settings exposes compatibility Scene and Core switches without retired features", () => {
+  const keys = ["sceneIsolationEnabled", "sceneStrictQQ", "coreMemoryEnabled"];
   const featureList = clientSource.match(/const AM_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
   const sceneList = clientSource.match(/const AM_SCENE_FEATURE_KEYS = \[([\s\S]*?)\];/)?.[1] || "";
   for (const key of keys) {
     assert.ok(featureList.includes(`"${key}"`) || sceneList.includes(`"${key}"`), `${key} belongs in the native settings card`);
+  }
+  for (const retired of ["recentContextEnabled", "trustedIntakeEnabled"]) {
+    assert.ok(!featureList.includes(`"${retired}"`) && !sceneList.includes(`"${retired}"`),
+      `${retired} must not appear as an actionable retired switch`);
   }
   assert.ok(clientSource.includes("AM_SCENE_FEATURE_KEYS.map(featureRow)"), "Scene switches must render in Settings > Scene");
   assert.match(clientSource, /adminJson\("\/features",\s*\{\s*method: "POST"/);
