@@ -148,6 +148,6 @@ describe('version-check.js', () => {
   test('REGISTRY_URL 自身通过白名单校验；PACKAGE_VERSION 可读', () => {
     assert.equal(validateRegistryUrl(REGISTRY_URL), true);
     assert.match(REGISTRY_URL, /@amadeus%2Fmemory\/latest$/);
-    assert.equal(PACKAGE_VERSION, '1.0.1');
+    assert.equal(PACKAGE_VERSION, '1.2.0');
   });
 });

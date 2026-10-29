@@ -1,7 +1,7 @@
 {
   "name": "@amadeus/memory",
   "description": "Amadeus Memory (enhanced Mneme 0.9.4): cross-session memory with stable typed identities, native DSH settings, SQLite storage, autoDream, vector retrieval and 13 model tools.",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "license": "MIT",
   "amadeus": {
     "edition": "enhanced",
@@ -47,9 +47,14 @@
     "src",
     "docs",
     "scripts",
-    "test",
     "runtime-manifest.json",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "docs/UPGRADE_POLICY.md",
+    "docs/DATA_MIGRATION.md",
+    "docs/RELEASE_CHECKLIST.md",
+    "scripts/release-audit.mjs",
+    "screenshots.json",
+    "assets/market-icon.png"
   ],
   "dsh": {
     "client": {
@@ -109,7 +114,8 @@
     "test:coverage": "c8 node --test test/*.test.js",
     "badge:sync": "node scripts/sync-test-badge.mjs",
     "e2e": "node scripts/e2e-dsh.js",
-    "stress": "node scripts/stress-dsh.js"
+    "stress": "node scripts/stress-dsh.js",
+    "verify:release": "node scripts/release-audit.mjs"
   },
   "c8": {
     "reporter": [
@@ -131,5 +137,8 @@
   },
   "allowScripts": {
     "onnxruntime-node@1.30.0": true
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.3 <0.3.0"
   }
 }

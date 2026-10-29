@@ -24,6 +24,7 @@ const files = [
   "test/qa-guard.test.js",
   "test/safe-clean.test.js",
   "test/store-concurrent-init.test.js",
+  "test/schema-version.test.js",
   "test/release-package-workflow.test.js",
   "test/scene-recent-core.test.js",
   "test/scene-acl-tools.test.js",

@@ -1,7 +1,7 @@
 # Security Policy
 
 This policy covers the Amadeus Memory enhanced bundle in this repository
-(`dsh-mneme/`, package `@modusensus/dsh-mneme`). The upstream import and license
+(`dsh-mneme/`, package `@amadeus/memory`). The upstream import and license
 are recorded in [UPSTREAM.md](UPSTREAM.md); installation and rollback are in
 [INSTALL.md](dsh-mneme/docs/INSTALL.md).
 
@@ -9,15 +9,15 @@ are recorded in [UPSTREAM.md](UPSTREAM.md); installation and rollback are in
 
 | Version | Supported |
 | --- | --- |
-| 1.0.x | Current Amadeus Memory enhanced candidate line |
-| < 1.0 | Historical release; upgrade before reporting an issue |
+| 1.2.x | Current Amadeus Memory candidate line |
+| < 1.2 | Historical line; upgrade before reporting an issue |
 
 ## 支持版本
 
 | Version | Supported |
 | --- | --- |
-| 1.0.x | 当前 Amadeus Memory 增强候选线 |
-| < 1.0 | 历史版本；报告问题前请先升级 |
+| 1.2.x | 当前 Amadeus Memory 候选线 |
+| < 1.2 | 历史版本；报告问题前请先升级 |
 
 ## Reporting a Vulnerability / 报告漏洞
 

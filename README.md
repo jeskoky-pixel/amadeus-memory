@@ -1,8 +1,10 @@
 # Amadeus Memory Enhancer
 
+> `@amadeus/memory@1.2.0` 发行候选包位于 `dsh-mneme/`，内部插件 ID 继续为 `dsh-mneme`。已用官方 DSH Desktop `0.2.1-rc.3` 附带的运行时进行隔离安装与升级验证；公开 npm 和市场收录尚未执行。请先看 [v1.2 安装说明](dsh-mneme/docs/INSTALL_V1_2.md)、[升级政策](dsh-mneme/docs/UPGRADE_POLICY.md) 和 [数据迁移](dsh-mneme/docs/DATA_MIGRATION.md)。
+
 Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权的长期信息，在对话时检索相关记忆，并提供可视化的记忆、标签权重、实体关系和备份管理。此版本继承 Mneme 的插件 ID 与数据格式，方便已有用户升级。
 
-> 当前 main 开发基线为 `@amadeus/memory@1.0.1`，PR #5 已合并；尚未公开发行或部署到生产 DSH。四插件 v1.1 已完成隔离 Desktop 联合验收，真实 NapCat / Life 外发仍待个人电脑实机测试。见 [联合验收报告](https://github.com/jeskoky-pixel/amadeus-qq/blob/main/docs/verification/FOUR_PLUGIN_V11_JOINT_2026-10-28.md)。
+> 历史基线：`@amadeus/memory@1.0.1` 经 PR #5 合并；四插件 v1.1 隔离验收见 [历史报告](https://github.com/jeskoky-pixel/amadeus-qq/blob/main/docs/verification/FOUR_PLUGIN_V11_JOINT_2026-10-28.md)。
 
 ## 日常使用
 

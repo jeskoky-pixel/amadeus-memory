@@ -11,7 +11,7 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 test("Amadeus Memory release identity is explicit and backward compatible", () => {
   assert.equal(pkg.name, "@amadeus/memory");
-  assert.equal(pkg.version, "1.0.1");
+  assert.equal(pkg.version, "1.2.0");
   assert.equal(pkg.amadeus.edition, "enhanced");
   assert.equal(pkg.amadeus.product, "memory");
   assert.equal(pkg.amadeus.pluginId, "dsh-mneme", "the runtime plugin ID must not change");

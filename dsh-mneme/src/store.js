@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { contentHashOf } from "./content-hash.js";
 // 政策轴（issue #471）的归一化函数。刻意只取归一化，不取判定：判定（buildPausedIndex /
 // matchPausedScopes / createScopeStateGate）留在 scope-state.js，由 service 侧消费，
@@ -845,6 +846,10 @@ function parseJsonArray(raw) {
   }
 }
 
+// Version 0 is the previously unversioned Mneme-compatible SQLite lineage.
+// Version 1 adds only this marker; the existing additive schema remains intact.
+export const MEMORY_SCHEMA_VERSION = 1;
+
 export function createStore(path) {
   const db = new DatabaseSync(path);
   // Set busy_timeout BEFORE the journal-mode switch (audit peer: 8-process WAL
@@ -882,6 +887,41 @@ export function createStore(path) {
     throw wrapped;
   }
   initRetry("journal_mode=WAL", () => db.exec("PRAGMA journal_mode = WAL;"));
+  const priorSchemaVersion = Number(db.prepare("PRAGMA user_version").get().user_version);
+  if (!Number.isSafeInteger(priorSchemaVersion) || priorSchemaVersion < 0 || priorSchemaVersion > MEMORY_SCHEMA_VERSION) {
+    db.close();
+    throw new Error(`unsupported Memory schema version ${priorSchemaVersion}; this build supports 0–${MEMORY_SCHEMA_VERSION}`);
+  }
+  // A pre-v1 database is backed up before SCHEMA/legacy ADD COLUMN can alter it.
+  // VACUUM INTO yields a consistent SQLite snapshot even when WAL is present.
+  if (priorSchemaVersion === 0 && path !== ":memory:" && db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memories'").get()) {
+    const integrity = db.prepare("PRAGMA quick_check").get().quick_check;
+    if (integrity !== "ok") {
+      db.close();
+      throw new Error(`Memory database quick_check failed before migration: ${integrity}`);
+    }
+    const backupDir = join(dirname(path), "backups");
+    const backupPath = join(backupDir, `memory-before-schema-v1-${Date.now()}-${randomUUID()}.db`);
+    try {
+      mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+      db.exec(`VACUUM main INTO '${backupPath.replaceAll("'", "''")}'`);
+      chmodSync(backupPath, 0o600);
+      const backup = new DatabaseSync(backupPath);
+      try {
+        const backupCheck = backup.prepare("PRAGMA quick_check").get().quick_check;
+        const beforeCount = db.prepare("SELECT COUNT(*) AS n FROM memories").get().n;
+        const backupCount = backup.prepare("SELECT COUNT(*) AS n FROM memories").get().n;
+        if (backupCheck !== "ok" || backupCount !== beforeCount) {
+          throw new Error(`backup verification failed: quick_check=${backupCheck}, memories=${backupCount}/${beforeCount}`);
+        }
+      } finally {
+        backup.close();
+      }
+    } catch (error) {
+      db.close();
+      throw new Error(`Memory pre-migration backup failed; original database was not migrated: ${String(error?.message ?? error)}`);
+    }
+  }
   initRetry("schema", () => db.exec(SCHEMA));
   // Legacy entity names become unconfirmed labels; QQ group numbers become
   // typed external identifiers. No cross-record merge happens here.
@@ -1030,6 +1070,15 @@ export function createStore(path) {
         `repair or reset the row before opening this database`
       );
     }
+  }
+
+  if (priorSchemaVersion === 0) {
+    const migratedCheck = db.prepare("PRAGMA quick_check").get().quick_check;
+    if (migratedCheck !== "ok") {
+      db.close();
+      throw new Error(`Memory database quick_check failed after migration: ${migratedCheck}`);
+    }
+    initRetry("schema version", () => db.exec(`PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}`));
   }
 
   // Issue #202：embedding 解析缓存。检索路径此前每次调用都对全部带向量行
