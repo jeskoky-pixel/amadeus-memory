@@ -1,5 +1,6 @@
 url: https://github.com/jeskoky-pixel/amadeus-memory/tree/main/dsh-mneme
 name: jeskoky-pixel/amadeus-memory#dsh-mneme
+tarball: https://github.com/jeskoky-pixel/amadeus-memory/releases/download/v1.2.0/amadeus-memory-1.2.0.tgz
 category: memory
 description:
   en: Adds workspace-scoped memory, entity relations and scene access controls to Mneme for DeepSeek Harness.

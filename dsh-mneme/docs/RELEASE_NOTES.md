@@ -1,5 +1,11 @@
 # Amadeus Memory 发行说明
 
+## 1.2.0 内部发行候选（未公开发布）
+
+- 统一 `@amadeus/memory@1.2.0`，内部插件 ID 仍为 `dsh-mneme`；保留 Mneme 数据、索引配置和 Scene 授权。
+- 对未标记的既有 SQLite 库增加 schema 0 → 1 的迁移前一致性备份与版本检查。隔离 DSH Desktop `0.2.1-rc.3` 所附 CLI 完成 1.0.1 → 1.2.0 的合成数据升级、重启和恢复演练。
+- 包含预构建 Client、Manifest 和资源；从 `dsh-mneme/` 子目录安装。GitHub 子目录源码下载、Desktop 图形安装、真实向量检索及公开市场更新仍待验收。
+
 ## 1.0.1 发行身份与近期活动授权修复
 
 - npm 包名改为 `@amadeus/memory`，版本 `1.0.1`；插件 ID 仍为 `dsh-mneme`，默认数据路径仍为 `~/.dsh/memory`，SQLite schema、配置键与 feature flags 不迁移。上游署名、`LICENSE` 与 `UPSTREAM.md` 保持不变。
