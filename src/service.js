@@ -472,7 +472,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
   function trustedReadableSceneScopes() {
     if (scenePolicy().enabled !== true) return null;
     const scene = currentScene();
-    if (!scene) return [];
+    // No QQ capability means an authorized ordinary DSH session. Keep SQL
+    // candidate filtering aligned with sceneFilterRows: legacy rows only.
+    if (!scene) return ["legacy"];
     // Verified owner default = all Scenes (including legacy). The SQL filter is
     // omitted; explicit owner selection is handled by the tool layer.
     if (isAdminPrivateScene(scene)) return null;

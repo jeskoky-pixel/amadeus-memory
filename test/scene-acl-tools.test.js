@@ -153,6 +153,29 @@ test("custom QQ Preset without Host binding cannot read or write unscoped memory
   } finally { h.close(); }
 });
 
+test("ordinary DSH tools can read and update their unscoped memories in strict QQ mode", async () => {
+  const h = setup(undefined);
+  try {
+    const ordinary = execFor("ordinary-session", "standard");
+    const save = h.registered.find((tool) => tool.name === "memory_save");
+    const search = h.registered.find((tool) => tool.name === "memory_search");
+    const list = h.registered.find((tool) => tool.name === "memory_list");
+    const get = h.registered.find((tool) => tool.name === "memory_get");
+    const update = h.registered.find((tool) => tool.name === "memory_update");
+    const own = await save.execute({ type: "project", title: "blue crane", content: "lighthouse seven" }, ordinary);
+    assert.equal(own.action, "created");
+    assert.equal(h.store.getById(own.id).scene_scope ?? null, null);
+    await seed(h.service, scenes().a, "QQ secret blue crane");
+    assert.deepEqual((await search.execute({ query: "blue crane", mode: "keyword" }, ordinary)).items.map((m) => m.id), [own.id]);
+    assert.deepEqual((await list.execute({ limit: 20 }, ordinary)).items.map((m) => m.id), [own.id]);
+    assert.equal((await get.execute({ id: own.id }, ordinary)).memory.id, own.id);
+    const secondSession = execFor("other-ordinary-session", "standard");
+    assert.deepEqual((await search.execute({ query: "blue crane", mode: "keyword" }, secondSession)).items.map((m) => m.id), [own.id]);
+    await update.execute({ id: own.id, content: "lighthouse eight" }, ordinary);
+    assert.equal((await get.execute({ id: own.id }, ordinary)).memory.content, "lighthouse eight");
+  } finally { h.close(); }
+});
+
 test("disallowed high-rank candidates do not starve valid Scene recall", async () => {
   const s = scenes();
   const h = setup(s.a);

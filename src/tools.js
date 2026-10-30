@@ -434,14 +434,15 @@ export function createTools(ctx, service, config, embedder, access = null, recen
   const visibleUnderStrictScope = (memory, exec) => {
     if (!memory) return false;
     // Mutation path: reading every Scene as owner never grants a model write.
-    // Tagged rows are mutable only by the exact Scene that owns them.
+    // Tagged rows are mutable only by the exact Scene that owns them; ordinary
+    // DSH sessions may continue editing their own unscoped memories.
     if (scenePolicy().enabled === true) {
-      // Strict QQ model mutations are Scene-bound. Legacy untagged rows are
-      // owner-readable but never model-mutable; only the authenticated browser
-      // owner admin path may explicitly manage them.
-      if (!memory.scene_scope) return false;
       const scene = currentScene();
-      if (!scene || memory.scene_scope !== scene.sceneId) return false;
+      if (scene) {
+        if (!memory.scene_scope || memory.scene_scope !== scene.sceneId) return false;
+      } else if (memory.scene_scope) {
+        return false;
+      }
     } else if (sceneFilterRows([memory]).length === 0) {
       return false;
     }
