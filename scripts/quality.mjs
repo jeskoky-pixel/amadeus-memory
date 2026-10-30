@@ -27,6 +27,7 @@ const files = [
   "test/schema-version.test.js",
   "test/release-package-workflow.test.js",
   "test/scene-recent-core.test.js",
+  "test/unified-session-acl.test.js",
   "test/route-policy.test.js",
   "test/scene-acl-tools.test.js",
   "test/qq-host-inject.test.js",
