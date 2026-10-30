@@ -20,6 +20,7 @@ import { loadRunsById, runsDir, RUNS_SUFFIX } from "./pipeline-runs.js";
 import { observationDir, loadObservationsById } from "./pipeline-observations.js";
 import { projectKey } from "./candidates.js";
 import { readCandidateDoc } from "./candidates.js";
+import { ownerAuthorized, sameOrigin } from "./admin-api.js";
 // M.O. 自动沉淀：/nudge 是 pipeline-nudge.js 的第一个运行时消费者（此前它只有测试在用，
 // 是个孤儿模块——「不能自动沉淀工作流」的根因）。
 import {
@@ -138,11 +139,24 @@ function needsToken(req, policy, apiToken) {
   return !isAuthorized(req, apiToken);
 }
 
+/** Reuse the Owner admin API's origin and principal checks for legacy GUI routes. */
+export function ownerHttpAllowed(ctx, req) {
+  if (!sameOrigin(req)) return false;
+  try {
+    const connection = typeof ctx?.reflect?.get === "function"
+      ? ctx.reflect.get("connection")
+      : ctx?.connection;
+    return ownerAuthorized(connection, req).ok === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 唯一的登记入口：校验 policy、拒绝重复路径、把 handler 包上鉴权。
  * 返回的 count() 供 createApi 汇报真实路由数（此前的字面量 36 已经和现实脱节）。
  */
-export function createRouteRegistrar(webServer, apiToken, disposers, { hasSceneScopedRows = () => false } = {}) {
+export function createRouteRegistrar(webServer, apiToken, disposers, { hasSceneScopedRows = () => false, allowOwnerRequest = () => false } = {}) {
   const seen = new Set();
   const register = (route) => {
     if (!ROUTE_POLICIES.includes(route.policy)) {
@@ -168,9 +182,12 @@ export function createRouteRegistrar(webServer, apiToken, disposers, { hasSceneS
       // Without a real trusted Host scene binding there is no safe way to
       // authorize an ordinary HTTP content route: /list and /count are raw
       // store passthroughs, not the scene-filtered service path. Fail closed
-      // for every non-admin route in strict QQ mode; authenticated owner admin
-      // (/api/amadeus-memory/admin) remains separate.
+      // unless the Host authenticates this same-origin request as Owner.
       if (protectedData) {
+        // The original Mneme panel can use its existing routes when the DSH
+        // Host has authenticated this exact same-origin request as Owner.
+        // Prefix fallbacks and all QQ/ordinary HTTP callers stay denied.
+        if (route.kind === "exact" && allowOwnerRequest(req)) return inner(req, res);
         sendJson(res, 403, { error: "scene-isolation-active" });
         return undefined;
       }
@@ -229,12 +246,18 @@ function parseBody(text) {
 // 而不是把「没接线」伪装成崩溃（#386 第 4 条）。
 export function createApi(ctx, service, settings, commands, embedder, semantic = null, apiToken = "", config = null, maintenance = null, profileExtract = null) {
   const disposers = [];
+  const ownerRequests = new WeakSet();
+  const allowOwnerRequest = (req) => {
+    if (!ownerHttpAllowed(ctx, req)) return false;
+    ownerRequests.add(req);
+    return true;
+  };
 
   // New identity/provenance/preference routes are not allowed to inherit the
   // legacy fail-open behavior: an absent server token is a setup error, not an
   // invitation to serve private aliases/external IDs/provenance.
-  const requireConfiguredToken = (res) => {
-    if (apiToken) return true;
+  const requireConfiguredToken = (req, res) => {
+    if (apiToken || ownerRequests.has(req)) return true;
     sendJson(res, 503, {
       error: "api-token-required",
       message: "Configure apiToken in the dsh-mneme plugin config and enter the same token in the panel (Settings → Connections & safety) before using identity, preference or provenance features."
@@ -354,7 +377,8 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
 
   // 所有路由都经这一处登记：policy 必填、鉴权在这里统一判定（见 createRouteRegistrar）。
   const { register, count: countRoutes } = createRouteRegistrar(webServer, apiToken, disposers, {
-    hasSceneScopedRows: () => service.hasSceneScopedRows?.() === true
+    hasSceneScopedRows: () => service.hasSceneScopedRows?.() === true,
+    allowOwnerRequest
   });
 
   // /api/dsh-mneme prefix fallback → 404 JSON for unknown sub-paths
@@ -1611,7 +1635,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/aliases",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         if (req.method === "GET" || req.method === "HEAD") {
           const url = new URL(req.url, "http://localhost");
@@ -1666,7 +1690,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/external-ids",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         if (req.method === "GET" || req.method === "HEAD") {
           const url = new URL(req.url, "http://localhost");
@@ -1720,7 +1744,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/candidates",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         const url = new URL(req.url, "http://localhost");
         const limit = Math.max(1, Math.min(500, Number(url.searchParams.get("limit") ?? 50) || 50));
@@ -1742,7 +1766,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/merge-preview",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
       return readBody(req, res).then((text) => {
         if (text === null) return undefined;
@@ -1767,7 +1791,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/merge",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
       return readBody(req, res).then((text) => {
         if (text === null) return undefined;
@@ -1791,7 +1815,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/merge-undo",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
       return readBody(req, res).then((text) => {
         if (text === null) return undefined;
@@ -1816,7 +1840,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/links",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         const url = new URL(req.url, "http://localhost");
         const includeInactive = url.searchParams.get("include_inactive") === "1";
@@ -1846,7 +1870,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/history",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         const url = new URL(req.url, "http://localhost");
         const entityId = (url.searchParams.get("entity_id") ?? url.searchParams.get("entity") ?? "").trim();
@@ -1865,7 +1889,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/entity-detail",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         const url = new URL(req.url, "http://localhost");
         const lookup = (url.searchParams.get("id") ?? url.searchParams.get("entity_id") ?? url.searchParams.get("entity") ?? "").trim();
@@ -1906,7 +1930,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/identity/pending",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         if (req.method === "GET" || req.method === "HEAD") {
           const url = new URL(req.url, "http://localhost");
@@ -1946,7 +1970,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/preferences",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         if (req.method === "GET" || req.method === "HEAD") {
           return sendJson(res, 200, service.getPreferenceState());
@@ -2001,7 +2025,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
       if (req.method !== "POST") return sendJson(res, 405, { error: "method-not-allowed" });
       // Trusted intake is a write surface for Life: unlike legacy panel writes,
       // it refuses to run fail-open when no apiToken is configured.
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       if (config?.trustedIntakeEnabled !== true) return sendJson(res, 409, { error: "disabled" });
       return readBody(req, res).then((text) => {
         if (text === null) return undefined;
@@ -2022,7 +2046,7 @@ export function createApi(ctx, service, settings, commands, embedder, semantic =
     path: "/api/dsh-mneme/intake/provenance",
     policy: "token",
     handler(req, res) {
-      if (!requireConfiguredToken(res)) return;
+      if (!requireConfiguredToken(req, res)) return;
       try {
         const url = new URL(req.url, "http://localhost");
         const memoryId = (url.searchParams.get("memoryId") ?? "").trim();

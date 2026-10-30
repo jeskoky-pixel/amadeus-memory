@@ -12,7 +12,8 @@ import { EventEmitter } from "node:events";
 import { createStore } from "../src/store.js";
 import { createService } from "../src/service.js";
 import { createSettings } from "../src/settings.js";
-import { createApi, createRouteRegistrar, ROUTE_POLICIES } from "../src/api.js";
+import { createApi, createRouteRegistrar, ownerHttpAllowed, ROUTE_POLICIES } from "../src/api.js";
+import { configureScene, resetSceneStateForTests } from "../src/scene.js";
 
 class FakeRes extends EventEmitter {
   constructor() { super(); this.statusCode = 200; this.body = ""; }
@@ -110,4 +111,62 @@ test("装配后每条路由都带 policy，count() 与实际挂载数一致", ()
     assert.equal(typeof route.handler, "function");
   }
   assert.equal(api.routes, mounted.length, "createApi 汇报的路由数必须等于实际挂载数");
+});
+
+test("strict Scene HTTP routes allow only same-origin authenticated DSH Owner", () => {
+  resetSceneStateForTests();
+  configureScene({ enabled: true, strictQQ: true, hostContract: true });
+  const store = createStore(":memory:");
+  const service = createService({ store, mirror: null, config: {} });
+  const settings = createSettings(store.db);
+  const mounted = [];
+  const ownerConnection = { admit: () => ({ peer: { principal: { kind: "owner" } } }) };
+  const ctx = { webServer: fakeWebServer(mounted), connection: ownerConnection };
+  const api = createApi(ctx, service, settings, { add() {}, remove() {}, list: () => [] }, null);
+  const request = (path, headers, connection = ownerConnection) => {
+    ctx.connection = connection;
+    const r = req("GET");
+    r.url = path;
+    r.headers = { host: "127.0.0.1:3081", ...headers };
+    const res = new FakeRes();
+    const route = mounted.find((row) => row.kind === "exact" && row.path === path.split("?")[0]);
+    assert.ok(route, `${path} must be registered`);
+    route.handler(r, res);
+    return res;
+  };
+  try {
+    assert.equal(ownerHttpAllowed(ctx, { headers: { host: "127.0.0.1:3081", origin: "http://127.0.0.1:3081" } }), true);
+    assert.equal(ownerHttpAllowed({ reflect: { get: () => ownerConnection } }, { headers: { host: "127.0.0.1:3081" } }), true,
+      "Cordis reflected connection must work without direct service injection");
+    assert.equal(ownerHttpAllowed({ reflect: { get: () => { throw Error("unavailable"); } } }, { headers: { host: "127.0.0.1:3081" } }), false);
+    assert.equal(request("/api/dsh-mneme/preferences", { origin: "http://127.0.0.1:3081" }).statusCode, 200,
+      "Owner GUI must read the legacy route without copying apiToken");
+    assert.equal(request("/api/dsh-mneme/entities?limit=500", {}).statusCode, 200,
+      "original entity directory must load for Owner");
+    assert.equal(request("/api/dsh-mneme/semantic/graph/ego", {}).statusCode, 400,
+      "graph route must reach its own missing-entity validation, not the Scene fence");
+    assert.equal(request("/api/dsh-mneme/semantic/llm-audit/stats?days=7", {}).statusCode, 200,
+      "original status KPI must load for Owner");
+    assert.equal(request("/api/dsh-mneme/preferences", { origin: "https://evil.example" }).statusCode, 403);
+    assert.equal(request("/api/dsh-mneme/preferences", { "sec-fetch-site": "cross-site" }).statusCode, 403);
+    assert.equal(request("/api/dsh-mneme/preferences", { "x-owner": "true" }, { admit: () => ({ peer: { principal: { kind: "user" } } }) }).statusCode, 403);
+    assert.equal(request("/api/dsh-mneme/preferences", {}, null).statusCode, 403);
+    const prefix = mounted.find((row) => row.kind === "prefix" && row.path === "/api/dsh-mneme");
+    const prefixRes = new FakeRes();
+    prefix.handler({ method: "GET", url: "/api/dsh-mneme/unknown", headers: { host: "127.0.0.1:3081" } }, prefixRes);
+    assert.equal(prefixRes.statusCode, 403, "prefix fallback must never become an Owner bypass");
+    const tokenRoutes = [];
+    createRouteRegistrar(fakeWebServer(tokenRoutes), "secret-token", [], {
+      allowOwnerRequest: () => false
+    }).register({ kind: "exact", path: "/api/dsh-mneme/private", policy: "token", handler() {} });
+    const tokenRes = new FakeRes();
+    tokenRoutes[0].handler({ method: "GET", url: "/api/dsh-mneme/private", headers: {
+      host: "127.0.0.1:3081", authorization: "Bearer secret-token"
+    } }, tokenRes);
+    assert.equal(tokenRes.statusCode, 403, "apiToken alone must never grant cross-Scene HTTP access");
+  } finally {
+    api.dispose();
+    store.close();
+    resetSceneStateForTests();
+  }
 });

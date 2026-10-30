@@ -66,7 +66,7 @@ function send(res, status, payload) {
   res.end(body);
 }
 
-function sameOrigin(req) {
+export function sameOrigin(req) {
   const host = String(req.headers?.host ?? "");
   if (!host) return false;
   if (req.headers?.["sec-fetch-site"] === "cross-site") return false;
@@ -83,7 +83,7 @@ function sameOrigin(req) {
   return true;
 }
 
-function ownerAuthorized(connection, req) {
+export function ownerAuthorized(connection, req) {
   if (!connection || typeof connection.admit !== "function") {
     return { ok: false, status: 503, error: "this DSH version cannot verify an owner session" };
   }

@@ -42,6 +42,18 @@ The `profile`, `persona`, `rules`, `mode`, `features`, `commands` and `nudge`
 entries are token-write routes: reads are open, writes require the configured
 token. They are listed here because this section documents read exposure.
 
+When strict QQ Scene isolation is active, or Scene-scoped rows exist, these
+ordinary routes are denied by default. The original Mneme library can call an
+exact route only when the request is same-origin and the DSH Host authenticates
+its principal as Owner. The configured `apiToken`, a forged header, or a QQ
+Scene alone never grants this exception; prefix fallback routes remain denied.
+This Owner GUI exception does not change model-tool Scene authorization.
+
+严格 QQ Scene 隔离启用或库中存在场景记忆时，普通接口默认拒绝。原 Mneme 记忆库
+仅在同源请求经 DSH Host 验证为 Owner 后，才能访问明确注册的接口。`apiToken`、
+伪造请求头或 QQ Scene 本身都不能获得这项权限；前缀兜底接口仍拒绝。模型工具的
+Scene 授权不因此改变。
+
 ## Gated routes
 
 - **Gated routes:** `/profile`, `/profile/extract`, `/persona`, `/test-model`, `/delete`, `/update`, `/create`, `/maintenance/reclaim`, `/rules`, `/vector-config`, `/vector-reindex`, `/runtime/provision`, `/identity/aliases`, `/identity/external-ids`, `/identity/candidates`, `/identity/merge-preview`, `/identity/merge`, `/identity/merge-undo`, `/identity/links`, `/identity/history`, `/identity/entity-detail`, `/identity/pending`, `/preferences`, `/intake`, `/intake/provenance`, `/export`, `/import`, `/conflicts`, `/conflicts/resolve`, `/health`, `/mode`, `/external-api`, `/features`, `/commands`, `/nudge`

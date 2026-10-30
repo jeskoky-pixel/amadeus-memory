@@ -636,8 +636,8 @@ test("status dashboard links into deposited/archived library views", () => {
     "the status page must jump into the library with preset filters"
   );
   assert.ok(
-    clientSource.includes('h(StatusPanel, { t, onBrowse: browseWithFilter })'),
-    "the legacy status panel must retain its browse-jump callback"
+    /view === "status" && h\(StatusPanel, \{ t, onBrowse: browseWithFilter \}\)/.test(clientSource),
+    "the status panel must receive the browse-jump callback"
   );
   assert.ok(
     clientSource.includes('(depositedOnly ? "&deposited=only" : "")'),
@@ -677,29 +677,18 @@ test("explorer hosts Mneme views and the real Amadeus enhancement console", () =
   const explorer = clientSource.slice(clientSource.indexOf("function MemoryExplorer"), clientSource.indexOf("// --- Sidebar entry", clientSource.indexOf("function MemoryExplorer")));
   assert.ok(explorer.indexOf('key: "settings"') < explorer.indexOf('key: "amadeus"'),
     "Amadeus enhancements must appear to the right of Settings");
-  assert.ok(explorer.includes('view === "amadeus" && h(AmadeusMemorySettings, { ctx, t })'),
-    "the fifth tab must render the existing functional admin console with Host context");
+  assert.ok(explorer.includes('view === "amadeus" && h(AmadeusMemorySettings, { ctx, t, settingsOnly: true, showExplorer: true })'),
+    "the fifth tab must render only Amadeus settings with an owner explorer entry");
+  for (const original of [
+    'view === "entity" && h(EntityPanel, { t, focusEntity: graphFocus, onJumpMemory: jumpToMemory })',
+    'view === "status" && h(StatusPanel, { t, onBrowse: browseWithFilter })',
+    'view === "settings" && h("div", { className: "mneme-set" }'
+  ]) assert.ok(explorer.includes(original), `original Mneme page must remain: ${original}`);
+  assert.ok(!clientSource.includes("function OwnerMemoryExplorer"), "strict Scene mode must not replace the four Mneme pages");
+  assert.ok(clientSource.includes('!settingsOnly && renderTabs(topTabs, panelTab, setPanelTab'),
+    "the fifth tab must not repeat the four top-level pages inside itself");
   assert.ok(clientSource.includes('h(MemoryOverlay, { ctx, t })'),
     "the sidebar sheet must pass Host context to the explorer");
-});
-
-test("strict Scene mode sends the whole library through owner admin", async () => {
-  const start = clientSource.indexOf("async function libraryAccess");
-  const end = clientSource.indexOf("// Native settings page data plane", start);
-  assert.ok(start >= 0 && end > start);
-  const classify = vm.runInNewContext(`(${clientSource.slice(start, end).trim()})`);
-  assert.equal(await classify({ status: 403, json: async () => ({ error: "scene-isolation-active" }) }), "owner");
-  assert.equal(await classify({ status: 403, json: async () => ({ error: "unauthorized" }) }), "legacy");
-  assert.equal(await classify({ status: 200, json: async () => { throw Error("must not parse success response"); } }), "legacy");
-  const wrapper = clientSource.slice(clientSource.indexOf("function MemoryExplorer"), clientSource.indexOf("function LegacyMemoryExplorer"));
-  assert.ok(wrapper.includes('apiFetch("/api/dsh-mneme/info")'), "the library must detect protected mode before mounting legacy data views");
-  assert.ok(wrapper.includes('if (access === "owner") return h(OwnerMemoryExplorer, { ctx, t })'));
-  assert.ok(wrapper.includes('if (access === "legacy") return h(LegacyMemoryExplorer, { ctx, t })'));
-  assert.ok(wrapper.includes('h(AmadeusMemorySettings, { key: view, ctx, t, embeddedView:'),
-    "protected tabs must mount existing authenticated admin views");
-  for (const panel of ['panel: "memory"', 'panel: "entities"', 'panel: "status"', 'panel: "settings"']) {
-    assert.ok(wrapper.includes(panel), `${panel} must remain available under strict Scene isolation`);
-  }
 });
 
 // The graph panel jumps back into the browser: related-memory rows and the
@@ -2516,7 +2505,7 @@ test("native settings exposes top and nested tab hierarchy with bilingual keyboa
   ]) {
     assert.ok(clientSource.includes(token), `tab navigation must include ${token}`);
   }
-  assert.ok(clientSource.includes('const [panelTab, setPanelTab] = useState(() => settingsOnly ? "settings" : embeddedView || readAmadeusNav().panelTab)'));
+  assert.ok(clientSource.includes('const [panelTab, setPanelTab] = useState(() => settingsOnly ? "settings" : readAmadeusNav().panelTab)'));
   assert.ok(clientSource.includes('const [memoryView, setMemoryView] = useState(() => readAmadeusNav().memoryView)'));
   assert.ok(clientSource.includes('const [settingsPage, setSettingsPage] = useState(() => readAmadeusNav().settingsPage)'));
 });
