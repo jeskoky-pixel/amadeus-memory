@@ -683,16 +683,23 @@ test("explorer hosts Mneme views and the real Amadeus enhancement console", () =
     "the sidebar sheet must pass Host context to the explorer");
 });
 
-test("strict Scene mode sends the library status view through owner admin", async () => {
-  const start = clientSource.indexOf("async function legacyStatusAccess");
+test("strict Scene mode sends the whole library through owner admin", async () => {
+  const start = clientSource.indexOf("async function libraryAccess");
   const end = clientSource.indexOf("// Native settings page data plane", start);
   assert.ok(start >= 0 && end > start);
   const classify = vm.runInNewContext(`(${clientSource.slice(start, end).trim()})`);
   assert.equal(await classify({ status: 403, json: async () => ({ error: "scene-isolation-active" }) }), "owner");
   assert.equal(await classify({ status: 403, json: async () => ({ error: "unauthorized" }) }), "legacy");
   assert.equal(await classify({ status: 200, json: async () => { throw Error("must not parse success response"); } }), "legacy");
-  assert.ok(/statusAccess === "owner"\s*\? h\(AmadeusMemorySettings, \{ ctx, t, initialTab: "status" \}\)/.test(clientSource),
-    "protected status must mount the existing authenticated admin view");
+  const wrapper = clientSource.slice(clientSource.indexOf("function MemoryExplorer"), clientSource.indexOf("function LegacyMemoryExplorer"));
+  assert.ok(wrapper.includes('apiFetch("/api/dsh-mneme/info")'), "the library must detect protected mode before mounting legacy data views");
+  assert.ok(wrapper.includes('if (access === "owner") return h(OwnerMemoryExplorer, { ctx, t })'));
+  assert.ok(wrapper.includes('if (access === "legacy") return h(LegacyMemoryExplorer, { ctx, t })'));
+  assert.ok(wrapper.includes('h(AmadeusMemorySettings, { key: view, ctx, t, embeddedView:'),
+    "protected tabs must mount existing authenticated admin views");
+  for (const panel of ['panel: "memory"', 'panel: "entities"', 'panel: "status"', 'panel: "settings"']) {
+    assert.ok(wrapper.includes(panel), `${panel} must remain available under strict Scene isolation`);
+  }
 });
 
 // The graph panel jumps back into the browser: related-memory rows and the
@@ -2509,7 +2516,7 @@ test("native settings exposes top and nested tab hierarchy with bilingual keyboa
   ]) {
     assert.ok(clientSource.includes(token), `tab navigation must include ${token}`);
   }
-  assert.ok(clientSource.includes('const [panelTab, setPanelTab] = useState(() => settingsOnly ? "settings" : initialTab || readAmadeusNav().panelTab)'));
+  assert.ok(clientSource.includes('const [panelTab, setPanelTab] = useState(() => settingsOnly ? "settings" : embeddedView || readAmadeusNav().panelTab)'));
   assert.ok(clientSource.includes('const [memoryView, setMemoryView] = useState(() => readAmadeusNav().memoryView)'));
   assert.ok(clientSource.includes('const [settingsPage, setSettingsPage] = useState(() => readAmadeusNav().settingsPage)'));
 });
