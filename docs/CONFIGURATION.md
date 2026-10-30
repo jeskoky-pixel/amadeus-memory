@@ -357,3 +357,7 @@ stays off.
 
 预设只是默认值而非强制：用户显式写进 feature_flags 的值在装配顺序上后展开、仍然生效
 （「用户开关 > 轻量预设 > bundle 配置」）。
+
+### Experimental unified Session ACL
+
+`unifiedSessionAclEnabled` defaults to `false`. Select one real Host Workspace, enable in the Amadeus page, and restart the plugin. Requires the candidate QQ Session provenance v1 contract when QQ is present. Unknown historical Sessions and unsourced rows remain quarantined. Long-term directed read grants do not confer writes or change recent-activity grants. Back up the database before enabling; restore the frozen package and matching pre-upgrade snapshot to roll back.

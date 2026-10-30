@@ -11,6 +11,15 @@ const expected = {
   tools: ["memory_search", "memory_list", "memory_get"]
 };
 
+test('unified runtime advertises read capability only after trusted Workspace mount',async()=>{
+ const ctx=new Context();const drop=ctx.provide('qq',{resolveTrustedSessionScene(){return null;}});
+ try {
+  assert.equal(sceneAclReadDeclaration(ctx,{unifiedSessionAclEnabled:true}),null);
+  assert.deepEqual(sceneAclReadDeclaration(ctx,{unifiedSessionAclEnabled:true},true),expected);
+  assert.equal(sceneAclReadDeclaration(ctx,{unifiedSessionAclEnabled:false},true),null);
+ } finally {drop();}
+});
+
 test("optional amadeus.memory handshake is provided only with strict QQ + Host", async () => {
   const ctx = new Context();
   const disposeQq = ctx.provide("qq", { resolveTrustedSessionScene() { return null; } });

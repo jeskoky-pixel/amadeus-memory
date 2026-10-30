@@ -1,0 +1,12 @@
+{
+  "baselineInstalled": true,
+  "baselineModelWrite": true,
+  "consistentStoppedBackup": true,
+  "candidateModelWrite": true,
+  "oldRowRetainedDuringUpgrade": true,
+  "originalPackageRestored": true,
+  "originalDatabaseSnapshotRestored": true,
+  "hostRestarted": true,
+  "exactOriginalRows": true,
+  "restoredActualModelTool": "1 memory entries (of 1):\n\n[1] host-fact-ROLLBACKOLD (type=preference, importance=5)\n    ID: 5f236ff6-7aba-49e2-b9df-929d20df78d9 | updated: 2026-10-30T13:10:04.525Z"
+}

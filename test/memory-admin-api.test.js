@@ -88,6 +88,10 @@ async function call(route, options) {
 test("admin API is same-origin owner-only and marks writes", async () => {
   const h = setup();
   try {
+    for (const url of ['/unified','/unified/graph','/unified/mirror']) {
+      assert.equal((await call(h.route,{url:'/api/amadeus-memory/admin'+url,headers:{'x-test-unauthenticated':'1'}})).status,401);
+      assert.equal((await call(h.route,{method:'POST',url:'/api/amadeus-memory/admin'+url,headers:{'content-type':'application/json'},body:{}})).status,403);
+    }
     assert.equal((await call(h.route, { url: "/api/amadeus-memory/admin/overview", headers: { "x-test-unauthenticated": "1" } })).status, 401);
     assert.equal((await call(h.route, {
       url: "/api/amadeus-memory/admin/overview", headers: { origin: "https://evil.example" }

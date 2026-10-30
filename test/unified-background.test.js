@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createStore } from '../src/store.js';
+import { createService } from '../src/service.js';
+import { createUnifiedRuntime } from '../src/unified-runtime.js';
+import { createSummarizer } from '../src/summarize.js';
+import { createDreamScheduler } from '../src/dream.js';
+import { runSleep } from '../src/dream/sleep.js';
+import { mockCtx } from './helpers/dream-mock.js';
+
+function setup() {
+ const store=createStore(':memory:'),service=createService({store,mirror:null,config:{}});
+ const sessions=new Map(['a','b'].map(id=>[id,{id,header:{createdAt:1,agentPreset:'custom'},
+  requestHeader:()=>({config:{provider:'mock',model:'synthetic'}}),
+  events:[{seq:1,type:'user/message',data:{source:{kind:'user'},content:[{type:'text',text:'private-'+id}]}},{seq:2,type:'turn/end'}]}]));
+ const ctx={sessions:{get:id=>sessions.get(id)},qq:{sessionProvenanceVersion:1,classifySession:()=>({kind:'ordinary'})}};
+ const runtime=createUnifiedRuntime({ctx,db:store.db,workspaceId:'w',authorizeWorkspace:()=>({allowed:true,workspaceId:'w'}),enabled:()=>true});
+ return {store,service,sessions,ctx,runtime};
+}
+
+test('autoSummarize stamps ordinary custom Session sources and refuses disposed runtime writes',async()=>{
+ const f=setup(),handlers=[];let invalidate=false;
+ Object.assign(f.ctx,{on:(n,fn)=>{handlers.push(fn);return()=>{};},logger:{warn(){}},llm:{async *stream(){
+  if(invalidate)f.runtime.dispose();
+  yield {type:'text-delta',text:JSON.stringify([{type:'decision',title:'summary',content:'synthetic decision',importance:4}])};
+  yield {type:'finish',reason:{kind:'ok'}};
+ }}});
+ const summarizer=createSummarizer(f.ctx,f.service,{autoSummarize:true},{authorizeModelWork:f.runtime.authorize});
+ try {
+  await handlers[0](f.sessions.get('a'),{type:'turn/end',seq:2});
+  assert.equal(f.store.all().length,1);
+  assert.equal(f.store.all()[0].scene_scope,'dsh:session:a');
+  invalidate=true;
+  await handlers[0](f.sessions.get('b'),{type:'turn/end',seq:2});
+  assert.equal(f.store.all().length,1);
+ } finally {summarizer.dispose();f.store.close();}
+});
+
+test('Dream and Sleep source jobs never inherit shared reads or merge another source',async()=>{
+ const f=setup(),inputs=[];
+ try {
+  for(const id of ['a','b'])f.runtime.authorize.run(f.sessions.get(id),()=>f.service.saveWithDedupe({type:'preference',title:'fact-'+id,content:'PRIVATE_'+id,importance:5}));
+  f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',true);
+  const ctx=mockCtx({onConsolidation:text=>{inputs.push(text);return '[]';}});
+  const dream=createDreamScheduler({thresholdCount:1,thresholdChars:0,delayMs:0});
+  try {
+   await f.runtime.runSources(()=>dream.runDream(ctx,f.service,{dreamProvider:'mock',dreamModel:'synthetic'}));
+   await f.runtime.runSources(()=>runSleep(ctx,f.service,{sleepModeEnabled:true,sleepPatternMinMemories:100,sleepArchiveDays:365,sleepCompressDays:365},ctx.logger));
+  } finally {dream.dispose();}
+  assert.ok(inputs.length>=2);
+  for(const input of inputs)assert.ok(!(input.includes('PRIVATE_a')&&input.includes('PRIVATE_b')));
+  for(const id of ['a','b'])assert.equal(f.runtime.authorize.run(f.sessions.get(id),()=>f.store.all().filter(m=>m.title==='fact-'+id).length),1);
+  assert.equal(f.store.all().filter(m=>m.type==='preference').length,2);
+ } finally {f.store.close();}
+});

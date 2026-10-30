@@ -1,0 +1,17 @@
+{
+  "actualTurnEnd": true,
+  "syntheticProvider": true,
+  "distinctSceneSources": [
+    {
+      "title": "Host automated source summary",
+      "scene_scope": "qq:group:10001:20001",
+      "source": "session:b787d05a-b6d5-4274-86bf-8d68d95d365e"
+    },
+    {
+      "title": "Host automated source summary",
+      "scene_scope": "qq:group:10001:20002",
+      "source": "session:9776e6d6-6406-46ab-b513-7d7658597f00"
+    }
+  ],
+  "summaryCalls": 2
+}

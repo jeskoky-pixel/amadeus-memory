@@ -1,3 +1,5 @@
+> Historical checkpoint. Current implementation and acceptance: [final isolated candidate report](UNIFIED_SESSION_ACL_FINAL.md). The limitations below describe the earlier checkpoint.
+
 # Unified Session ACL experiment (in progress)
 
 This branch is an opt-in architecture experiment. It is not an installable

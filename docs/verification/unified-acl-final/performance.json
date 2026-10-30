@@ -1,0 +1,313 @@
+{
+  "node": "v22.23.2",
+  "synthetic": true,
+  "remoteEmbedding": false,
+  "results": [
+    {
+      "mode": "baseline",
+      "count": 1000,
+      "dimensions": 64,
+      "sourceCount": 5,
+      "samples": 25,
+      "measurements": {
+        "list": {
+          "p50Ms": 0.671,
+          "p95Ms": 1.127,
+          "sqlCallsPerOp": 1,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "keyword": {
+          "p50Ms": 3.046,
+          "p95Ms": 4.034,
+          "sqlCallsPerOp": 16.36,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 6.68
+        },
+        "vector": {
+          "p50Ms": 3.836,
+          "p95Ms": 5.436,
+          "sqlCallsPerOp": 48,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "hybrid": {
+          "p50Ms": 4.382,
+          "p95Ms": 6.367,
+          "sqlCallsPerOp": 48,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "graph": {
+          "p50Ms": 0.046,
+          "p95Ms": 0.127,
+          "sqlCallsPerOp": 2,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 2
+        },
+        "multiHop": {
+          "p50Ms": 0.146,
+          "p95Ms": 0.398,
+          "sqlCallsPerOp": 6,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 3
+        },
+        "injectionCandidates": {
+          "p50Ms": 2.466,
+          "p95Ms": 3.608,
+          "sqlCallsPerOp": 11,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 5
+        },
+        "backgroundDream": {
+          "p50Ms": 3.922,
+          "p95Ms": 5.501,
+          "sqlCallsPerOp": 16,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 0
+        },
+        "backgroundSleep": {
+          "p50Ms": 18.577,
+          "p95Ms": 22.524,
+          "sqlCallsPerOp": 315,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 0
+        },
+        "syntheticBackgroundModelCalls": 84
+      }
+    },
+    {
+      "mode": "baseline",
+      "count": 10000,
+      "dimensions": 64,
+      "sourceCount": 5,
+      "samples": 25,
+      "measurements": {
+        "list": {
+          "p50Ms": 4.403,
+          "p95Ms": 5.618,
+          "sqlCallsPerOp": 1,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "keyword": {
+          "p50Ms": 9.518,
+          "p95Ms": 10.625,
+          "sqlCallsPerOp": 23,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "vector": {
+          "p50Ms": 11.836,
+          "p95Ms": 16.08,
+          "sqlCallsPerOp": 48,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "hybrid": {
+          "p50Ms": 10.409,
+          "p95Ms": 13.716,
+          "sqlCallsPerOp": 48,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 10
+        },
+        "graph": {
+          "p50Ms": 0.051,
+          "p95Ms": 0.115,
+          "sqlCallsPerOp": 2,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 2
+        },
+        "multiHop": {
+          "p50Ms": 0.138,
+          "p95Ms": 0.413,
+          "sqlCallsPerOp": 6,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 3
+        },
+        "injectionCandidates": {
+          "p50Ms": 6.039,
+          "p95Ms": 8.784,
+          "sqlCallsPerOp": 11,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 5
+        },
+        "backgroundDream": {
+          "p50Ms": 27.07,
+          "p95Ms": 30.684,
+          "sqlCallsPerOp": 16,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 0
+        },
+        "backgroundSleep": {
+          "p50Ms": 33.647,
+          "p95Ms": 42.832,
+          "sqlCallsPerOp": 315,
+          "hostChecksPerOp": 0,
+          "resultItemsPerOp": 0
+        },
+        "syntheticBackgroundModelCalls": 84
+      }
+    },
+    {
+      "mode": "candidate",
+      "count": 1000,
+      "dimensions": 64,
+      "sourceCount": 5,
+      "samples": 25,
+      "measurements": {
+        "list": {
+          "p50Ms": 0.453,
+          "p95Ms": 0.652,
+          "sqlCallsPerOp": 7,
+          "hostChecksPerOp": 5,
+          "resultItemsPerOp": 10
+        },
+        "keyword": {
+          "p50Ms": 3.446,
+          "p95Ms": 5.554,
+          "sqlCallsPerOp": 83.12,
+          "hostChecksPerOp": 41.72,
+          "resultItemsPerOp": 6.68
+        },
+        "vector": {
+          "p50Ms": 5.401,
+          "p95Ms": 8.667,
+          "sqlCallsPerOp": 174,
+          "hostChecksPerOp": 92,
+          "resultItemsPerOp": 10
+        },
+        "hybrid": {
+          "p50Ms": 5.331,
+          "p95Ms": 8.363,
+          "sqlCallsPerOp": 174,
+          "hostChecksPerOp": 92,
+          "resultItemsPerOp": 10
+        },
+        "graph": {
+          "p50Ms": 0.12,
+          "p95Ms": 0.251,
+          "sqlCallsPerOp": 8,
+          "hostChecksPerOp": 5,
+          "resultItemsPerOp": 1
+        },
+        "multiHop": {
+          "p50Ms": 0.178,
+          "p95Ms": 0.323,
+          "sqlCallsPerOp": 13,
+          "hostChecksPerOp": 7,
+          "resultItemsPerOp": 1
+        },
+        "injectionCandidates": {
+          "p50Ms": 2.688,
+          "p95Ms": 8.071,
+          "sqlCallsPerOp": 58,
+          "hostChecksPerOp": 29,
+          "resultItemsPerOp": 5
+        },
+        "identity": {
+          "p50Ms": 0.035,
+          "p95Ms": 0.038,
+          "sqlCallsPerOp": 4,
+          "hostChecksPerOp": 4,
+          "resultItemsPerOp": 0
+        },
+        "backgroundDream": {
+          "p50Ms": 4.417,
+          "p95Ms": 5.728,
+          "sqlCallsPerOp": 39,
+          "hostChecksPerOp": 20,
+          "resultItemsPerOp": 0
+        },
+        "backgroundSleep": {
+          "p50Ms": 42.461,
+          "p95Ms": 48.408,
+          "sqlCallsPerOp": 1512,
+          "hostChecksPerOp": 1375,
+          "resultItemsPerOp": 0
+        },
+        "syntheticBackgroundModelCalls": 84
+      }
+    },
+    {
+      "mode": "candidate",
+      "count": 10000,
+      "dimensions": 64,
+      "sourceCount": 5,
+      "samples": 25,
+      "measurements": {
+        "list": {
+          "p50Ms": 2.898,
+          "p95Ms": 4.426,
+          "sqlCallsPerOp": 7,
+          "hostChecksPerOp": 5,
+          "resultItemsPerOp": 10
+        },
+        "keyword": {
+          "p50Ms": 11.31,
+          "p95Ms": 16.438,
+          "sqlCallsPerOp": 113,
+          "hostChecksPerOp": 55,
+          "resultItemsPerOp": 10
+        },
+        "vector": {
+          "p50Ms": 15.538,
+          "p95Ms": 20.512,
+          "sqlCallsPerOp": 174,
+          "hostChecksPerOp": 92,
+          "resultItemsPerOp": 10
+        },
+        "hybrid": {
+          "p50Ms": 15.975,
+          "p95Ms": 31.33,
+          "sqlCallsPerOp": 174,
+          "hostChecksPerOp": 92,
+          "resultItemsPerOp": 10
+        },
+        "graph": {
+          "p50Ms": 0.099,
+          "p95Ms": 0.181,
+          "sqlCallsPerOp": 8,
+          "hostChecksPerOp": 5,
+          "resultItemsPerOp": 1
+        },
+        "multiHop": {
+          "p50Ms": 0.204,
+          "p95Ms": 0.391,
+          "sqlCallsPerOp": 13,
+          "hostChecksPerOp": 7,
+          "resultItemsPerOp": 1
+        },
+        "injectionCandidates": {
+          "p50Ms": 5.617,
+          "p95Ms": 8.132,
+          "sqlCallsPerOp": 58,
+          "hostChecksPerOp": 29,
+          "resultItemsPerOp": 5
+        },
+        "identity": {
+          "p50Ms": 0.033,
+          "p95Ms": 0.061,
+          "sqlCallsPerOp": 4,
+          "hostChecksPerOp": 4,
+          "resultItemsPerOp": 0
+        },
+        "backgroundDream": {
+          "p50Ms": 28.616,
+          "p95Ms": 32.311,
+          "sqlCallsPerOp": 39,
+          "hostChecksPerOp": 20,
+          "resultItemsPerOp": 0
+        },
+        "backgroundSleep": {
+          "p50Ms": 60.738,
+          "p95Ms": 71.848,
+          "sqlCallsPerOp": 1512,
+          "hostChecksPerOp": 1375,
+          "resultItemsPerOp": 0
+        },
+        "syntheticBackgroundModelCalls": 84
+      }
+    }
+  ]
+}

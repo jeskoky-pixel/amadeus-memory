@@ -1,0 +1,77 @@
+{
+  "desktop": "0.2.1-rc.3",
+  "syntheticProvider": true,
+  "syntheticQQTransport": true,
+  "granted": [
+    {
+      "session": "A",
+      "command": "ACL_LIST",
+      "tool": "1 memory entries (of 1):\n\n[1] host-fact-A (type=preference, importance=5)\n    ID: b67e5cbe-06eb-4774-97e4-6979f5323cc2 | updated: 2026-10-30T13:04:44.780Z"
+    },
+    {
+      "session": "B",
+      "command": "ACL_LIST",
+      "tool": "2 memory entries (of 2):\n\n[1] host-fact-A (type=preference, importance=5)\n    ID: b67e5cbe-06eb-4774-97e4-6979f5323cc2 | updated: 2026-10-30T13:04:44.780Z\n\n[2] host-fact-B (type=preference, importance=5)\n    ID: 5e648705-7ef8-4c0b-85c8-260ea4f93a82 | updated: 2026-10-30T13:04:44.778Z"
+    },
+    {
+      "session": "C",
+      "command": "ACL_LIST",
+      "tool": "1 memory entries (of 1):\n\n[1] host-fact-C (type=preference, importance=5)\n    ID: 6fcf4ba5-28ba-485f-8928-79674c2091be | updated: 2026-10-30T13:04:44.777Z"
+    },
+    {
+      "session": "D",
+      "command": "ACL_LIST",
+      "tool": "1 memory entries (of 1):\n\n[1] host-fact-D (type=preference, importance=5)\n    ID: f16eb20f-4ca8-4620-944e-030bbe3c6ced | updated: 2026-10-30T13:04:44.776Z"
+    },
+    {
+      "session": "Q1",
+      "command": "ACL_LIST",
+      "tool": "1 memory entries (of 1):\n\n[1] host-fact-Q1 (type=preference, importance=5)\n    ID: b1e5b7cb-d6a5-459b-8a26-cbe14cd9619c | updated: 2026-10-30T13:04:44.775Z"
+    },
+    {
+      "session": "Q2",
+      "command": "ACL_LIST",
+      "tool": "1 memory entries (of 1):\n\n[1] host-fact-Q2 (type=preference, importance=5)\n    ID: 3760984a-1910-4ecf-ad78-3a81fc68a5b6 | updated: 2026-10-30T13:04:44.774Z"
+    },
+    {
+      "session": "O",
+      "command": "ACL_LIST",
+      "tool": "1 memory entries (of 1):\n\n[1] host-fact-O (type=preference, importance=5)\n    ID: 8b9ba4c2-cf3a-4059-86cd-eef3e10533d1 | updated: 2026-10-30T13:04:44.772Z"
+    },
+    {
+      "session": "X",
+      "command": "ACL_LIST",
+      "tool": "Error: WORKSPACE_ACCESS_DENIED: unified-identity-unverified"
+    },
+    {
+      "session": "B",
+      "command": "ACL_UPDATE:b67e5cbe-06eb-4774-97e4-6979f5323cc2",
+      "tool": "Error: UNIFIED_WRITE_NOT_OWNED"
+    },
+    {
+      "session": "B",
+      "command": "ACL_ARCHIVE:b67e5cbe-06eb-4774-97e4-6979f5323cc2",
+      "tool": "Error: UNIFIED_WRITE_NOT_OWNED"
+    },
+    {
+      "session": "B",
+      "command": "ACL_DELETE:b67e5cbe-06eb-4774-97e4-6979f5323cc2",
+      "tool": "Error: UNIFIED_WRITE_NOT_OWNED"
+    }
+  ],
+  "revoked": {
+    "session": "B",
+    "tool": "1 memory entries (of 1):\n\n[1] host-fact-B (type=preference, importance=5)\n    ID: 5e648705-7ef8-4c0b-85c8-260ea4f93a82 | updated: 2026-10-30T13:04:44.778Z",
+    "newMemoryInjectionExcludesA": true
+  },
+  "packagedQQPresets": {
+    "A": "standard",
+    "B": "standard",
+    "C": "acl-video-agent",
+    "D": "acl-social-agent",
+    "X": "standard",
+    "Q1": "amadeus-qq",
+    "Q2": "amadeus-qq",
+    "O": "amadeus-qq"
+  }
+}

@@ -1,3 +1,4 @@
+import { currentUnifiedSession } from "./unified-session-acl.js";
 import { createScopeResolver } from "./scope.js";
 import { createHotMemory, roundsFromEvents } from "./hot-memory.js";
 import { STR, langOf } from "./lang.js";
@@ -112,7 +113,8 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
     } catch {
       decision = null;
     }
-    if (decision?.allowed === true) return render();
+    if (decision?.allowed === true) return authorizeModelWork.run
+      ? authorizeModelWork.run(renderCtx?.agent?.session, render) : render();
     // An unauthorized session must not leave a previous session's preview frame
     // visible, and must not reach the injector's data path at all.
     injectionSnapshot = null;
@@ -489,6 +491,7 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
   }
 
   function renderForQQScene(renderCtx, render) {
+    if (currentUnifiedSession()) return render();
     const policy = scenePolicy();
     const preset = sessionAgentId(renderCtx);
     // An existing in-process capability can be supplied by a trusted Host

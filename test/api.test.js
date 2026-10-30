@@ -757,7 +757,8 @@ test("GET /api/dsh-mneme/features returns empty overrides and effective config d
   // Amadeus memory enhancer 新增 memoryPreferenceEnabled / trustedIntakeEnabled
   // （均为顶层扁平键，默认关）= 108；Scene/Recent/Core 七个 opt-in 键 = 115；
   // Mneme-lite 跨会话近期活动新增 recentActivityEnabled = 116。
-  assert.equal(Object.keys(data.effective).length, 116);
+  assert.equal(Object.keys(data.effective).length, 117);
+  assert.equal(data.effective.unifiedSessionAclEnabled, false);
   assert.equal(data.effective.dreamSkipInvalid, true);
   assert.equal(data.effective.allowCrossTypeMerge, false);
   assert.equal(data.effective.dreamMergeGuard, true);

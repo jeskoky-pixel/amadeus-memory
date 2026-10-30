@@ -748,6 +748,9 @@ export function createSummarizer(ctx, service, config, deps = {}) {
       logModelDenied(access.reason);
       return;
     }
+    if (authorizeModelWork?.run) {
+      return authorizeModelWork.run(session, () => summarizeInner(session, triggerEvent, opts, null));
+    }
     const decision = sceneDecision(session, opts.expectedSceneId ?? null);
     if (decision.kind === "deny") return;
     const run = () => summarizeInner(session, triggerEvent, opts, decision.kind === "scene" ? decision.scene : null);
