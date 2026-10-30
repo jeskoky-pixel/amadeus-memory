@@ -1,0 +1,47 @@
+{
+  "ready": true,
+  "configured": true,
+  "reason": null,
+  "coverage": {
+    "embedded": 25,
+    "total": 25,
+    "ratio": 1
+  },
+  "vectors": {
+    "byDimension": [
+      {
+        "dimension": 512,
+        "count": 25
+      }
+    ],
+    "byModel": [
+      {
+        "model": "Xenova/bge-small-zh-v1.5@cls#dd63bfc1",
+        "count": 25
+      }
+    ],
+    "unsearchable": 0,
+    "retrievable": 25
+  },
+  "degraded": false,
+  "embedProvider": "LocalEmbedder",
+  "modelHash": "Xenova/bge-small-zh-v1.5@cls#dd63bfc1",
+  "dimension": 512,
+  "reranker": null,
+  "index": {
+    "modelHash": "Xenova/bge-small-zh-v1.5@cls#dd63bfc1",
+    "dimension": 512,
+    "updatedAt": "2026-10-30T16:06:48.197Z",
+    "embeddedCount": 25,
+    "totalCount": 25
+  },
+  "localRuntime": {
+    "status": "available",
+    "payloadId": "transformers-4.3.0-node-win32-x64",
+    "version": "4.3.0",
+    "procedure": "adopted",
+    "materialize": "hardlink",
+    "integrity": "unverified",
+    "functional": "unknown"
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "path": "/api/amadeus-life/status",
+    "status": 200
+  },
+  {
+    "path": "/api/amadeus-state/status",
+    "status": 200
+  },
+  {
+    "path": "/api/amadeus-persona/overview",
+    "status": 200
+  },
+  {
+    "path": "/api/amadeus-qq/scenes",
+    "status": 200
+  }
+]

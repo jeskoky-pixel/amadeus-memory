@@ -1,0 +1,95 @@
+{
+  "agent": {
+    "requests": 42,
+    "input": 123036,
+    "output": 6658,
+    "cacheRead": 793728
+  },
+  "background": {
+    "requests": 43,
+    "input": 22892,
+    "output": 38665,
+    "bySource": {
+      "autoSummarize": {
+        "count": 5,
+        "success": 5,
+        "durationsMs": [
+          13632,
+          15990,
+          12530,
+          9874,
+          9645
+        ]
+      },
+      "entityExtract": {
+        "count": 26,
+        "success": 26,
+        "durationsMs": [
+          4619,
+          6612,
+          7263,
+          2918,
+          16028,
+          16329,
+          2410,
+          27764,
+          2451,
+          17522,
+          6404,
+          11193,
+          18348,
+          8283,
+          8594,
+          8982,
+          14471,
+          6877,
+          9865,
+          17318,
+          35291,
+          4111,
+          11442,
+          12945,
+          16222,
+          27245
+        ]
+      },
+      "autoDream": {
+        "count": 8,
+        "success": 8,
+        "durationsMs": [
+          11007,
+          4094,
+          9915,
+          4912,
+          2682,
+          6018,
+          4632,
+          4069
+        ]
+      },
+      "sleep": {
+        "count": 4,
+        "success": 4,
+        "durationsMs": [
+          6072,
+          2867,
+          1819,
+          3655
+        ]
+      }
+    }
+  },
+  "pricing": {
+    "source": "https://api-docs.deepseek.com/quick_start/pricing",
+    "currency": "USD",
+    "modelReference": "DeepSeek-V4.1-Flash-1017",
+    "offPeakPerMillion": {
+      "input": 0.15,
+      "cacheRead": 0.003,
+      "output": 0.6
+    },
+    "referenceCostUSD": 0.051464183999999996,
+    "notSubscriptionBilling": true,
+    "backgroundCacheSplitUnavailable": true
+  }
+}

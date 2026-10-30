@@ -1,0 +1,16 @@
+[
+  {
+    "action": "get_login_info",
+    "status": 200,
+    "retcode": 0,
+    "ok": true,
+    "accountUnchanged": true
+  },
+  {
+    "action": "get_msg",
+    "status": 200,
+    "retcode": 0,
+    "ok": true,
+    "replyConfirmed": true
+  }
+]

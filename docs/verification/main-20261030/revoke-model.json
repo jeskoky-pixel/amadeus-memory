@@ -1,0 +1,29 @@
+{
+  "complete": true,
+  "checks": [
+    {
+      "type": "user/message",
+      "hasPrivateA": false,
+      "notFound": false,
+      "hasOwn": false
+    },
+    {
+      "type": "user/message",
+      "hasPrivateA": false,
+      "notFound": false,
+      "hasOwn": false
+    },
+    {
+      "type": "tool/result",
+      "hasPrivateA": false,
+      "notFound": false,
+      "hasOwn": true
+    },
+    {
+      "type": "tool/result",
+      "hasPrivateA": false,
+      "notFound": true,
+      "hasOwn": false
+    }
+  ]
+}
