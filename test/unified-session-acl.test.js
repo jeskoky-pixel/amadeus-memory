@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createUnifiedSessionAcl, currentUnifiedReadSql, runWithUnifiedSession } from "../src/unified-session-acl.js";
 import { createStore } from "../src/store.js";
+import { createService } from "../src/service.js";
 import { createIdentityService } from "../src/identity.js";
 
 function fixture() {
@@ -51,6 +52,74 @@ test("same preset Sessions remain private; grants are directional and non-transi
   assert.equal(f.acl.canReadMemory(a, row), true);
 });
 
+test("trusted identities cannot be reused across ACL instances", () => {
+  const first = fixture();
+  const second = fixture();
+  const foreign = first.acl.identify(first.add("a").id);
+  second.memory("foreign-row");
+  assert.deepEqual([...second.acl.readableSources(foreign)], []);
+  assert.equal(second.acl.canReadMemory(foreign, { id: "foreign-row" }), false);
+  assert.throws(() => second.acl.linkMemory("foreign-row", foreign), /trusted memory source required/);
+});
+
+test("unified writes dedupe within their source and never merge a granted source", () => {
+  const store = createStore(":memory:");
+  const service = createService({ store, mirror: null, config: {} });
+  const sessions = new Map(["a", "b"].map((id) => [id, { id, header: { agentPreset: "standard" } }]));
+  const acl = createUnifiedSessionAcl({
+    db: store.db, workspaceId: "workspace-1",
+    resolveTrustedSession: (id) => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" })
+  });
+  const a = acl.identify("a");
+  const b = acl.identify("b");
+  const save = (identity, content) => runWithUnifiedSession(acl, identity, () =>
+    service.saveWithDedupe({ type: "history", title: "Shared title", content }));
+  const first = save(a, "first observation");
+  const second = save(a, "second observation");
+  assert.equal(second.memory.id, first.memory.id, "one source should retain normal dedupe");
+  acl.setGrant(a.sourceKey, b.sourceKey, true);
+  const other = save(b, "private second source");
+  assert.notEqual(other.memory.id, first.memory.id, "read grant does not authorize a write merge");
+  assert.equal(store.count(), 2);
+  store.db.close();
+});
+
+test("a directional read grant cannot mutate the source memory or attach forged graph evidence", () => {
+  const store = createStore(":memory:");
+  const sessions = new Map(["a", "b"].map((id) => [id, { id, header: { agentPreset: "standard" } }]));
+  const acl = createUnifiedSessionAcl({
+    db: store.db, workspaceId: "workspace-1",
+    resolveTrustedSession: (id) => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" })
+  });
+  const a = acl.identify("a");
+  const b = acl.identify("b");
+  const row = runWithUnifiedSession(acl, a, () => store.save({
+    type: "history", title: "A fact", content: "Private source fact"
+  }));
+  const entity = store.createEntity({ name: "Synthetic Person", type: "person" });
+  acl.setGrant(a.sourceKey, b.sourceKey, true);
+  runWithUnifiedSession(acl, b, () => {
+    assert.equal(store.getById(row.id)?.id, row.id);
+    assert.deepEqual(store.recentContents(20), []);
+    assert.deepEqual(store.findContentHashMatches({
+      type: row.type, hash: row.content_hash
+    }), []);
+    assert.throws(() => store.update(row.id, { content: "tampered" }), /UNIFIED_WRITE_NOT_OWNED/);
+    assert.throws(() => store.compareAndUpdate(row.id, row.updated_at, { content: "tampered" }), /UNIFIED_WRITE_NOT_OWNED/);
+    assert.throws(() => store.setForget(row.id, true), /UNIFIED_WRITE_NOT_OWNED/);
+    assert.throws(() => store.setArchived(row.id, true), /UNIFIED_WRITE_NOT_OWNED/);
+    assert.throws(() => store.remove(row.id), /UNIFIED_WRITE_NOT_OWNED/);
+    assert.throws(() => store.saveAttr({ entity_id: entity.id, attr_key: "secret", attr_value: "fake", memory_id: row.id }), /UNIFIED_WRITE_NOT_OWNED/);
+    assert.throws(() => store.saveRelation({ from_entity: entity.id, to_entity: entity.id, relation_type: "knows", memory_id: row.id }), /UNIFIED_WRITE_NOT_OWNED/);
+  });
+  assert.equal(store.getById(row.id)?.content, "Private source fact");
+  assert.deepEqual(store.getCurrentAttrs(entity.id), []);
+  assert.deepEqual(store.getRelations(entity.id), []);
+  store.db.close();
+});
+
 test("existing QQ Scene retains stable identity across Session reconstruction", () => {
   const f = fixture();
   const scene = { platform: "qq", kind: "group", id: "bot1:group9", verified: true };
@@ -64,6 +133,19 @@ test("existing QQ Scene retains stable identity across Session reconstruction", 
   assert.equal(f.acl.canReadMemory(replacement, row), true);
   f.scenes.set("qq-old", { ...scene, id: "bot1:other-group" });
   assert.equal(f.acl.identify("qq-old"), null);
+});
+
+test("a Host binding or Workspace revocation invalidates an in-flight identity", () => {
+  const f = fixture();
+  const a = f.acl.identify(f.add("a").id);
+  const row = f.memory("live");
+  f.acl.linkMemory(row.id, a);
+  runWithUnifiedSession(f.acl, a, () => {
+    assert.equal(f.acl.canReadMemory(a, row), true);
+    f.sessions.delete("a");
+    assert.equal(f.acl.canReadMemory(a, row), false);
+    assert.throws(() => currentUnifiedReadSql(), /UNIFIED_SESSION_INVALID/);
+  });
 });
 
 test("unbound QQ, forged identities, legacy rows and mixed source evidence fail closed", () => {
@@ -301,6 +383,7 @@ test("shared global entity exposes only each Session's evidenced attributes and 
     attrs: store.getCurrentAttrs(xiaoming.id).map((x) => x.attr_key),
     relations: store.getRelations(xiaoming.id).map((x) => x.to_entity),
     neighbors: store.getEntityNeighbors([xiaoming.id]).get(xiaoming.id) ?? [],
+    graphNeighbors: identityService.neighborsOf([xiaoming.id]).get(xiaoming.id) ?? [],
     entityIds: store.sceneEntityIds(null),
     names: store.listEntities({ limit: 10 }).map((x) => x.name),
     aliasHit: identityService.findEntitiesMentionedIn("秘密绰号").length,
@@ -312,6 +395,7 @@ test("shared global entity exposes only each Session's evidenced attributes and 
   assert.deepEqual(aView.attrs, ["hobby"]);
   assert.deepEqual(aView.relations, [xiaohong.id]);
   assert.deepEqual(aView.neighbors, [xiaohong.id]);
+  assert.deepEqual(aView.graphNeighbors, [xiaohong.id]);
   assert.equal(aView.entityIds.has(xiaowang.id), false);
   assert.equal(aView.names.includes("小王"), false);
   assert.equal(aView.aliasHit, 0);
@@ -322,6 +406,7 @@ test("shared global entity exposes only each Session's evidenced attributes and 
   const bView = view(b);
   assert.deepEqual(bView.attrs, ["work"]);
   assert.deepEqual(bView.relations, [xiaowang.id]);
+  assert.deepEqual(bView.graphNeighbors, [xiaowang.id]);
   assert.equal(bView.names.includes("小红"), false);
   assert.equal(bView.aliasHit, 0);
   assert.equal(bView.privateNameHit, 0);
@@ -332,5 +417,33 @@ test("shared global entity exposes only each Session's evidenced attributes and 
   assert.deepEqual(view(b).attrs, ["work"]);
   assert.equal(store.getById(aRow.id)?.id, aRow.id);
   assert.equal(store.getById(bRow.id)?.id, bRow.id);
+  store.db.close();
+});
+
+test("an unevidenced global canonical merge is not disclosed to a Session", () => {
+  const store = createStore(":memory:");
+  const session = { id: "a", header: { agentPreset: "standard" } };
+  const acl = createUnifiedSessionAcl({
+    db: store.db, workspaceId: "workspace-1",
+    resolveTrustedSession: (id) => id === "a" ? session : null,
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" })
+  });
+  const a = acl.identify("a");
+  const first = store.createEntity({ name: "First Person", type: "person" });
+  const second = store.createEntity({ name: "Second Person", type: "person" });
+  const identity = createIdentityService({ db: store.db, store });
+  runWithUnifiedSession(acl, a, () => {
+    for (const entity of [first, second]) {
+      const row = store.save({ type: "history", title: entity.name, content: `${entity.name} is known` });
+      store.saveAttr({ entity_id: entity.id, attr_key: "known", attr_value: "yes", memory_id: row.id });
+    }
+  });
+  store.db.prepare(`INSERT INTO entity_canonical_links
+    (id, entity_id, canonical_id, active, source, linked_at)
+    VALUES ('test-link', ?, ?, 1, 'manual', '2026-01-01')`).run(first.id, second.id);
+  assert.equal(identity.listEntities().length, 1, "admin graph retains the global merge");
+  const groups = runWithUnifiedSession(acl, a, () => identity.listEntities());
+  assert.equal(groups.length, 2, "a merge without Session evidence is not a model-visible fact");
+  assert.equal(groups.every((group) => group.merged === false), true);
   store.db.close();
 });

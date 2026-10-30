@@ -12,8 +12,8 @@ database or install this branch in the daily DSH Profile.
   `2FD41422A6FA30B60975FF8B306BCFECB80F39DA3CACDAB84FF72B0ADC3AC392`.
 - Baseline schema: `PRAGMA user_version = 1`.
 - Baseline quality gate: 725 passed, 0 failed, 0 skipped.
-- Experimental branch quality gate at this checkpoint: 738 passed, 0 failed,
-  0 skipped. This only validates the implemented foundation, not the full
+- Experimental branch quality gate at this checkpoint: 743 passed, 0 failed,
+  0 skipped. This validates only the implemented foundation, not the full
   architecture or real Desktop behavior.
 - The frozen package installed into a new `memory-acl-lab` DSH Profile. That
   bare Profile lacks `webServer`, so a GUI/runtime boot is not yet validated.
@@ -95,20 +95,29 @@ manual source review before import. No automatic reverse migration is claimed.
 ### Preliminary SQL and graph cost
 
 In-memory SQLite on Windows, Node 22, one synthetic Session and 30 warm
-samples per operation. All memories had a distinct linked entity. These are
-microbenchmarks of the store layer, not full DSH/LLM latency.
+samples per operation. All memories had a distinct linked entity and a 2D
+synthetic embedding. These are
+microbenchmarks of the store layer, not full DSH/LLM latency. They precede the
+latest per-read Host identity revalidation and must be rerun before a performance
+decision.
 
 | Rows | Operation | Baseline P50/P95 ms | ACL context P50/P95 ms |
 | ---: | --- | ---: | ---: |
-| 1,000 | Entity list | 1.407 / 1.815 | 2.654 / 3.129 |
-| 1,000 | Keyword search | 0.679 / 0.725 | 1.288 / 1.387 |
-| 1,000 | Memory list | 0.423 / 0.647 | 0.963 / 1.057 |
-| 10,000 | Entity list | 17.473 / 18.910 | 36.817 / 40.008 |
-| 10,000 | Keyword search | 5.843 / 6.515 | 13.516 / 14.029 |
-| 10,000 | Memory list | 3.470 / 3.824 | 9.671 / 9.851 |
+| 1,000 | Entity list | 1.373 / 1.822 | 2.674 / 2.895 |
+| 1,000 | Graph name lookup | 5.470 / 7.563 | 3.672 / 5.126 |
+| 1,000 | Keyword search | 0.716 / 1.108 | 1.317 / 1.442 |
+| 1,000 | Vector search | 0.708 / 2.923 | 1.266 / 1.507 |
+| 1,000 | Memory list | 0.438 / 0.532 | 0.997 / 1.145 |
+| 10,000 | Entity list | 17.974 / 19.888 | 37.636 / 41.003 |
+| 10,000 | Graph name lookup | 69.935 / 80.618 | 47.909 / 54.629 |
+| 10,000 | Keyword search | 6.701 / 7.638 | 14.930 / 16.005 |
+| 10,000 | Vector search | 65.739 / 79.951 | 64.076 / 81.947 |
+| 10,000 | Memory list | 3.611 / 4.647 | 10.905 / 11.464 |
 
-The ACL adds approximately 1.9–2.8x to these store calls. Absolute latency
-remains below 41 ms in this fixture, but vector, multi-hop, full retrieval,
+The ACL adds approximately 1.9–3.0x to list and keyword store calls. Vector
+search was similar at 10,000 rows, and graph name lookup was faster because
+the experimental view omits unevidenced aliases and external IDs. The latter
+is not a like-for-like feature comparison. Multi-hop, full retrieval,
 background tasks and LLM cost have not been measured. The entity-name evidence
 predicate may need an index or materialized evidence table before acceptance.
 
@@ -118,7 +127,15 @@ revocation, schema reopen, and write rollback. Within a trusted execution
 context, the Mneme store now stamps a source and filters list, keyword, vector,
 count, and direct-ID lookups before candidate limits. Evidence-linked entity
 attributes, relations and neighbor reads are filtered; the provisional model
-view omits aliases and external IDs without source evidence. The context is
+view omits aliases, external IDs and canonical merges without source evidence.
+The canonical-link suppression is a deliberate safety limitation: separately
+named nodes merged by the administrator will still appear separate to model
+Sessions until the link itself has an evidence-aware visibility design.
+The latest local regression tests also cover cross-ACL identity rejection,
+Host/Workspace revocation during execution, same-source dedupe, read-only grant
+enforcement on memory/graph mutations, and source-private quality/dedupe
+candidate sampling. These are not a substitute for all model and background
+entry points. The context is
 not yet connected to DSH model execution, and the complete graph path, GUI,
 Dream/Sleep and performance comparison have not been safely integrated.
 Therefore the unified architecture has **not** met the acceptance standard and

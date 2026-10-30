@@ -53,17 +53,20 @@ const VALID_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
 const validId = (value) => typeof value === "string" && VALID_ID.test(value);
 const trustedIdentities = new WeakMap();
 const execution = new AsyncLocalStorage();
-const trustedIdentity = (value) => value && typeof value === "object" && trustedIdentities.has(value);
 
 export function runWithUnifiedSession(acl, identity, fn) {
-  if (trustedIdentities.get(identity) !== acl || typeof fn !== "function") {
+  if (trustedIdentities.get(identity) !== acl || !acl.isCurrent(identity) || typeof fn !== "function") {
     throw new TypeError("trusted unified Session required");
   }
   return execution.run({ acl, identity }, fn);
 }
 
 export function currentUnifiedSession() {
-  return execution.getStore() ?? null;
+  const current = execution.getStore() ?? null;
+  if (current && !current.acl.isCurrent(current.identity)) {
+    throw new Error("UNIFIED_SESSION_INVALID");
+  }
+  return current;
 }
 
 /** SQL predicate for reads before LIMIT/ranking. NULL legacy rows are hidden. */
@@ -126,6 +129,7 @@ export function createUnifiedSessionAcl({
   const version = db.prepare("SELECT value FROM unified_acl_meta WHERE key = 'schema_version'").get();
   if (version && version.value !== "1") throw new Error(`UNIFIED_ACL_SCHEMA_UNSUPPORTED: ${version.value}`);
   db.prepare("INSERT OR IGNORE INTO unified_acl_meta (key, value) VALUES ('schema_version', '1')").run();
+  const ownsIdentity = (value) => value && typeof value === "object" && trustedIdentities.get(value) === api;
 
   function identify(sessionId, { bind = true } = {}) {
     if (!validId(sessionId)) return null;
@@ -174,8 +178,14 @@ export function createUnifiedSessionAcl({
     return identity;
   }
 
+  function isCurrent(identity) {
+    if (!ownsIdentity(identity)) return false;
+    const fresh = identify(identity.sessionId, { bind: false });
+    return fresh?.sourceKey === identity.sourceKey && fresh?.owner === identity.owner;
+  }
+
   function readableSources(identity) {
-    if (!trustedIdentity(identity)) return new Set();
+    if (!isCurrent(identity)) return new Set();
     const result = new Set([identity.sourceKey]);
     for (const row of db.prepare(`SELECT source_key FROM unified_long_term_grants
       WHERE workspace_id = ? AND reader_key = ?`).all(workspaceId, identity.sourceKey)) {
@@ -206,7 +216,7 @@ export function createUnifiedSessionAcl({
   }
 
   function canReadMemory(identity, { id, scene_scope: sceneScope } = {}) {
-    if (!trustedIdentity(identity) || !validId(id)) return false;
+    if (!isCurrent(identity) || !validId(id)) return false;
     const sources = memorySources(id, sceneScope);
     if (!sources.length) return false;
     const readable = readableSources(identity);
@@ -214,8 +224,14 @@ export function createUnifiedSessionAcl({
     return sources.every((source) => readable.has(source));
   }
 
+  function canWriteMemory(identity, { id, scene_scope: sceneScope } = {}) {
+    if (!isCurrent(identity) || !validId(id)) return false;
+    const sources = memorySources(id, sceneScope);
+    return sources.length === 1 && sources[0] === identity.sourceKey;
+  }
+
   function linkMemory(memoryId, identity) {
-    if (!validId(memoryId) || !trustedIdentity(identity)) {
+    if (!validId(memoryId) || !isCurrent(identity)) {
       throw new TypeError("trusted memory source required");
     }
     return transaction(db, () => {
@@ -257,7 +273,7 @@ export function createUnifiedSessionAcl({
     }
   }
 
-  const api = Object.freeze({ identify, readableSources, memorySources, canReadMemory,
+  const api = Object.freeze({ identify, isCurrent, readableSources, memorySources, canReadMemory, canWriteMemory,
     linkMemory, setOwnerRead, setGrant });
   return api;
 }

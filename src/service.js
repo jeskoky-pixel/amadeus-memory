@@ -20,6 +20,7 @@ import { normalizeEventTag, stripEventTags, eventTagForKind, isEventTag } from "
 import { currentScene, sceneFilterRows, sceneIdOf, isAdminPrivateScene, scenePolicy, sceneAllowsMemory } from "./scene.js";
 import { sceneJobScopes, sceneJobMatches, sceneJobEquals, currentSceneJob, LEGACY_SCENE_JOB } from "./scene-job.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
+import { currentUnifiedSession } from "./unified-session-acl.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
 // 原先不收——本机活跃库实测 378/1820（20.8%）因此永不可自动注入，而它们在同一库
@@ -1610,6 +1611,15 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const job = currentSceneJob();
     if (job) {
       memory = { ...memory, scene_scope: job.sceneScope === LEGACY_SCENE_JOB ? null : job.sceneScope };
+    }
+    const unified = currentUnifiedSession();
+    if (unified) {
+      if (job && job.sceneScope !== unified.identity.sourceKey) {
+        throw new Error("UNIFIED_SOURCE_JOB_MISMATCH");
+      }
+      // Dedupe compares scene_scope before store.save stamps its source. Keep
+      // the comparison and the eventual write on the same trusted source.
+      memory = { ...memory, scene_scope: unified.identity.sourceKey };
     }
     // Event claims are authority-bearing provenance, not free-form labels.
     // Every ordinary write loses all event:* spellings; the private trusted
