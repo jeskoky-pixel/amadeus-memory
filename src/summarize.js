@@ -556,7 +556,7 @@ export function createSummarizer(ctx, service, config, deps = {}) {
   function modelAccessDecision(session) {
     if (!authorizeModelWork) return { allowed: true, reason: "legacy" };
     try {
-      const decision = authorizeModelWork(session);
+      const decision = (authorizeModelWork.derive ?? authorizeModelWork)(session);
       return decision?.allowed === true
         ? { allowed: true, reason: "ok" }
         : { allowed: false, reason: decision?.reason ?? "denied" };

@@ -67,6 +67,16 @@ export function createUnifiedRuntime({ ctx, db, workspaceId, authorizeWorkspace,
     const identity = acl.identify(s?.id);
     return identity ? { allowed: true, workspaceId, identity } : { allowed: false, reason: "unified-identity-unverified", workspaceId: null };
   }
+  authorize.noteSharedRead = s => {
+    const access = authorize(s);
+    if (!access.allowed) throw new Error('UNIFIED_SESSION_INVALID');
+    acl.noteSharedHistory(access.identity);
+  };
+  authorize.derive = s => {
+    const access = authorize(s);
+    return access.allowed && acl.canDeriveSessionHistory(access.identity)
+      ? access : { allowed: false, reason: 'unified-shared-history-cannot-be-relabelled' };
+  };
   authorize.run = (s, fn) => {
     const result = authorize(s);
     if (!result.allowed) throw new Error("UNIFIED_SESSION_INVALID");
@@ -95,7 +105,10 @@ export function createUnifiedRuntime({ ctx, db, workspaceId, authorizeWorkspace,
   function allowRecentPair(sourceId, targetId) {
     const source = acl.identify(sourceId), target = acl.identify(targetId);
     if (!source || !target) return false;
-    return target.owner || (!source.scene && !target.scene) || source.sourceKey === target.sourceKey;
+    // This gate verifies identity only. The recent-activity core independently
+    // requires the source's directional policy on every read and after awaits.
+    // Long-term grants must never authorize recent activity implicitly.
+    return true;
   }
   return { acl, authorize, allowRecentPair, runSources, dispose: () => { disposed = true; } };
 }

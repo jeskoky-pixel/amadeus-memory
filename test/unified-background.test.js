@@ -1,3 +1,4 @@
+import { createRecentActivityCore } from '../src/recent-activity.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../src/store.js';
@@ -52,4 +53,43 @@ test('Dream and Sleep source jobs never inherit shared reads or merge another so
   for(const id of ['a','b'])assert.equal(f.runtime.authorize.run(f.sessions.get(id),()=>f.store.all().filter(m=>m.title==='fact-'+id).length),1);
   assert.equal(f.store.all().filter(m=>m.type==='preference').length,2);
  } finally {f.store.close();}
+});
+
+test('shared conversation history cannot be automatically relabelled after grant or revoke',async()=>{
+ const f=setup(),handlers=[];let calls=0;
+ Object.assign(f.ctx,{on:(n,fn)=>{handlers.push(fn);return()=>{};},logger:{warn(){}},llm:{async *stream(){calls++;
+  yield {type:'text-delta',text:JSON.stringify([{type:'decision',title:'copied',content:'PRIVATE_a',importance:4}])};
+  yield {type:'finish',reason:{kind:'ok'}};
+ }}});
+ const summarizer=createSummarizer(f.ctx,f.service,{autoSummarize:true},{authorizeModelWork:f.runtime.authorize});
+ try {
+  f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',true);
+  await handlers[0](f.sessions.get('b'),{type:'turn/end',seq:2});
+  assert.equal(calls,0);assert.equal(f.store.all().length,0);
+  f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',false);
+  await handlers[0](f.sessions.get('b'),{type:'turn/end',seq:2});
+  assert.equal(calls,0);assert.equal(f.store.all().length,0);
+ } finally {summarizer.dispose();f.store.close();}
+});
+
+
+test('actual shared recent read blocks re-derivation but an owner preview does not',()=>{
+ const f=setup();
+ const options={db:f.store.db,workspaceId:'w',allowSession:f.runtime.authorize,
+  resolveTrustedSession:id=>f.sessions.get(id),allowCrossSession:f.runtime.allowRecentPair};
+ const preview=createRecentActivityCore(options);
+ const core=createRecentActivityCore({...options,onSharedRead:f.runtime.authorize.noteSharedRead});
+ try {
+  const a=f.sessions.get('a'),b=f.sessions.get('b');
+  assert.equal(core.recordTurnEnd(a,{type:'turn/end',seq:2}).ok,true);
+  core.setSourcePolicy(a,{mode:'shared',sharedSessionIds:['b']});
+  assert.equal(preview.readRecentActivity(b,{includeSelf:false}).count,1);
+  assert.equal(f.runtime.authorize.derive(b).allowed,true);
+  assert.equal(core.readRecentActivity(b,{includeSelf:false}).count,1);
+  assert.equal(f.runtime.authorize.derive(b).allowed,false);
+  assert.equal(core.recordTurnEnd(b,{type:'turn/end',seq:2}).ok,false);
+  core.setSourcePolicy(a,{mode:'self'});
+  assert.equal(core.readRecentActivity(b,{includeSelf:false}).count,0);
+  assert.equal(f.runtime.authorize.derive(b).allowed,false);
+ } finally {f.runtime.dispose();f.store.close();}
 });

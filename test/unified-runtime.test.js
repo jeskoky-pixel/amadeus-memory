@@ -7,8 +7,35 @@ import { createUnifiedRuntime } from "../src/unified-runtime.js";
 import { createTools } from "../src/tools.js";
 import { createInjector } from "../src/inject.js";
 import { checkWorkspaceAccess } from "../src/workspace-gate.js";
-import { unifiedSnapshot, saveUnifiedPolicy, unifiedGraph } from "../src/unified-admin.js";
+import { unifiedSnapshot, saveUnifiedPolicy, unifiedGraph, saveUnifiedMemory } from "../src/unified-admin.js";
 import { createRecentActivityCore } from '../src/recent-activity.js';
+import { configureScene } from '../src/scene.js';
+import { INTERNAL_AUTHORITY } from '../src/internal-authority.js';
+
+test('Session graph uses canonical entity groups while retaining per-fact visibility after merge and revoke',()=>{
+ const store=createStore(':memory:'),service=createService({store,mirror:null,config:{}});
+ const sessions=new Map(['a','b'].map(id=>[id,{id,header:{createdAt:1}}]));
+ const ctx={sessions:{get:id=>sessions.get(id)},qq:{sessionProvenanceVersion:1,classifySession:()=>({kind:'ordinary'})}};
+ const runtime=createUnifiedRuntime({ctx,db:store.db,workspaceId:'w',authorizeWorkspace:()=>({allowed:true,workspaceId:'w'}),enabled:()=>true});
+ const deps={store,service,unifiedRuntime:runtime};
+ try {
+  const entities=['a','b'].map(id=>{
+   const entity=store.createEntity({name:'小明',type:'person'});
+   runtime.authorize.run(sessions.get(id),()=>{
+    const row=service.saveWithDedupe({type:'preference',title:'fact-'+id,content:'小明 fact '+id}).memory;
+    store.saveAttr({entity_id:entity.id,attr_key:'fact-'+id,attr_value:id,memory_id:row.id});
+   });return entity;
+  });
+  const report=service.identity.dryRunMerge({from_entity:entities[1].id,to_entity:entities[0].id,actor:'test'});
+  service.identity.confirmMerge({report_id:report.report_id,actor:'test'});
+  assert.equal(unifiedGraph(deps,null).nodes.length,1);
+  assert.deepEqual(unifiedGraph(deps,'b').nodes.flatMap(n=>n.attrs.map(a=>a.attr_key)),['fact-b']);
+  runtime.acl.setGrant(runtime.acl.identify('a').sourceKey,runtime.acl.identify('b').sourceKey,true);
+  assert.deepEqual(unifiedGraph(deps,'b').nodes.flatMap(n=>n.attrs.map(a=>a.attr_key)).sort(),['fact-a','fact-b']);
+  runtime.acl.setGrant(runtime.acl.identify('a').sourceKey,runtime.acl.identify('b').sourceKey,false);
+  assert.deepEqual(unifiedGraph(deps,'b').nodes.flatMap(n=>n.attrs.map(a=>a.attr_key)),['fact-b']);
+ } finally {runtime.dispose();store.close();}
+});
 
 test('standalone runtime attests new Host Sessions and quarantines historical provenance',async()=>{
  const store=createStore(':memory:'),sessions=new Map([['old',{id:'old',header:{createdAt:1000}}]]);
@@ -46,9 +73,12 @@ test("registered tools, real injector, admin grants and source jobs share the sa
  const recent=createRecentActivityCore({db:store.db,workspaceId:'w',allowSession:runtime.authorize,
    resolveTrustedSession:id=>sessions.get(id),allowCrossSession:runtime.allowRecentPair});
  try {
+  configureScene({enabled:true,strictQQ:true});
   const rows={};
   for(const id of workspace.sessionIds) rows[id]=await call('memory_save',id,{type:'preference',title:'fact-'+id,content:'private-'+id,importance:5});
   assert.equal(store.count(),7);
+  assert.equal((await call('memory_get','a',{id:rows.a.id})).memory.id,rows.a.id);
+  await call('memory_update','a',{id:rows.a.id,content:'private-a updated'});
   for(const id of workspace.sessionIds){
    const result=await call('memory_list',id,{limit:20});assert.deepEqual(result.items.map(r=>r.title),['fact-'+id]);
    const text=prompts.get('memory')({agent:{session:sessions.get(id)}});assert.match(text,new RegExp('private-'+id));
@@ -59,13 +89,40 @@ test("registered tools, real injector, admin grants and source jobs share the sa
   const recentPolicy=recent.getSourcePolicy(sessions.get('a'));
   assert.equal((await call('memory_list','c',{limit:20})).items.length,1);
   assert.equal(runtime.allowRecentPair('c','d'),true);
-  assert.equal(runtime.allowRecentPair('q1','q2'),false);
-  assert.equal(runtime.allowRecentPair('a','q1'),false);
+  assert.equal(runtime.allowRecentPair('q1','q2'),true);
+  assert.equal(runtime.allowRecentPair('a','q1'),true);
+  assert.equal(runtime.allowRecentPair('q1','x'),false);
+  for(const [from,to] of [['q1','q2'],['q1','a'],['a','q1']]) {
+   const now=Date.now(), events=[{seq:1,type:'user/message',data:{source:{kind:'user'},content:[{type:'text',text:'Synthetic activity '+from}]}},
+    {seq:2,type:'assistant/message',data:{message:{role:'assistant',content:[{type:'text',text:'Completed a bounded synthetic activity.'}]}}},{seq:3,type:'turn/end',data:{}}];
+   sessions.get(from).snapshotEvents=()=>events;
+   recent.setSourcePolicy(sessions.get(from),{mode:'self'});
+   recent.recordTurnEnd(sessions.get(from),events[2],{now});
+   assert.equal(recent.readRecentActivity(sessions.get(to),{now:now+1,includeSelf:false}).count,0);
+   assert.equal(recent.setSourcePolicy(sessions.get(from),{mode:'shared',sharedSessionIds:[to]}).ok,true);
+   assert.equal(recent.readRecentActivity(sessions.get(to),{now:now+1,includeSelf:false}).count,1);
+   assert.equal((await call('memory_list',to,{limit:20})).items.length,1);
+   recent.setSourcePolicy(sessions.get(from),{mode:'self'});
+   assert.equal(recent.readRecentActivity(sessions.get(to),{now:now+1,includeSelf:false}).count,0);
+  }
+  assert.throws(()=>saveUnifiedMemory(deps,{type:'preference',title:'manual',content:'manual fact'}),/OWNERSHIP/);
+  const manual=saveUnifiedMemory(deps,{owner_session_id:'a',type:'preference',title:'manual',content:'manual fact'});
+  assert.throws(()=>service.update(manual.memory.id,{content:'forged'},{actor:'panel'}),/SCENE_DENIED/);
+  service.update(manual.memory.id,{content:'authorized panel edit'},{actor:'panel',[INTERNAL_AUTHORITY]:true});
+  assert.equal(runtime.acl.canReadMemory(runtime.acl.identify('a'),manual.memory),true);
+  assert.equal(runtime.acl.canReadMemory(runtime.acl.identify('b'),manual.memory),false);
+  service.remove(manual.memory.id);
+  const admin=saveUnifiedMemory(deps,{owner_session_id:null,type:'preference',title:'admin only',content:'not shared'});
+  assert.equal(runtime.acl.canReadMemory(runtime.acl.identify('a'),admin.memory),false);
+  service.remove(admin.memory.id);
+  assert.throws(()=>saveUnifiedMemory(deps,{owner_session_id:'x',type:'preference',title:'outside',content:'blocked'}),/INVALID/);
+  recent.setSourcePolicy(sessions.get('a'),{mode:'shared',sharedSessionIds:['c']});
   const before = unifiedSnapshot(deps).revision;
   saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:['b'],revision:before});
   assert.throws(()=>saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:[],revision:before}),/CONFLICT/);
   assert.deepEqual(recent.getSourcePolicy(sessions.get('a')),recentPolicy);
   assert.equal((await call('memory_list','b',{limit:20})).items.length,2);
+  assert.equal((await call('memory_get','b',{id:rows.a.id})).memory.id,rows.a.id);
   assert.match(prompts.get('memory')({agent:{session:sessions.get('b')}}),/private-a/);
   await assert.rejects(call('memory_update','b',{id:rows.a.id,content:'poison'}),/UNIFIED_WRITE_NOT_OWNED/);
   assert.equal((await call('memory_list','c',{limit:20})).items.length,1);
@@ -79,5 +136,5 @@ test("registered tools, real injector, admin grants and source jobs share the sa
   delete ctx.qq;
   assert.equal((await call('memory_list','b',{limit:20})).items.length,1);
   await assert.rejects(call('memory_list','q1',{limit:20}),/ACCESS_DENIED/);
- }finally{dispose();runtime.dispose();store.close();}
+ }finally{configureScene();dispose();runtime.dispose();store.close();}
 });

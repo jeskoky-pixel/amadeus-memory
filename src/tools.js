@@ -434,6 +434,12 @@ export function createTools(ctx, service, config, embedder, access = null, recen
   // 关、或会话身份取不到（scope 为 null）时恒可见（与 get 的短路语义一致）。
   const visibleUnderStrictScope = (memory, exec) => {
     if (!memory) return false;
+    const unified = currentUnifiedSession();
+    if (unified) {
+      if (!unified.acl.canWriteMemory(unified.identity, memory)) throw new Error("UNIFIED_WRITE_NOT_OWNED");
+      const scope = config?.strictScope === true ? resolveSessionScope(exec) : null;
+      return !scope || service.isVisibleInScope(memory, scope);
+    }
     // Mutation path: reading every Scene as owner never grants a model write.
     // Tagged rows are mutable only by the exact Scene that owns them; ordinary
     // DSH sessions may continue editing their own unscoped memories.
@@ -455,6 +461,12 @@ export function createTools(ctx, service, config, embedder, access = null, recen
   // labels; non-owner behavior is unchanged.
   const visibleForRead = (memory, exec) => {
     if (!memory) return false;
+    const unified = currentUnifiedSession();
+    if (unified) {
+      if (!unified.acl.canReadMemory(unified.identity, memory)) return false;
+      const scope = config?.strictScope === true ? resolveSessionScope(exec) : null;
+      return !scope || service.isVisibleInScope(memory, scope);
+    }
     if (isAdminPrivateScene(currentScene())) return sceneFilterRows([memory]).length === 1;
     return visibleUnderStrictScope(memory, exec);
   };
