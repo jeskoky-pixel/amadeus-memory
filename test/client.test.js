@@ -241,7 +241,7 @@ test("memory library opens as a centered sheet with backdrop", () => {
     "the sheet must not occupy the full width and keeps friendly margins"
   );
   assert.ok(
-    clientSource.includes('h(MemoryExplorer, { t })'),
+    clientSource.includes('h(MemoryExplorer, { ctx, t })'),
     "the sheet renders the same MemoryExplorer component"
   );
   assert.ok(
@@ -486,7 +486,7 @@ test("better-sidebar tab mounts via an inner sub-plugin, standalone mode intact"
     "the tab title must reuse the localized 记忆库 label"
   );
   assert.ok(
-    /component: \(\) => h\(MemoryExplorer, \{ t \}\)/.test(clientSource),
+    /component: \(\) => h\(MemoryExplorer, \{ ctx, t \}\)/.test(clientSource),
     "the tab must reuse the MemoryExplorer views"
   );
   assert.ok(
@@ -657,11 +657,10 @@ test("status dashboard links into deposited/archived library views", () => {
   );
 });
 
-// Every memory feature lives in the main-area library now: the explorer
-// hosts three sub-views (browse / entities / settings) switched by tabs whose
-// labels come from dedicated dictionary keys.
-test("explorer hosts browse, entities and settings sub-views", () => {
-  for (const key of ["tabMemory", "tabEntities", "tabSettings"]) {
+// The library keeps the original Mneme views and exposes the existing
+// Amadeus admin console as a separate fifth tab.
+test("explorer hosts Mneme views and the real Amadeus enhancement console", () => {
+  for (const key of ["tabMemory", "tabEntities", "tabStatus", "tabSettings", "tabAmadeus"]) {
     assert.ok(
       clientSource.includes(`"memory.explorer.${key}"`),
       `sub-view labels must come from memory.explorer.${key}`
@@ -675,6 +674,13 @@ test("explorer hosts browse, entities and settings sub-views", () => {
     clientSource.includes('h(SettingsContent, { t })'),
     "the settings forms must be embedded as a sub-view"
   );
+  const explorer = clientSource.slice(clientSource.indexOf("function MemoryExplorer"), clientSource.indexOf("// --- Sidebar entry", clientSource.indexOf("function MemoryExplorer")));
+  assert.ok(explorer.indexOf('key: "settings"') < explorer.indexOf('key: "amadeus"'),
+    "Amadeus enhancements must appear to the right of Settings");
+  assert.ok(explorer.includes('view === "amadeus" && h(AmadeusMemorySettings, { ctx, t })'),
+    "the fifth tab must render the existing functional admin console with Host context");
+  assert.ok(clientSource.includes('h(MemoryOverlay, { ctx, t })'),
+    "the sidebar sheet must pass Host context to the explorer");
 });
 
 // The graph panel jumps back into the browser: related-memory rows and the
