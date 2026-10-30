@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createUnifiedSessionAcl, currentUnifiedReadSql, runWithUnifiedSession } from "../src/unified-session-acl.js";
 import { createStore } from "../src/store.js";
+import { createIdentityService } from "../src/identity.js";
 
 function fixture() {
   const db = new DatabaseSync(":memory:");
@@ -268,5 +269,68 @@ test("source-link failure rolls back the Mneme memory row", () => {
     type: "history", title: "should rollback", content: "synthetic"
   })));
   assert.equal(store.count(), 0);
+  store.db.close();
+});
+
+test("shared global entity exposes only each Session's evidenced attributes and edges", () => {
+  const store = createStore(":memory:");
+  const sessions = new Map(["a", "b"].map((id) => [id, { id, header: { agentPreset: "standard" } }]));
+  const acl = createUnifiedSessionAcl({
+    db: store.db, workspaceId: "workspace-1",
+    resolveTrustedSession: (id) => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" })
+  });
+  const a = acl.identify("a");
+  const b = acl.identify("b");
+  const xiaoming = store.createEntity({ name: "小明", type: "person" });
+  const xiaohong = store.createEntity({ name: "小红", type: "person" });
+  const xiaowang = store.createEntity({ name: "小王", type: "person" });
+  const identityService = createIdentityService({ db: store.db, store });
+  identityService.createAlias({ entity_id: xiaoming.id, alias: "秘密绰号", confirmed: true, actor: "owner" });
+  const write = (identity, title, key, value, other) => runWithUnifiedSession(acl, identity, () => {
+    const memory = store.save({ type: "history", title, content: title });
+    store.saveAttr({ entity_id: xiaoming.id, attr_key: key, attr_value: value, memory_id: memory.id });
+    store.saveRelation({ from_entity: xiaoming.id, to_entity: other.id,
+      relation_type: "knows", memory_id: memory.id });
+    return memory;
+  });
+  const aRow = write(a, "小明喜欢篮球并认识小红", "hobby", "basketball", xiaohong);
+  const bRow = write(b, "小明准备换工作并认识小王", "work", "new-job", xiaowang);
+  assert.equal(store.list({ limit: 10 }).length, 2, "one global Mneme library remains intact");
+  const view = (identity) => runWithUnifiedSession(acl, identity, () => ({
+    attrs: store.getCurrentAttrs(xiaoming.id).map((x) => x.attr_key),
+    relations: store.getRelations(xiaoming.id).map((x) => x.to_entity),
+    neighbors: store.getEntityNeighbors([xiaoming.id]).get(xiaoming.id) ?? [],
+    entityIds: store.sceneEntityIds(null),
+    names: store.listEntities({ limit: 10 }).map((x) => x.name),
+    aliasHit: identityService.findEntitiesMentionedIn("秘密绰号").length,
+    privateNameHit: identityService.findEntitiesMentionedIn("小红").length,
+    xiaomingGroup: identityService.findEntitiesMentionedIn("小明")[0]?.group,
+    linked: [...store.getLinkedMemoryIds([xiaoming.id]).keys()]
+  }));
+  const aView = view(a);
+  assert.deepEqual(aView.attrs, ["hobby"]);
+  assert.deepEqual(aView.relations, [xiaohong.id]);
+  assert.deepEqual(aView.neighbors, [xiaohong.id]);
+  assert.equal(aView.entityIds.has(xiaowang.id), false);
+  assert.equal(aView.names.includes("小王"), false);
+  assert.equal(aView.aliasHit, 0);
+  assert.deepEqual(aView.xiaomingGroup.aliases, []);
+  assert.equal(aView.xiaomingGroup.mention_count, null);
+  assert.equal(aView.xiaomingGroup.last_seen, null);
+  assert.deepEqual(aView.linked, [aRow.id]);
+  const bView = view(b);
+  assert.deepEqual(bView.attrs, ["work"]);
+  assert.deepEqual(bView.relations, [xiaowang.id]);
+  assert.equal(bView.names.includes("小红"), false);
+  assert.equal(bView.aliasHit, 0);
+  assert.equal(bView.privateNameHit, 0);
+  assert.deepEqual(bView.linked, [bRow.id]);
+  acl.setGrant(a.sourceKey, b.sourceKey, true);
+  assert.deepEqual(new Set(view(b).attrs), new Set(["work", "hobby"]));
+  acl.setGrant(a.sourceKey, b.sourceKey, false);
+  assert.deepEqual(view(b).attrs, ["work"]);
+  assert.equal(store.getById(aRow.id)?.id, aRow.id);
+  assert.equal(store.getById(bRow.id)?.id, bRow.id);
   store.db.close();
 });

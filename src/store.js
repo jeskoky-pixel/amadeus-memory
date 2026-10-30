@@ -3177,16 +3177,48 @@ export function createStore(path) {
     return toEntity(db.prepare("SELECT * FROM entities WHERE id = ?").get(id));
   }
 
+  // A global canonical name is model-visible only when the current Session can
+  // read evidence that actually contains that name and links to this entity.
+  // Existing aliases/external IDs have no Session evidence and are separately
+  // suppressed in identity.js for the experimental view.
+  function visibleEntityNameSql(alias = "e") {
+    const acl = currentUnifiedReadSql("m");
+    if (!acl) return null;
+    const present = `(instr(m.title, ${alias}.name) > 0 OR instr(m.content, ${alias}.name) > 0)`;
+    return {
+      sql: `(EXISTS (SELECT 1 FROM entity_attrs ea JOIN memories m ON m.id = ea.memory_id
+          WHERE ea.entity_id = ${alias}.id AND ${present} AND ${acl.sql})
+        OR EXISTS (SELECT 1 FROM entity_relations r JOIN memories m ON m.id = r.memory_id
+          WHERE (r.from_entity = ${alias}.id OR r.to_entity = ${alias}.id)
+            AND ${present} AND ${acl.sql}))`,
+      params: [...acl.params, ...acl.params]
+    };
+  }
+
   function findEntityByName(name) {
+    const visible = visibleEntityNameSql();
+    if (visible) return toEntity(db.prepare(
+      `SELECT e.* FROM entities e WHERE e.name = ? AND ${visible.sql}
+       ORDER BY e.last_seen DESC, e.id LIMIT 1`
+    ).get(name, ...visible.params));
     return toEntity(db.prepare("SELECT * FROM entities WHERE name = ? ORDER BY last_seen DESC, id LIMIT 1").get(name));
   }
 
   /** Every entity carrying this exact name (duplicate names are legal). */
   function findEntitiesByName(name) {
+    const visible = visibleEntityNameSql();
+    if (visible) return db.prepare(
+      `SELECT e.* FROM entities e WHERE e.name = ? AND ${visible.sql}
+       ORDER BY e.last_seen DESC, e.id`
+    ).all(name, ...visible.params).map(toEntity);
     return db.prepare("SELECT * FROM entities WHERE name = ? ORDER BY last_seen DESC, id").all(name).map(toEntity);
   }
 
   function findEntityById(id) {
+    const visible = visibleEntityNameSql();
+    if (visible) return toEntity(db.prepare(
+      `SELECT e.* FROM entities e WHERE e.id = ? AND ${visible.sql}`
+    ).get(id, ...visible.params));
     return toEntity(db.prepare("SELECT * FROM entities WHERE id = ?").get(id));
   }
 
@@ -3253,6 +3285,13 @@ export function createStore(path) {
 
   /** Only the live value per attr_key (valid_until IS NULL). */
   function getCurrentAttrs(entityId) {
+    const acl = currentUnifiedReadSql("m");
+    if (acl) {
+      return db.prepare(`SELECT ea.* FROM entity_attrs ea
+        JOIN memories m ON m.id = ea.memory_id
+        WHERE ea.entity_id = ? AND ea.valid_until IS NULL AND ${acl.sql}`)
+        .all(entityId, ...acl.params).map(toAttr);
+    }
     return db.prepare(
       "SELECT * FROM entity_attrs WHERE entity_id = ? AND valid_until IS NULL"
     ).all(entityId).map(toAttr);
@@ -3260,6 +3299,13 @@ export function createStore(path) {
 
   /** Full history per attr_key, oldest first. */
   function getAttrHistory(entityId) {
+    const acl = currentUnifiedReadSql("m");
+    if (acl) {
+      return db.prepare(`SELECT ea.* FROM entity_attrs ea
+        JOIN memories m ON m.id = ea.memory_id
+        WHERE ea.entity_id = ? AND ${acl.sql} ORDER BY ea.valid_from`)
+        .all(entityId, ...acl.params).map(toAttr);
+    }
     return db.prepare(
       "SELECT * FROM entity_attrs WHERE entity_id = ? ORDER BY valid_from"
     ).all(entityId).map(toAttr);
@@ -3271,6 +3317,7 @@ export function createStore(path) {
    * superseded (v0.3.0 Phase 4 / 4.3.1).
    */
   function getAttrsByMemory(memoryId) {
+    if (currentUnifiedSession() && !getById(memoryId)) return [];
     return db.prepare(
       "SELECT * FROM entity_attrs WHERE memory_id = ? ORDER BY valid_from ASC"
     ).all(memoryId).map(toAttr);
@@ -3283,6 +3330,8 @@ export function createStore(path) {
    * entity-attrs 端点。无关联（或记忆不存在）返回空数组。
    */
   function entitiesForMemory(memoryId) {
+    const unifiedMemory = currentUnifiedSession() ? getById(memoryId) : null;
+    if (currentUnifiedSession() && !unifiedMemory) return [];
     const rows = db.prepare(
       `SELECT e.id, e.name, e.type, e.mention_count, e.last_seen
        FROM entity_attrs ea JOIN entities e ON e.id = ea.entity_id
@@ -3293,6 +3342,8 @@ export function createStore(path) {
     const seen = new Set();
     const out = [];
     for (const row of rows) {
+      if (unifiedMemory && !String(unifiedMemory.title ?? "").includes(row.name)
+          && !String(unifiedMemory.content ?? "").includes(row.name)) continue;
       if (seen.has(row.id)) continue;
       seen.add(row.id);
       out.push({ id: row.id, name: row.name, type: row.type ?? null, mention_count: row.mention_count ?? 1 });
@@ -3309,15 +3360,20 @@ export function createStore(path) {
    */
   function findMemoriesByAttr(key, value) {
     const empty = value === undefined || value === null || value === "";
+    const acl = currentUnifiedReadSql("m");
+    const table = acl
+      ? "entity_attrs ea JOIN memories m ON m.id = ea.memory_id"
+      : "entity_attrs ea";
+    const aclSql = acl ? ` AND ${acl.sql}` : "";
     const sql = empty
-      ? `SELECT DISTINCT memory_id FROM entity_attrs
-         WHERE attr_key = ? AND valid_until IS NULL
-           AND memory_id IS NOT NULL AND memory_id != ''`
-      : `SELECT DISTINCT memory_id FROM entity_attrs
-         WHERE attr_key = ? AND attr_value = ? AND valid_until IS NULL
-           AND memory_id IS NOT NULL AND memory_id != ''`;
+      ? `SELECT DISTINCT ea.memory_id FROM ${table}
+         WHERE ea.attr_key = ? AND ea.valid_until IS NULL
+           AND ea.memory_id IS NOT NULL AND ea.memory_id != ''${aclSql}`
+      : `SELECT DISTINCT ea.memory_id FROM ${table}
+         WHERE ea.attr_key = ? AND ea.attr_value = ? AND ea.valid_until IS NULL
+           AND ea.memory_id IS NOT NULL AND ea.memory_id != ''${aclSql}`;
     const params = empty ? [key] : [key, value];
-    const rows = db.prepare(sql).all(...params);
+    const rows = db.prepare(sql).all(...params, ...(acl?.params ?? []));
     const memories = [];
     const stmt = db.prepare("SELECT * FROM memories WHERE id = ?");
     for (const { memory_id } of rows) {
@@ -3410,6 +3466,13 @@ export function createStore(path) {
 
   /** Relations where the entity appears on either side (from or to). */
   function getRelations(entityId) {
+    const acl = currentUnifiedReadSql("m");
+    if (acl) {
+      return db.prepare(`SELECT r.* FROM entity_relations r
+        JOIN memories m ON m.id = r.memory_id
+        WHERE (r.from_entity = ? OR r.to_entity = ?) AND ${acl.sql}`)
+        .all(entityId, entityId, ...acl.params).map(toRelation);
+    }
     return db.prepare(
       "SELECT * FROM entity_relations WHERE from_entity = ? OR to_entity = ?"
     ).all(entityId, entityId).map(toRelation);
@@ -3429,10 +3492,16 @@ export function createStore(path) {
     const ids = Array.isArray(entityIds) ? entityIds.filter(Boolean) : [];
     if (!ids.length) return out;
     const placeholders = ids.map(() => "?").join(",");
-    const rows = db.prepare(
-      `SELECT from_entity, to_entity FROM entity_relations
-       WHERE from_entity IN (${placeholders}) OR to_entity IN (${placeholders})`
-    ).all(...ids, ...ids);
+    const acl = currentUnifiedReadSql("m");
+    const rows = acl
+      ? db.prepare(`SELECT r.from_entity, r.to_entity FROM entity_relations r
+          JOIN memories m ON m.id = r.memory_id
+          WHERE (r.from_entity IN (${placeholders}) OR r.to_entity IN (${placeholders}))
+            AND ${acl.sql}`).all(...ids, ...ids, ...acl.params)
+      : db.prepare(
+          `SELECT from_entity, to_entity FROM entity_relations
+           WHERE from_entity IN (${placeholders}) OR to_entity IN (${placeholders})`
+        ).all(...ids, ...ids);
     for (const r of rows) {
       addNeighbor(out, r.from_entity, r.to_entity, ids);
       addNeighbor(out, r.to_entity, r.from_entity, ids);
@@ -3456,6 +3525,7 @@ export function createStore(path) {
    */
   function getRelationsByMemory(memoryId) {
     if (!memoryId) return [];
+    if (currentUnifiedSession() && !getById(memoryId)) return [];
     return db.prepare(
       "SELECT * FROM entity_relations WHERE memory_id = ?"
     ).all(memoryId).map(toRelation);
@@ -3465,6 +3535,11 @@ export function createStore(path) {
    *  orphan detection: an entity with zero relations is a candidate for relation
    *  completion. */
   function listEntities({ limit = 1000 } = {}) {
+    const visible = visibleEntityNameSql();
+    if (visible) return db.prepare(
+      `SELECT e.* FROM entities e WHERE ${visible.sql}
+       ORDER BY e.last_seen DESC, e.name ASC LIMIT ?`
+    ).all(...visible.params, limit).map(toEntity);
     const rows = db.prepare(
       "SELECT * FROM entities ORDER BY last_seen DESC, name ASC LIMIT ?"
     ).all(limit);
@@ -3483,7 +3558,11 @@ export function createStore(path) {
   function findEntitiesMentionedIn(text, { limit = 5 } = {}) {
     const hay = String(text ?? "").toLowerCase();
     if (!hay) return [];
-    const rows = db.prepare("SELECT id, name FROM entities WHERE length(name) >= 2").all();
+    const visible = visibleEntityNameSql();
+    const rows = visible
+      ? db.prepare(`SELECT e.id, e.name FROM entities e
+          WHERE length(e.name) >= 2 AND ${visible.sql}`).all(...visible.params)
+      : db.prepare("SELECT id, name FROM entities WHERE length(name) >= 2").all();
     const hits = [];
     for (const row of rows) {
       if (hay.includes(row.name.toLowerCase())) hits.push({ id: row.id, name: row.name });
@@ -3503,17 +3582,28 @@ export function createStore(path) {
     const out = new Map();
     if (!Array.isArray(entityIds) || !entityIds.length) return out;
     const placeholders = entityIds.map(() => "?").join(",");
-    const attrRows = db.prepare(
-      `SELECT DISTINCT memory_id FROM entity_attrs
-       WHERE valid_until IS NULL AND memory_id IS NOT NULL AND memory_id != ''
-         AND entity_id IN (${placeholders})`
-    ).all(...entityIds);
+    const acl = currentUnifiedReadSql("m");
+    const attrRows = acl
+      ? db.prepare(`SELECT DISTINCT ea.memory_id FROM entity_attrs ea
+          JOIN memories m ON m.id = ea.memory_id
+          WHERE ea.valid_until IS NULL AND ea.entity_id IN (${placeholders})
+            AND ${acl.sql}`).all(...entityIds, ...acl.params)
+      : db.prepare(
+          `SELECT DISTINCT memory_id FROM entity_attrs
+           WHERE valid_until IS NULL AND memory_id IS NOT NULL AND memory_id != ''
+             AND entity_id IN (${placeholders})`
+        ).all(...entityIds);
     for (const r of attrRows) out.set(r.memory_id, "attr");
-    const relRows = db.prepare(
-      `SELECT DISTINCT memory_id FROM entity_relations
-       WHERE memory_id IS NOT NULL AND memory_id != ''
-         AND (from_entity IN (${placeholders}) OR to_entity IN (${placeholders}))`
-    ).all(...entityIds, ...entityIds);
+    const relRows = acl
+      ? db.prepare(`SELECT DISTINCT r.memory_id FROM entity_relations r
+          JOIN memories m ON m.id = r.memory_id
+          WHERE (r.from_entity IN (${placeholders}) OR r.to_entity IN (${placeholders}))
+            AND ${acl.sql}`).all(...entityIds, ...entityIds, ...acl.params)
+      : db.prepare(
+          `SELECT DISTINCT memory_id FROM entity_relations
+           WHERE memory_id IS NOT NULL AND memory_id != ''
+             AND (from_entity IN (${placeholders}) OR to_entity IN (${placeholders}))`
+        ).all(...entityIds, ...entityIds);
     for (const r of relRows) if (!out.has(r.memory_id)) out.set(r.memory_id, "relation");
     return out;
   }

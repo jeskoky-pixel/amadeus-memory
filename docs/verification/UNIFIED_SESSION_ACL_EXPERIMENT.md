@@ -12,7 +12,7 @@ database or install this branch in the daily DSH Profile.
   `2FD41422A6FA30B60975FF8B306BCFECB80F39DA3CACDAB84FF72B0ADC3AC392`.
 - Baseline schema: `PRAGMA user_version = 1`.
 - Baseline quality gate: 725 passed, 0 failed, 0 skipped.
-- Experimental branch quality gate at this checkpoint: 737 passed, 0 failed,
+- Experimental branch quality gate at this checkpoint: 738 passed, 0 failed,
   0 skipped. This only validates the implemented foundation, not the full
   architecture or real Desktop behavior.
 - The frozen package installed into a new `memory-acl-lab` DSH Profile. That
@@ -92,11 +92,34 @@ manual source review before import. No automatic reverse migration is claimed.
 
 ## Current result
 
+### Preliminary SQL and graph cost
+
+In-memory SQLite on Windows, Node 22, one synthetic Session and 30 warm
+samples per operation. All memories had a distinct linked entity. These are
+microbenchmarks of the store layer, not full DSH/LLM latency.
+
+| Rows | Operation | Baseline P50/P95 ms | ACL context P50/P95 ms |
+| ---: | --- | ---: | ---: |
+| 1,000 | Entity list | 1.407 / 1.815 | 2.654 / 3.129 |
+| 1,000 | Keyword search | 0.679 / 0.725 | 1.288 / 1.387 |
+| 1,000 | Memory list | 0.423 / 0.647 | 0.963 / 1.057 |
+| 10,000 | Entity list | 17.473 / 18.910 | 36.817 / 40.008 |
+| 10,000 | Keyword search | 5.843 / 6.515 | 13.516 / 14.029 |
+| 10,000 | Memory list | 3.470 / 3.824 | 9.671 / 9.851 |
+
+The ACL adds approximately 1.9–2.8x to these store calls. Absolute latency
+remains below 41 ms in this fixture, but vector, multi-hop, full retrieval,
+background tasks and LLM cost have not been measured. The entity-name evidence
+predicate may need an index or materialized evidence table before acceptance.
+
 The standalone ACL core and synthetic tests cover trusted identity, QQ rebuild,
 legacy quarantine, source-conjunctive reads, directional grants, Owner policy,
 revocation, schema reopen, and write rollback. Within a trusted execution
 context, the Mneme store now stamps a source and filters list, keyword, vector,
-count, and direct-ID lookups before candidate limits. The context is not yet
-connected to DSH model execution, and graph aliases/relations, GUI, and
-Dream/Sleep have not been safely integrated. Therefore the unified architecture
-has **not** met the acceptance standard and cannot replace the baseline.
+count, and direct-ID lookups before candidate limits. Evidence-linked entity
+attributes, relations and neighbor reads are filtered; the provisional model
+view omits aliases and external IDs without source evidence. The context is
+not yet connected to DSH model execution, and the complete graph path, GUI,
+Dream/Sleep and performance comparison have not been safely integrated.
+Therefore the unified architecture has **not** met the acceptance standard and
+cannot replace the baseline.
