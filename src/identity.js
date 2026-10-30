@@ -915,6 +915,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function linkExternalId({ entity_id, platform, entity_type, external_id, actor, source = "manual", confidence = 1, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const entity = entityById(String(entity_id ?? ""));
     if (!entity) throw new IdentityError("entity-not-found", "entity not found");
     const plat = normalizePlatform(platform);
@@ -976,6 +977,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function listExternalIds({ entity_id, include_revoked = false } = {}) {
+    if (currentUnifiedSession()) return []; // Management records have no authorized evidence view.
     const entity = entityById(String(entity_id ?? ""));
     if (!entity) return [];
     const ids = buildGroup(entity)?.member_ids ?? [entity.id];
@@ -988,6 +990,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function unlinkExternalId({ id, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const row = db.prepare("SELECT * FROM entity_external_ids WHERE id = ?").get(String(id ?? ""));
     if (!row || row.active !== 1) throw new IdentityError("external-id-not-found", "active external id not found");
     const at = nowIso();
@@ -1014,6 +1017,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function createAlias({ entity_id, alias, provenance = "manual", confidence = 0.8, confirmed = false, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const entity = entityById(String(entity_id ?? ""));
     if (!entity) throw new IdentityError("entity-not-found", "entity not found");
     const label = requireText(alias, "alias", ALIAS_MAX);
@@ -1088,6 +1092,10 @@ export function createIdentityService({ db, store, logger } = {}) {
     candidates = [], evidence = [], actor = "entity_extractor"
   }) {
     const memoryId = String(memory_id ?? "");
+    const unified = currentUnifiedSession();
+    if (unified && !unified.acl.canWriteMemory(unified.identity, store.getById(memoryId))) {
+      throw new Error("UNIFIED_WRITE_NOT_OWNED");
+    }
     const name = normalizeText(display_name);
     if (!memoryId || !name) return undefined;
     const type = String(entity_type ?? "");
@@ -1201,6 +1209,10 @@ export function createIdentityService({ db, store, logger } = {}) {
     evidence = [], actor = "entity_extractor"
   }) {
     const memoryId = String(memory_id ?? "");
+    const unified = currentUnifiedSession();
+    if (unified && !unified.acl.canWriteMemory(unified.identity, store.getById(memoryId))) {
+      throw new Error("UNIFIED_WRITE_NOT_OWNED");
+    }
     const from = normalizeText(from_name);
     const to = normalizeText(to_name);
     const fromKey = normalizeIdentityKey(from);
@@ -1260,6 +1272,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function listPendingRelations({ status = "pending", limit = 200 } = {}) {
+    if (currentUnifiedSession()) return []; // Management records have no authorized evidence view.
     return db.prepare(
       `SELECT * FROM identity_pending_relations
        WHERE (? = '' OR status = ?) ORDER BY updated_at DESC, id LIMIT ?`
@@ -1334,6 +1347,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   function recoverPendingRelationsForEntity(entity, normalizedAlias, actor = "human", evidence = [], {
     explicitMemoryId = null, explicitEntityId = null
   } = {}) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     if (!entity || !normalizedAlias) return [];
     const rows = db.prepare(
       `SELECT * FROM identity_pending_relations
@@ -1524,6 +1538,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function recoverPendingAssertionsForEntity(entity, normalizedAlias, actor = "human", evidence = []) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     if (!entity || !normalizedAlias) return [];
     const rows = db.prepare(
       `SELECT * FROM identity_pending_assertions
@@ -1556,6 +1571,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function resolvePendingAssertion({ id, entity_id, actor = "human", evidence = [] }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const row = db.prepare(
       "SELECT * FROM identity_pending_assertions WHERE id = ? AND status = 'pending'"
     ).get(String(id ?? ""));
@@ -1584,6 +1600,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function listPendingAssertions({ status = "pending", limit = 100 } = {}) {
+    if (currentUnifiedSession()) return []; // Management records have no authorized evidence view.
     return db.prepare(
       `SELECT * FROM identity_pending_assertions
        WHERE (? = '' OR status = ?) ORDER BY updated_at DESC, id LIMIT ?`
@@ -1591,6 +1608,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function confirmAlias({ id, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const row = db.prepare("SELECT * FROM entity_aliases WHERE id = ? AND active = 1").get(String(id ?? ""));
     if (!row) throw new IdentityError("alias-not-found", "active alias not found");
     const recover = () => {
@@ -1658,6 +1676,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function updateAlias({ id, alias, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const row = db.prepare("SELECT * FROM entity_aliases WHERE id = ? AND active = 1").get(String(id ?? ""));
     if (!row) throw new IdentityError("alias-not-found", "active alias not found");
     const label = requireText(alias, "alias", ALIAS_MAX);
@@ -1715,6 +1734,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function unlinkAlias({ id, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const row = db.prepare("SELECT * FROM entity_aliases WHERE id = ? AND active = 1").get(String(id ?? ""));
     if (!row) throw new IdentityError("alias-not-found", "active alias not found");
     const at = nowIso();
@@ -1731,6 +1751,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function listAliases({ entity_id, include_inactive = false } = {}) {
+    if (currentUnifiedSession()) return []; // Management records have no authorized evidence view.
     const entity = entityById(String(entity_id ?? ""));
     if (!entity) return [];
     const ids = buildGroup(entity)?.member_ids ?? [entity.id];
@@ -1744,6 +1765,7 @@ export function createIdentityService({ db, store, logger } = {}) {
 
   /** Record a newly observed spelling as an unconfirmed alias (never a merge). */
   function ensureObservedAlias(entity, label, actor, evidence) {
+    if (currentUnifiedSession()) return;
     if (!entity || !label) return;
     const normalized = normalizeIdentityKey(label);
     if (!normalized || normalized === normalizeIdentityKey(entity.name)) return;
@@ -1780,6 +1802,7 @@ export function createIdentityService({ db, store, logger } = {}) {
     // a *new* identifier becomes its own entity and never inherits a name or
     // nickname match (different IDs on the same platform are different people).
     if (requestedExternal) {
+      if (currentUnifiedSession()) return { ok: false, reason: "global-identity-management-required", candidates: [] };
       const entityType = normalizeEntityType(requestedExternal.entity_type ?? requestedType);
       const ext = snapshot.externalIds.find((row) =>
         row.platform === requestedExternal.platform &&
@@ -1893,7 +1916,7 @@ export function createIdentityService({ db, store, logger } = {}) {
     }
 
     const created = store.createEntity({ name: label, type: requestedType });
-    createAlias({
+    if (!currentUnifiedSession()) createAlias({
       entity_id: created.id,
       alias: label,
       provenance: "entity_name",
@@ -1944,6 +1967,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function findDuplicateCandidates({ limit = 50, minScore = 0.72 } = {}) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const snapshot = loadSnapshot();
     const groups = snapshot.groups;
     // Blocking keys keep candidate generation sub-quadratic. Exact name,
@@ -2066,6 +2090,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function impactReport({ from_entity, to_entity }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const snapshot = loadSnapshot();
     const fromRaw = snapshot.byId.get(String(from_entity ?? "")) ?? entityById(String(from_entity ?? ""));
     const toRaw = snapshot.byId.get(String(to_entity ?? "")) ?? entityById(String(to_entity ?? ""));
@@ -2198,6 +2223,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function dryRunMerge({ from_entity, to_entity, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const report = impactReport({ from_entity, to_entity });
     const id = randomUUID();
     const at = nowIso();
@@ -2218,6 +2244,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function confirmMerge({ report_id, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const id = String(report_id ?? "");
     const initial = db.prepare("SELECT * FROM entity_merge_reports WHERE id = ?").get(id);
     if (!initial) throw new IdentityError("report-not-found", "merge report not found");
@@ -2302,6 +2329,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function undoMerge({ link_id, report_id, actor, evidence }) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const link = link_id
       ? db.prepare("SELECT * FROM entity_canonical_links WHERE id = ? AND active = 1").get(String(link_id))
       : db.prepare(
@@ -2345,6 +2373,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function listLinks({ include_inactive = false, limit = 200 } = {}) {
+    if (currentUnifiedSession()) return []; // Management records have no authorized evidence view.
     const clause = include_inactive ? "" : "WHERE active = 1";
     return db.prepare(
       `SELECT * FROM entity_canonical_links ${clause} ORDER BY linked_at DESC, id DESC LIMIT ?`
@@ -2352,6 +2381,7 @@ export function createIdentityService({ db, store, logger } = {}) {
   }
 
   function history({ entity_id, limit = 100 } = {}) {
+    if (currentUnifiedSession()) throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
     const entity = entityById(String(entity_id ?? ""));
     if (!entity) throw new IdentityError("entity-not-found", "entity not found");
     const group = buildGroup(entity);

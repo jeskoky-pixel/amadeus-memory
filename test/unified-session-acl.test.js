@@ -528,3 +528,154 @@ test("an unevidenced global canonical merge is not disclosed to a Session", () =
   assert.equal(groups.every((group) => group.merged === false), true);
   store.db.close();
 });
+
+
+test("grant revoked during rerank is removed before audit and output without losing own or unrelated data", async () => {
+  const store = createStore(":memory:");
+  const service = createService({ store, mirror: null, config: { hybridInject: true } });
+  const sessions = new Map(["a", "b", "c"].map(id => [id, { id, header: {} }]));
+  const acl = createUnifiedSessionAcl({ db: store.db, workspaceId: "w",
+    resolveTrustedSession: id => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "w" }) });
+  const [a, b, c] = ["a", "b", "c"].map(id => acl.identify(id));
+  const rows = [a, b, c].map(identity => runWithUnifiedSession(acl, identity, () =>
+    store.save({ type: "decision", title: "revocation probe", content: "revocation probe " + identity.sourceKey, importance: 5 })));
+  acl.setGrant(a.sourceKey, b.sourceKey, true);
+  acl.setGrant(c.sourceKey, b.sourceKey, true);
+  const entity = store.createEntity({ name: "revocation probe", type: "concept" });
+  [a, b, c].forEach((identity, index) => runWithUnifiedSession(acl, identity, () => {
+    store.saveAttr({ entity_id: entity.id, attr_key: "source", attr_value: identity.sourceKey, memory_id: rows[index].id });
+    store.saveRelation({ from_entity: entity.id, to_entity: entity.id, relation_type: "observed", memory_id: rows[index].id });
+  }));
+  const receipts = [];
+  service.setRecallRecorder(receipt => receipts.push(receipt));
+  service.setReranker({ rerank: async () => {
+    await Promise.resolve();
+    acl.setGrant(a.sourceKey, b.sourceKey, false);
+    return rows.map(row => ({ id: row.id, score: 1 }));
+  } });
+  try {
+    const result = await runWithUnifiedSession(acl, b, () => service.searchMemories("revocation probe", {
+      mode: "keyword", useRerank: true, recordRecall: true, topK: 10
+    }));
+    assert.deepEqual(new Set(result.map(row => row.id)), new Set([rows[1].id, rows[2].id]));
+    assert.equal(receipts.length, 1);
+    assert.equal(receipts[0].candidates.some(row => row.id === rows[0].id), false);
+    runWithUnifiedSession(acl, b, () => {
+      assert.deepEqual(new Set(store.getCurrentAttrs(entity.id).map(attr => attr.memory_id)), new Set([rows[1].id, rows[2].id]));
+      assert.deepEqual(new Set(store.getRelations(entity.id).map(edge => edge.memory_id)), new Set([rows[1].id, rows[2].id]));
+    });
+    const injected = runWithUnifiedSession(acl, b, () => service.injectCandidates({ query: "revocation probe", maxItems: 10, threshold: 3 }));
+    assert.equal(injected.some(row => row.id === rows[0].id), false);
+  } finally { store.db.close(); }
+});
+
+
+test("model graph writes cannot manage shared identity or other sources' evidence", () => {
+  const store = createStore(":memory:");
+  const identity = createIdentityService({ db: store.db, store });
+  const sessions = new Map(["a", "b"].map(id => [id, { id, header: {} }]));
+  const acl = createUnifiedSessionAcl({ db: store.db, workspaceId: "w",
+    resolveTrustedSession: id => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "w" }) });
+  const a = acl.identify("a"), b = acl.identify("b");
+  const entity = store.createEntity({ name: "Shared Person", type: "person" });
+  const write = (who, value) => runWithUnifiedSession(acl, who, () => {
+    const row = store.save({ type: "history", title: "Shared Person", content: value });
+    store.saveAttr({ entity_id: entity.id, attr_key: "hobby", attr_value: value, memory_id: row.id });
+    const edge = store.saveRelation({ from_entity: entity.id, to_entity: entity.id, relation_type: "knows", memory_id: row.id, weight: 0.2 });
+    return { row, edge };
+  });
+  const ar = write(a, "basketball"), br = write(b, "badminton");
+  acl.setGrant(b.sourceKey, a.sourceKey, true);
+  try {
+    runWithUnifiedSession(acl, a, () => {
+      assert.throws(() => store.updateEntity(entity.id, { name: "poison" }), /UNIFIED_GLOBAL_MANAGEMENT_REQUIRED/);
+      assert.throws(() => identity.createAlias({ entity_id: entity.id, alias: "poison", actor: "owner" }), /UNIFIED_GLOBAL_MANAGEMENT_REQUIRED/);
+      assert.throws(() => identity.linkExternalId({ entity_id: entity.id, platform: "qq", entity_type: "person", external_id: "123", actor: "owner" }), /UNIFIED_GLOBAL_MANAGEMENT_REQUIRED/);
+      assert.throws(() => identity.confirmMerge({ report_id: "forged", actor: "owner" }), /UNIFIED_GLOBAL_MANAGEMENT_REQUIRED/);
+      assert.throws(() => store.bumpRelationWeight(br.edge.id, 0.1), /UNIFIED_WRITE_NOT_OWNED/);
+      assert.throws(() => store.migrateAttrsToMemory(br.row.id, ar.row.id, new Date().toISOString()), /UNIFIED_WRITE_NOT_OWNED/);
+      assert.throws(() => identity.recordPendingAssertion({ memory_id: br.row.id, display_name: "Unknown Person" }), /UNIFIED_WRITE_NOT_OWNED/);
+      assert.throws(() => identity.recordPendingRelation({ memory_id: br.row.id, from_name: "A", to_name: "B", relation_type: "knows" }), /UNIFIED_WRITE_NOT_OWNED/);
+      assert.deepEqual(identity.listAliases({ entity_id: entity.id }), []);
+      assert.deepEqual(identity.listExternalIds({ entity_id: entity.id }), []);
+      assert.deepEqual(identity.listLinks(), []);
+      const visibleEntity = store.findEntityById(entity.id);
+      assert.equal(visibleEntity.mention_count, null);
+      assert.equal(visibleEntity.last_seen, null);
+      assert.equal(visibleEntity.canonical_memory_id, undefined);
+      assert.throws(() => identity.history({ entity_id: entity.id }), /UNIFIED_GLOBAL_MANAGEMENT_REQUIRED/);
+      store.invalidateOldAttr(entity.id, "hobby", new Date().toISOString(), b.sourceKey);
+    });
+    assert.equal(runWithUnifiedSession(acl, b, () => store.getCurrentAttrs(entity.id))[0].attr_value, "badminton");
+    assert.equal(store.getRelations(entity.id).find(row => row.id === br.edge.id).weight, 0.2);
+    store.updateEntity(entity.id, { name: "Admin renamed" });
+    assert.equal(store.findEntityById(entity.id).name, "Admin renamed");
+    assert.ok(identity.createAlias({ entity_id: entity.id, alias: "admin alias", actor: "owner" }));
+  } finally { store.db.close(); }
+});
+
+
+for (const change of ["workspace", "qq-binding", "owner", "session-deleted"]) {
+  test(`async result rejects changed trusted identity: ${change}`, async () => {
+    const store = createStore(":memory:");
+    const service = createService({ store, mirror: null, config: {} });
+    const session = { id: "reader", header: {} };
+    let live = true, workspace = true, owner = true;
+    let scene = { platform: "qq", kind: "private", id: "bot:reader", verified: true, admin: true };
+    const acl = createUnifiedSessionAcl({ db: store.db, workspaceId: "w",
+      resolveTrustedSession: () => live ? session : null,
+      authorizeWorkspace: () => ({ allowed: workspace, workspaceId: "w" }),
+      resolveTrustedQQScene: () => scene,
+      isTrustedOwner: () => owner });
+    const reader = acl.identify("reader");
+    const row = runWithUnifiedSession(acl, reader, () => store.save({ type: "history", title: "identity probe", content: "private" }));
+    const audit = [];
+    service.setRecallRecorder(receipt => audit.push(receipt));
+    service.setReranker({ rerank: async () => {
+      await Promise.resolve();
+      if (change === "workspace") workspace = false;
+      if (change === "qq-binding") scene = { ...scene, id: "bot:other" };
+      if (change === "owner") owner = false;
+      if (change === "session-deleted") live = false;
+      return [{ id: row.id, score: 1 }];
+    } });
+    try {
+      await assert.rejects(runWithUnifiedSession(acl, reader, () => service.searchMemories("identity probe", {
+        mode: "keyword", useRerank: true, recordRecall: true
+      })), /UNIFIED_SESSION_INVALID/);
+      assert.deepEqual(audit, []);
+    } finally { store.db.close(); }
+  });
+}
+
+test("overlapping searches use current persisted grant state at each completion", async () => {
+  const store = createStore(":memory:");
+  const sessions = new Map(["a", "b"].map(id => [id, { id, header: {} }]));
+  const acl = createUnifiedSessionAcl({ db: store.db, workspaceId: "w",
+    resolveTrustedSession: id => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "w" }) });
+  const a = acl.identify("a"), b = acl.identify("b");
+  const row = runWithUnifiedSession(acl, a, () => store.save({ type: "history", title: "overlap probe", content: "private" }));
+  acl.setGrant(a.sourceKey, b.sourceKey, true);
+  const pending = [];
+  const service = createService({ store, mirror: null, config: {} });
+  service.setReranker({ rerank: () => new Promise(resolve => pending.push(resolve)) });
+  const search = () => runWithUnifiedSession(acl, b, () => service.searchMemories("overlap probe", {
+    mode: "keyword", useRerank: true, recordRecall: false
+  }));
+  try {
+    const first = search(), second = search();
+    // Both keyword requests have entered their independent asynchronous ranking.
+    assert.equal(pending.length, 2);
+    acl.setGrant(a.sourceKey, b.sourceKey, false);
+    pending[0]([{ id: row.id, score: 1 }]);
+    assert.deepEqual(await first, []);
+    acl.setGrant(a.sourceKey, b.sourceKey, true);
+    pending[1]([{ id: row.id, score: 1 }]);
+    assert.equal((await second)[0]?.id, row.id);
+    acl.setGrant(a.sourceKey, b.sourceKey, false);
+    assert.equal(runWithUnifiedSession(acl, b, () => store.getById(row.id)), undefined);
+  } finally { store.db.close(); }
+});

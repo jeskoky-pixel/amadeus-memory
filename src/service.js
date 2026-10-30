@@ -1249,9 +1249,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // before returning, making the retrieval scene replayable — the sibling of
     // the dream judgment-layer audit trail. Recorder failures must never break
     // the search itself.
-    // Rerank may be asynchronous. A Host binding or Workspace grant revoked
-    // while it ran must stop the result before audit/cache/output.
-    currentUnifiedSession();
+    // Async ranking may outlive a read grant, not just a Host identity.
+    // Recheck SQLite's current per-memory authorization before audit/cache/output.
+    result = visibleRows(result);
     if (recordRecall && recallRecorder) {
       try {
         recallRecorder({

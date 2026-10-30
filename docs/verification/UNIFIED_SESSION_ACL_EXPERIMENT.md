@@ -12,7 +12,7 @@ database or install this branch in the daily DSH Profile.
   `2FD41422A6FA30B60975FF8B306BCFECB80F39DA3CACDAB84FF72B0ADC3AC392`.
 - Baseline schema: `PRAGMA user_version = 1`.
 - Baseline quality gate: 725 passed, 0 failed, 0 skipped.
-- Experimental branch quality gate at this checkpoint: 746 passed, 0 failed,
+- Experimental branch quality gate at this checkpoint: 753 passed, 0 failed,
   0 skipped. This validates only the implemented foundation, not the full
   architecture or real Desktop behavior.
 - The frozen package installed into a new `memory-acl-lab` DSH Profile. That
@@ -151,3 +151,86 @@ not yet connected to DSH model execution, and the complete graph path, GUI,
 Dream/Sleep and performance comparison have not been safely integrated.
 Therefore the unified architecture has **not** met the acceptance standard and
 cannot replace the baseline.
+
+
+## Phase 2 safety checkpoint — 2026-10-30
+
+**Partial implementation, not runtime acceptance. Keep PR #7 Draft and the
+experiment inactive.** No installed Profile or database was modified.
+
+### Reproduced and repaired
+
+The new asynchronous grant-revocation test failed on the starting commit:
+three rows were returned although only two remained authorized. Search now
+uses the existing per-row SQLite visibility predicate after asynchronous
+ranking, before the recall receipt, shared-cache decision and model return.
+The regression also checks injection and evidence-backed attributes/relations;
+the reader's own rows and an unrelated valid grant remain readable.
+
+Separate tests cover Session deletion, Workspace revocation, QQ rebinding,
+Owner loss, and two overlapping searches completed across revoke/regrant.
+Revocation affects future retrieval; it cannot erase text already delivered
+to a model or already present in conversation history. No new ACL epoch or
+in-memory grant cache was introduced.
+
+The new graph-management regression also failed on the starting commit.
+Model execution can no longer rename/retype shared entities, replace canonical
+memory references, manage global aliases/external IDs, confirm/undo merges,
+or recover globally pending identity facts by supplying an `actor` string.
+Global management continues to work outside model execution for the existing
+authenticated administrator surface. This is not an authentication mechanism
+for arbitrary callers: runtime entrypoint coverage remains mandatory.
+
+Attribute invalidation selects only owned memory evidence, ignoring a forged
+source selector. Attribute migration checks both memories; relation weight
+changes check their supporting memory. Pending assertions/relations cannot
+be attached to another source's memory. Direct global identity history/list
+APIs no longer bypass the conservative model view. Model entity DTOs omit
+global counts/timestamps/canonical-memory pointers; model name lists do not
+rank by private global sighting time.
+
+Conservative limitation: model extraction does not create global aliases or
+stable-ID bindings. New name-based entities and owned fact evidence remain
+possible. Stable-ID and canonical-link evidence needs a separately reviewed
+source-aware design before those features can be enabled in model context.
+
+### Actual Host inspection and remaining contract work
+
+Read-only inspection of the installed official Desktop archive found
+`@deepseek-ai/dsh-desktop-host@0.2.1-rc.3` and
+`@deepseek-ai/dsh-session@0.2.1-rc.3`; the repository development dependency
+is not sufficient evidence of installed APIs. Session preparation copies
+`origin`, `parentSession`, `delegationDepth` and `agentPreset`. Inspection has
+not established an immutable ordinary-versus-QQ creator identity contract.
+No provenance inference from these fields has been added.
+
+The existing QQ implementation has `storage.isKnownSession()` covering current
+and retired bindings. Its public `qq` Host service exposes only positive
+Scene resolution and capability checks. Session creation awaits the controller
+before binding the returned ID. A future classification contract must address
+that creation window and incomplete/lost historical indexes; a missing entry
+alone is not enough to certify an ordinary Session. The installed QQ package
+was not modified, and no new QQ compatibility version is claimed.
+
+The bounded DSH delegation attempt did not start: after locating the Desktop
+CLI, the configured headless Profile was absent. No credentials were copied
+and no production Profile was reconfigured.
+
+### Validation and incomplete acceptance
+
+- Quality gate: 753 passed, 0 failed, 0 skipped; focused ACL tests: 28 passed.
+- Source/lib synchronization and whitespace validation performed.
+- Frozen baseline branch and package hash rechecked; saved SQLite baseline
+  files are still present. No new Desktop rollback rehearsal was performed.
+- Ordinary Session provenance adapter: **not integrated**.
+- Model tools, automatic injection and all event writers: **not integrated**.
+- autoSummarize, per-source Dream/Sleep: **not accepted**.
+- Five-page GUI permissions and actual ACL graph preview: **not implemented**.
+- Migration preview, real Desktop restart/rollback: **not accepted**.
+- New 1k/10k end-to-end latency, Host/query counts and model Token costs:
+  **not measured**. Earlier performance numbers remain preliminary.
+
+No new LLM calls were introduced by these repairs. This is a code observation,
+not a measured model-cost result. The added final per-row check has not yet
+been benchmarked. The experiment is still unsuitable to replace the frozen
+v1.2.0 baseline; passing this safety checkpoint does not complete phase 2.

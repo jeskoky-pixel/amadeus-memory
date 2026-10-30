@@ -727,14 +727,15 @@ function toRecallEval(row) {
 
 function toEntity(row) {
   if (!row) return undefined;
+  const modelView = currentUnifiedSession() !== null;
   return {
     id: row.id,
     name: row.name,
     type: row.type ?? undefined,
-    first_seen: row.first_seen,
-    last_seen: row.last_seen,
-    mention_count: row.mention_count,
-    canonical_memory_id: row.canonical_memory_id ?? undefined
+    first_seen: modelView ? null : row.first_seen,
+    last_seen: modelView ? null : row.last_seen,
+    mention_count: modelView ? null : row.mention_count,
+    canonical_memory_id: modelView ? undefined : row.canonical_memory_id ?? undefined
   };
 }
 
@@ -3237,7 +3238,7 @@ export function createStore(path) {
     const visible = visibleEntityNameSql();
     if (visible) return toEntity(db.prepare(
       `SELECT e.* FROM entities e WHERE e.name = ? AND ${visible.sql}
-       ORDER BY e.last_seen DESC, e.id LIMIT 1`
+       ORDER BY e.id LIMIT 1`
     ).get(name, ...visible.params));
     return toEntity(db.prepare("SELECT * FROM entities WHERE name = ? ORDER BY last_seen DESC, id LIMIT 1").get(name));
   }
@@ -3247,7 +3248,7 @@ export function createStore(path) {
     const visible = visibleEntityNameSql();
     if (visible) return db.prepare(
       `SELECT e.* FROM entities e WHERE e.name = ? AND ${visible.sql}
-       ORDER BY e.last_seen DESC, e.id`
+       ORDER BY e.id`
     ).all(name, ...visible.params).map(toEntity);
     return db.prepare("SELECT * FROM entities WHERE name = ? ORDER BY last_seen DESC, id").all(name).map(toEntity);
   }
@@ -3266,8 +3267,13 @@ export function createStore(path) {
    * it explicitly via patch.mention_count (e.g. to correct a count).
    */
   function updateEntity(id, patch) {
+    // A model may record a sighting, but never rewrite shared identity metadata.
+    if (currentUnifiedSession() && Object.keys(patch).length) {
+      throw new Error("UNIFIED_GLOBAL_MANAGEMENT_REQUIRED");
+    }
     const old = findEntityById(id);
     if (!old) return undefined;
+    if (currentUnifiedSession()) return old; // Sightings are carried by source evidence.
     const has = (k) => Object.prototype.hasOwnProperty.call(patch, k);
     const name = has("name") ? patch.name : old.name;
     const type = has("type") ? patch.type : old.type;
@@ -3307,6 +3313,11 @@ export function createStore(path) {
 
   /** Mark every currently-valid attr row for entityId+attrKey as expired. Returns rows changed. */
   function invalidateOldAttr(entityId, attrKey, now, sceneScope = null) {
+    const owned = unifiedOwnedSql();
+    if (owned) return db.prepare(`UPDATE entity_attrs SET valid_until = ?
+      WHERE entity_id = ? AND attr_key = ? AND valid_until IS NULL
+        AND memory_id IN (SELECT id FROM memories WHERE ${owned.sql})`)
+      .run(now, entityId, attrKey, ...owned.params).changes;
     if (sceneScope == null) {
       return db.prepare(
         `UPDATE entity_attrs SET valid_until = ?
@@ -3379,7 +3390,7 @@ export function createStore(path) {
        FROM entity_attrs ea JOIN entities e ON e.id = ea.entity_id
        WHERE ea.memory_id = ?
        GROUP BY e.id
-       ORDER BY e.mention_count DESC, e.last_seen DESC, e.name ASC`
+       ORDER BY ${unifiedMemory ? "e.name ASC, e.id" : "e.mention_count DESC, e.last_seen DESC, e.name ASC"}`
     ).all(memoryId ?? "");
     const seen = new Set();
     const out = [];
@@ -3388,7 +3399,7 @@ export function createStore(path) {
           && !String(unifiedMemory.content ?? "").includes(row.name)) continue;
       if (seen.has(row.id)) continue;
       seen.add(row.id);
-      out.push({ id: row.id, name: row.name, type: row.type ?? null, mention_count: row.mention_count ?? 1 });
+      out.push({ id: row.id, name: row.name, type: row.type ?? null, mention_count: unifiedMemory ? null : row.mention_count ?? 1 });
     }
     return out;
   }
@@ -3469,6 +3480,11 @@ export function createStore(path) {
    * 事：这条是针对「这条边被激活了」的演化。
    */
   function bumpRelationWeight(id, delta = 0.1) {
+    if (currentUnifiedSession()) {
+      const relation = db.prepare("SELECT memory_id FROM entity_relations WHERE id = ?").get(id);
+      if (!relation) return false;
+      requireUnifiedOwnMemory(relation.memory_id);
+    }
     if (!Number.isFinite(delta) || delta < 0) return false;
     const result = db.prepare(
       "UPDATE entity_relations SET weight = MIN(1.0, weight + ?) WHERE id = ?"
@@ -3484,6 +3500,8 @@ export function createStore(path) {
    * { migrated, invalidated }.
    */
   function migrateAttrsToMemory(fromMemoryId, toMemoryId, now) {
+    requireUnifiedOwnMemory(fromMemoryId);
+    requireUnifiedOwnMemory(toMemoryId);
     let migrated = 0;
     let invalidated = 0;
     const attrs = db.prepare(
@@ -3584,7 +3602,7 @@ export function createStore(path) {
     const visible = visibleEntityNameSql();
     if (visible) return db.prepare(
       `SELECT e.* FROM entities e WHERE ${visible.sql}
-       ORDER BY e.last_seen DESC, e.name ASC LIMIT ?`
+       ORDER BY e.name ASC, e.id LIMIT ?`
     ).all(...visible.params, limit).map(toEntity);
     const rows = db.prepare(
       "SELECT * FROM entities ORDER BY last_seen DESC, name ASC LIMIT ?"
