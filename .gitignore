@@ -9,5 +9,26 @@
 /memory/
 /profiles/
 /dist/
-/dsh-mneme/.test-tmp/
+/.test-tmp/
 node_modules/
+
+# dependencies
+# local package cache / benchmark baseline checkout (synthetic only)
+.npm-cache/
+.benchmark/
+# build / logs
+*.log
+.DS_Store
+# secrets & credentials — NEVER commit these
+*.secret
+*credential*
+*credentials.json
+id_rsa*
+*.p12
+# runtime/local data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+memory.db

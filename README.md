@@ -1,82 +1,71 @@
-# Amadeus Memory Enhancer
+# Amadeus Memory
 
-> `@amadeus/memory@1.2.0` 发行候选包位于 `dsh-mneme/`，内部插件 ID 继续为 `dsh-mneme`。已用官方 DSH Desktop `0.2.1-rc.3` 附带的运行时进行隔离安装与升级验证；公开 npm 和市场收录尚未执行。请先看 [v1.2 安装说明](dsh-mneme/docs/INSTALL_V1_2.md)、[升级政策](dsh-mneme/docs/UPGRADE_POLICY.md) 和 [数据迁移](dsh-mneme/docs/DATA_MIGRATION.md)。
+Amadeus Memory 是基于 [Mneme](https://github.com/slow-stack/mneme) 修改并独立维护的 DSH 记忆插件。仓库根目录就是插件包；内部 Plugin ID 继续为 `dsh-mneme`，默认数据目录继续为 `~/.dsh/memory`。原作者的 MIT 许可与来源见 [LICENSE](LICENSE) 和 [UPSTREAM.md](UPSTREAM.md)。
 
-Amadeus Memory 是 DeepSeek Harness 的独立记忆插件：它保存获授权的长期信息，在对话时检索相关记忆，并提供可视化的记忆、标签权重、实体关系和备份管理。此版本继承 Mneme 的插件 ID 与数据格式，方便已有用户升级。
+Memory 可独立安装。QQ 提供可信 Scene 身份时，它会按 Scene 隔离长期记忆和近期上下文；Life 可通过受控入口写入可信经历；Persona 与 State 均为可选插件。缺少这些插件时，普通 DSH 会话仍可使用 Memory。
 
-> 历史基线：`@amadeus/memory@1.0.1` 经 PR #5 合并；四插件 v1.1 隔离验收见 [历史报告](https://github.com/jeskoky-pixel/amadeus-qq/blob/main/docs/verification/FOUR_PLUGIN_V11_JOINT_2026-10-28.md)。
+## 安装
 
-## 日常使用
-
-在 DSH 设置中打开 **Amadeus 记忆**，按 **记忆 / 实体 / 状态 / 设置** 浏览。记忆页区分长期记忆和近期上下文；实体页提供按单一 Scene 选择的只读图谱；设置页再分基础、检索、场景和备份。记忆可创建、搜索、编辑、归档和删除，核心记忆可受保护。原 Mneme 面板在没有 Scene 数据且未启用严格模式时仍可用；严格模式下旧图谱与身份接口安全关闭。若向量服务未配置，关键词检索继续可用。安装前请阅读 [中文用户指南](dsh-mneme/docs/USER_GUIDE.zh.md) 和 [安装与升级说明](dsh-mneme/docs/INSTALL.md)。
-
-[![tests](https://img.shields.io/badge/tests-714%20passed-success)](https://github.com/jeskoky-pixel/amadeus-memory/pull/5)
-
-This repository packages a separately installable Mneme bundle in [`dsh-mneme/`](dsh-mneme/). It extends the existing SQLite memory store, retrieval, graph and Desktop panel with stable typed identities, reviewed aliases and canonical links, Tag/entity ranking preferences, controlled Life experience intake, Scene-aware isolation, Recent Context and Core Memories. The upstream import and license are recorded in [`UPSTREAM.md`](UPSTREAM.md).
-
-The enhancement was merged into `main` through [Memory PR #1](https://github.com/jeskoky-pixel/amadeus-memory/pull/1), [PR #2](https://github.com/jeskoky-pixel/amadeus-memory/pull/2), and [PR #5](https://github.com/jeskoky-pixel/amadeus-memory/pull/5). It has not been installed in the production DSH Profile.
-
-## Package and installation
-
-- Source package: `dsh-mneme/`. The merged main development baseline is `@amadeus/memory@1.0.1`, retaining plugin ID `dsh-mneme` and the original data path. This is a personal-device test baseline, not a public release.
-- The verified `1.0.0` archive is `dist/modusensus-dsh-mneme-1.0.0.tgz`; its SHA-256 and four-plugin acceptance are recorded in the [compatibility matrix](https://github.com/jeskoky-pixel/Amadeus-dsh/blob/main/docs/FOUR_PLUGIN_COMPATIBILITY.md). The earlier RC archive and its acceptance boundaries remain in [`MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md`](docs/verification/MEMORY_V1_BACKGROUND_AND_PERFORMANCE.md).
-- Native DSH Settings entry: **Amadeus 记忆 / Amadeus Memory** (overview, automatic memory, Embedding, Tag/entity preferences, link to the full Memory panel).
-- In an isolated DSH Desktop Profile, choose and verify a dedicated `memoryDir` **before enabling** the bundle, then use Plugin Manager **Install bundle** with this archive. Set `apiToken` only if the optional trusted intake API is needed. The source package can also be linked during development.
-- Keep only one Memory bundle enabled; the same plugin ID must not run twice. Keep the old Mneme package and a SQLite consistent backup for rollback. Do not point a development Profile at a live memory database.
-
-The archive is built from `dsh-mneme/` with `npm run sync` followed by `npm pack --ignore-scripts --cache .npm-cache --pack-destination ../dist`. `npm run sync`, `node scripts/check-sync.js` and the focused tests check generated `lib/` files and behavior before packing. Install/upgrade/rollback details are in [Memory INSTALL](dsh-mneme/docs/INSTALL.md).
-
-## Development
+目标版本：`@fg-lab/amadeus-memory@1.2.0`，兼容已验证的 DSH Desktop `0.2.1-rc.3`。在 DSH 插件管理器中安装 npm 包，或安装本仓库根目录／[GitHub Release](https://github.com/jeskoky-pixel/amadeus-memory/releases) 的预构建包。命令行等价形式：
 
 ```powershell
-cd dsh-mneme
-npm test        # 运行 714 个测试
-npm run test:all              # 完整套件，含上游发行专用测试
-npm run test:upstream-release # 单独运行上游发行专用测试
-npm run test:compat-windows   # Windows symlink/spawn capability probe
+dsh plugin --profile <隔离或目标Profile> add @fg-lab/amadeus-memory@1.2.0
 ```
 
-`npm test` is the product gate (540 tests at `1.0.0`): runtime, enhancer, GUI/config, migration, package, QA guard, privacy and safe cleanup. The full suite (`npm run test:all`) includes separate upstream release workflows and Windows symlink/spawn capability checks; use `npm run test:upstream-release` and `npm run test:compat-windows` to report those separately.
+首次配置在 DSH 设置的 **Amadeus 记忆** 页面完成。先核对 Workspace、`memoryDir`、Embedding 与 Scene 安全开关，再启用写入。GUI 包含记忆卡片与时间线、实体关系图、运行状态，以及分组设置。向量服务未配置时仍可使用关键词检索；远端 Embedding 或宿主模型可能接收待处理的记忆内容。
 
-## Documentation
+从 `@amadeus/memory` 升级时，先停用旧 Memory，做 SQLite 一致性备份并导出 Profile，再移除旧包的 Bundle 配置，安装新包并恢复原 Workspace、`memoryDir` 和设置。**绝不能同时启用两个 `dsh-mneme` 实例**。根目录 GitHub 安装不再需要 `#path:/dsh-mneme`。详见 [安装与升级](docs/INSTALL_V1_2.md)、[升级政策](docs/UPGRADE_POLICY.md)、[数据迁移](docs/DATA_MIGRATION.md)。
 
-- [Native-settings install and acceptance checklist](dsh-mneme/docs/INSTALL.md)
-- [User guide (Chinese)](dsh-mneme/docs/USER_GUIDE.zh.md)
-- [Backup, upgrade and rollback](dsh-mneme/docs/BACKUP_ROLLBACK.md)
-- [Release notes and package identity](dsh-mneme/docs/RELEASE_NOTES.md)
-- [Measured performance and token cost](dsh-mneme/docs/PERFORMANCE.md)
-- [QA memoryDir guard](dsh-mneme/docs/QA_GUARD.md)
-- [Windows capability report](docs/WINDOWS_COMPATIBILITY.md)
-- [Enhancement design and migration details](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)
-- [Initial and focused quality acceptance](docs/verification/MEMORY_ENHANCER_ACCEPTANCE.md)
-- [Real isolated DSH Desktop acceptance](docs/verification/REAL_DSH_ACCEPTANCE_2026-10-25.md)
-- [Scene / Recent / Core final acceptance](docs/verification/SCENE_RECENT_CORE_ACCEPTANCE.md)
-- [QQ Scene graph and 1.0 readiness](docs/verification/MEMORY_QQ_SCENE_GRAPH_ACCEPTANCE.md)
+## 功能与页面
 
-## 路线图
+- 长期记忆的写入、检索、编辑、归档、遗忘、自动摘要、autoDream 和 Sleep。
+- 核心记忆、近期活动、Tag 与实体权重、稳定身份、别名和知识图谱。
+- QQ Scene 隔离与管理员配置的跨 Scene 读取授权；可信经历写入有来源证据与幂等保护。
+- 中英文 GUI：记忆、实体、状态和设置；可查看并管理备份与恢复。
 
-| 版本 | 主题 | 状态 |
-|------|------|------|
-| **v0.7** | 记忆核心与面板 | ✅ 已发布 |
-| **v0.8** | 实体与身份增强 | ✅ 已发布 |
-| **v0.9** | Amadeus Memory 产品化（0.9.5-amadeus.2） | 已合并 `main`，未公开发行或生产部署 |
-| **v1.0** | QQ Scene 安全运行、图谱与后台整理（1.0.0） | 已完成隔离联合验收；未公开发行或生产部署 |
+高级维护键 `reflectionFailureRetentionDays` 控制失败反思记录的保留天数；默认 90 天，详见 [配置参考](docs/CONFIGURATION.md)。
 
-## Roadmap
+### 模型工具（默认注册 13 个；全数 16 个）
 
-| Version | Theme | Status |
-|---------|-------|--------|
-| **v0.7** | Memory core and panel | ✅ Released |
-| **v0.8** | Entity and identity enhancement | ✅ Released |
-| **v0.9** | Amadeus Memory productization (0.9.5-amadeus.2) | Merged into `main`; not publicly released or deployed |
-| **v1.0** | QQ Scene safety, graph and background maintenance (`1.0.0`) | Isolated joint acceptance complete; not publicly released or deployed |
-
-The Scene graph has been exercised through a real isolated Desktop GUI with synthetic memories. The earlier QQ Host test also exercised real model requests through isolated QQ Sessions. The trusted `amadeus.memory` Scene ACL read contract, directional persisted `scene_read_grants`, and revoke behavior have [focused acceptance evidence](docs/verification/SCENE_READ_ACL.md); default cross-group access remains closed, and the fresh four-plugin Profile did not repeat the full granted model call. Production recall quality and latency remain unmeasured. Production deployment is a separate decision.
+| 工具 | 功能 |
+| --- | --- |
+| `memory_save` | 写入记忆 |
+| `memory_search` | 检索记忆 |
+| `memory_list` | 列出记忆 |
+| `memory_get` | 读取记忆正文 |
+| `memory_preference_get` | 查看偏好权重 |
+| `memory_identity_lookup` | 查询身份与别名 |
+| `memory_update` | 更新记忆 |
+| `memory_delete` | 删除记忆 |
+| `memory_forget` | 抑制记忆注入 |
+| `memory_archive` | 归档与恢复 |
+| `memory_core_save` | 核心记忆写入；需开启 `coreMemoryEnabled` |
+| `set_scope_state` | 设置可逆作用域闸门 |
+| `memory_register_document` | 登记文档指针 |
+| `memory_organize` | 主动整理；需开启 `organizeEnabled` |
+| `memory_runtime` | 查看本地运行时 |
+| `memory_recent_activity` | 查询近期活动；需开启 `recentActivityEnabled` |
 
 ## 隐私承诺
 
-Memory 的巩固与摘要走**宿主模型**：默认开启的 `autoDream` / `autoSummarize` 会把待整理的记忆正文交给当前 DSH 宿主的模型服务；Embedding 默认配置也可能访问远端服务。只有显式把 Embedding 改为 `local` 并使用本地运行时，语义向量才在本地计算。这个插件不会把记忆正文发送到 Amadeus 自有服务器；远端模型的隐私边界由宿主模型提供方决定。安装前请阅读 [Memory INSTALL](dsh-mneme/docs/INSTALL.md) 与 [Enhancement design](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)。
+`autoDream` 与 `autoSummarize` 的巩固和摘要走宿主模型；默认 Embedding 配置也可能访问远端服务。只有显式选择本地 Embedding 并安装本地运行时，语义向量才在本机计算。插件不向 Amadeus 自有服务器传送记忆正文。
 
 ## Privacy
 
-Memory consolidation and summarization use the **host model**: the default-on `autoDream` / `autoSummarize` paths send memory text to the current DSH host's model service, and the default embedding configuration may call a remote provider. Semantic vectors stay local only when Embedding is explicitly set to `local` with a local runtime. This plugin does not send memory bodies to an Amadeus-owned server; the remote model provider's privacy boundary applies. Read [Memory INSTALL](dsh-mneme/docs/INSTALL.md) before installing.
+`autoDream` and `autoSummarize` use the host model for consolidation and summaries. The configured embedding provider may be remote. Semantic vectors stay local only when local embedding is explicitly selected and its runtime is installed. The plugin does not send memory bodies to an Amadeus-owned server.
+
+软件包不携带用户数据库、QQ Token 或模型密钥。用户数据位于插件安装目录之外；卸载代码不等于删除数据。旧版代码未必能读取已迁移的数据库，回滚时须配套恢复升级前备份。详情见 [中文指南](docs/USER_GUIDE.zh.md)、[备份与回滚](docs/BACKUP_ROLLBACK.md)。
+
+## 开发与验证
+
+```powershell
+npm.cmd ci --ignore-scripts
+npm.cmd run sync
+npm.cmd test
+npm.cmd run verify:release
+npm.cmd pack --dry-run --ignore-scripts
+```
+
+`src/` 是源码；`lib/` 是随包发布的同步产物，`lib/client.js` 为独立维护的前端文件。安装目标无需构建源码。最新发行验收见 [v1.2 迁移报告](docs/verification/MEMORY_V12_FLATTEN_MOVE.md)；历史验收记录保留在 [docs/verification](docs/verification)。生产数据、真实 QQ/NapCat 和未完成的实机性能项目不得由合成测试推定为通过。
+
+问题反馈：[GitHub Issues](https://github.com/jeskoky-pixel/amadeus-memory/issues)。许可证：MIT；Mneme 原作者版权声明完整保留。

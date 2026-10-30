@@ -3,7 +3,7 @@
 This policy covers the Amadeus Memory enhanced bundle in this repository
 (`dsh-mneme/`, package `@amadeus/memory`). The upstream import and license
 are recorded in [UPSTREAM.md](UPSTREAM.md); installation and rollback are in
-[INSTALL.md](dsh-mneme/docs/INSTALL.md).
+[INSTALL.md](docs/INSTALL.md).
 
 ## Supported Versions
 
@@ -28,8 +28,8 @@ were exposed. Do not attach a real memory database or API key. The owner will
 acknowledge the report and coordinate a fix and disclosure.
 
 For repository security design and the API route policy table, see
-[dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md](dsh-mneme/docs/AMADEUS_MEMORY_ENHANCER.md)
-and [LICENSE](dsh-mneme/LICENSE). The Memory host API is owner-authenticated; remote
+[docs/AMADEUS_MEMORY_ENHANCER.md](docs/AMADEUS_MEMORY_ENHANCER.md)
+and [LICENSE](LICENSE). The Memory host API is owner-authenticated; remote
 Embedding and host-model consolidation are described in the README privacy
 sections.
 
