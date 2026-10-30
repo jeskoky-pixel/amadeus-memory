@@ -120,6 +120,68 @@ test("a directional read grant cannot mutate the source memory or attach forged 
   store.db.close();
 });
 
+test("semantic recall cache cannot carry one Session's memory into another Session's injection", async () => {
+  const store = createStore(":memory:");
+  const service = createService({ store, mirror: null, config: { hybridInject: true } });
+  const sessions = new Map(["a", "b"].map((id) => [id, { id, header: { agentPreset: "standard" } }]));
+  const acl = createUnifiedSessionAcl({
+    db: store.db, workspaceId: "workspace-1",
+    resolveTrustedSession: (id) => sessions.get(id),
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" })
+  });
+  const a = acl.identify("a");
+  const b = acl.identify("b");
+  const row = runWithUnifiedSession(acl, a, () => store.save({
+    type: "decision", title: "secret-key", content: "private source", importance: 5
+  }));
+  const result = await runWithUnifiedSession(acl, a, () => service.searchMemories("secret-key", {
+    mode: "keyword", useRerank: false, recordRecall: false
+  }));
+  assert.equal(result[0]?.id, row.id);
+  const injected = runWithUnifiedSession(acl, b, () => service.injectCandidates({
+    query: "secret-key", maxItems: 5, threshold: 3
+  }));
+  assert.equal(injected.some((item) => item.id === row.id), false);
+  acl.setGrant(a.sourceKey, b.sourceKey, true);
+  const granted = await runWithUnifiedSession(acl, b, () => service.searchMemories("secret-key", {
+    mode: "keyword", useRerank: false, recordRecall: false
+  }));
+  assert.equal(granted[0]?.id, row.id);
+  acl.setGrant(a.sourceKey, b.sourceKey, false);
+  const revoked = await runWithUnifiedSession(acl, b, () => service.searchMemories("secret-key", {
+    mode: "keyword", useRerank: false, recordRecall: false
+  }));
+  assert.deepEqual(revoked, []);
+  store.db.close();
+});
+
+test("asynchronous rerank cannot return a result after Host revokes the Session", async () => {
+  const store = createStore(":memory:");
+  const service = createService({ store, mirror: null, config: {} });
+  const session = { id: "a", header: { agentPreset: "standard" } };
+  let permitted = true;
+  const acl = createUnifiedSessionAcl({
+    db: store.db, workspaceId: "workspace-1",
+    resolveTrustedSession: (id) => permitted && id === "a" ? session : null,
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" })
+  });
+  const a = acl.identify("a");
+  const row = runWithUnifiedSession(acl, a, () => store.save({
+    type: "decision", title: "revocation target", content: "private", importance: 5
+  }));
+  service.setReranker({ rerank: async () => {
+    permitted = false;
+    return [{ id: row.id, score: 1 }];
+  } });
+  await assert.rejects(
+    runWithUnifiedSession(acl, a, () => service.searchMemories("revocation target", {
+      mode: "keyword", useRerank: true, recordRecall: false
+    })),
+    /UNIFIED_SESSION_INVALID/
+  );
+  store.db.close();
+});
+
 test("existing QQ Scene retains stable identity across Session reconstruction", () => {
   const f = fixture();
   const scene = { platform: "qq", kind: "group", id: "bot1:group9", verified: true };

@@ -12,7 +12,7 @@ database or install this branch in the daily DSH Profile.
   `2FD41422A6FA30B60975FF8B306BCFECB80F39DA3CACDAB84FF72B0ADC3AC392`.
 - Baseline schema: `PRAGMA user_version = 1`.
 - Baseline quality gate: 725 passed, 0 failed, 0 skipped.
-- Experimental branch quality gate at this checkpoint: 743 passed, 0 failed,
+- Experimental branch quality gate at this checkpoint: 745 passed, 0 failed,
   0 skipped. This validates only the implemented foundation, not the full
   architecture or real Desktop behavior.
 - The frozen package installed into a new `memory-acl-lab` DSH Profile. That
@@ -135,7 +135,11 @@ The latest local regression tests also cover cross-ACL identity rejection,
 Host/Workspace revocation during execution, same-source dedupe, read-only grant
 enforcement on memory/graph mutations, and source-private quality/dedupe
 candidate sampling. These are not a substitute for all model and background
-entry points. The context is
+entry points. Service-level regression tests also confirm that a source's
+semantic recall cache cannot enter another Session's injection, that a direct
+long-term read grant and revocation affect service search, and that Host
+revocation during asynchronous reranking prevents the result from returning.
+The context is
 not yet connected to DSH model execution, and the complete graph path, GUI,
 Dream/Sleep and performance comparison have not been safely integrated.
 Therefore the unified architecture has **not** met the acceptance standard and

@@ -471,6 +471,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
   }
 
   function trustedReadableSceneScopes() {
+    // The unified ACL supplies its own SQL candidate predicate. The legacy
+    // Scene selector would otherwise hide every ordinary DSH source stamp.
+    if (currentUnifiedSession()) return null;
     if (scenePolicy().enabled !== true) return null;
     const scene = currentScene();
     // No QQ capability means an authorized ordinary DSH session. Keep SQL
@@ -504,7 +507,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
 
   function jobOrSceneFilter(rows) {
     const job = currentSceneJob();
-    return job ? rows.filter((row) => sceneJobMatches(row)) : sceneFilterRows(rows);
+    return job ? rows.filter((row) => sceneJobMatches(row)) : visibleRows(rows);
+  }
+
+  function visibleRows(rows) {
+    const unified = currentUnifiedSession();
+    if (!unified) return sceneFilterRows(rows);
+    return rows.filter((row) => unified.acl.canReadMemory(unified.identity, row));
   }
 
   function jobEntityIds() {
@@ -1173,7 +1182,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // Scene isolation is a data-access gate, after graph/entity recall has
     // merged and before rerank/receipt/cache. It is fail-closed in strict mode
     // when the trusted output scene is missing.
-    merged = sceneFilterRows(merged);
+    merged = visibleRows(merged);
     if (Array.isArray(sceneScopes)) {
       const selected = new Set(sceneScopes.map((scope) => String(scope)));
       merged = merged.filter((row) => selected.has(row.scene_scope ?? "legacy"));
@@ -1240,6 +1249,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // before returning, making the retrieval scene replayable — the sibling of
     // the dream judgment-layer audit trail. Recorder failures must never break
     // the search itself.
+    // Rerank may be asynchronous. A Host binding or Workspace grant revoked
+    // while it ran must stop the result before audit/cache/output.
+    currentUnifiedSession();
     if (recordRecall && recallRecorder) {
       try {
         recallRecorder({
@@ -1265,7 +1277,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     }
     // Bug4: cache the latest semantic recall so the sync injection path can
     // reuse it when the injection query matches (no async embed available).
-    lastSemanticRecall = { query: q, items: result };
+    if (!currentUnifiedSession()) lastSemanticRecall = { query: q, items: result };
     touchRecalled(result);
     return result;
   }
@@ -2015,7 +2027,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
           }
         } catch { /* vector unavailable: fall through to the recall cache */ }
       }
-      if (!semanticItems.length && lastSemanticRecall?.query === q && lastSemanticRecall.items?.length) {
+      if (!currentUnifiedSession() && !semanticItems.length && lastSemanticRecall?.query === q && lastSemanticRecall.items?.length) {
         // CodeRabbit on #404：这条回填分支此前独漏重要度门槛——向量路（上方）与
         // BM25 路（下方 :1655 注释「门控与向量路径一致（含 importance 阈值）」）
         // 都带着它。#369 收编 history 后缺口会被放大：库里低于闸门的行（实测
@@ -2124,7 +2136,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 观察档（enabled 开、enforce 关）在这里留一条审计行说清「本应被拦下几条」，
     // 但不改 candidates；拦截档才真的摘掉。审计写失败只 warn，注入照常完成。
     candidates = scopeStateGate.gateInjection(candidates).rows;
-    candidates = sceneFilterRows(candidates);
+    candidates = visibleRows(candidates);
     // #249 第一批：B1 pin 池。取在相关性排序之后、轮换之前——取谁按此刻的候选
     // 次序（即相关性次序），取到后从候选中摘除，于是下面的轮换重排碰不到它们
     // （验收：pin 不参与跨轮轮换）。独立预算的两层意义：pin 既不占 maxItems
@@ -2211,6 +2223,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // Explain the preference contribution without exposing any inaccessible
     // content: only this row's own tags/entity labels and the bounded factor.
     if (preferenceScorer.active) injected = injected.map((m) => preferenceScorer.annotate(m));
+    currentUnifiedSession();
     touchRecalled(injected);
     // #217 口径（2026-09-19 拍板）：注入是曝光型访问事件，与检索命中同表分账
     // （mode='inject'，candidates 存实际注入集）。跟随 recallRecordDefault——
@@ -3046,7 +3059,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     listCore({ includeArchived = true } = {}) {
       const rows = store.list({ includeArchived, includeForgotten: false, limit: 5000 })
         .filter((row) => row.protected === true);
-      return sceneFilterRows(rows);
+      return visibleRows(rows);
     },
     listReadableSceneScopes() {
       return trustedReadableSceneScopes();
