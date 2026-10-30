@@ -2,6 +2,8 @@
 // separately gated by unifiedSessionAclEnabled; opening this store never
 // changes visibility in an existing Mneme database.
 import { mintTrustedScene } from "./scene.js";
+import { migrateLearning, createLearningLedger } from "./unified-learning.js";
+import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export const UNIFIED_SESSION_ACL_SCHEMA = `
@@ -55,11 +57,12 @@ const trustedIdentities = new WeakMap();
 const sourceJobs = new WeakMap();
 const execution = new AsyncLocalStorage();
 
-export function runWithUnifiedSession(acl, identity, fn) {
+export function runWithUnifiedSession(acl, identity, fn, options = {}) {
   if (trustedIdentities.get(identity) !== acl || !acl.isCurrent(identity) || typeof fn !== "function") {
     throw new TypeError("trusted unified Session required");
   }
-  return execution.run({ acl, identity }, fn);
+  if(options.evidence)acl.assertLearningEvidence(options.evidence);
+  return execution.run({ acl, identity, ...options }, fn);
 }
 
 export function currentUnifiedSession() {
@@ -70,6 +73,13 @@ export function currentUnifiedSession() {
   return current;
 }
 
+// Provider routing uses only the currently verified Host Session. This does
+// not create a Session or alter the provider's configured credentials.
+export function unifiedLlmOptions(options) {
+  const scope=currentUnifiedSession();
+  return scope?.identity.sessionId ? {...options,sessionId:scope.identity.sessionId} : options;
+}
+
 /** SQL predicate for reads before LIMIT/ranking. NULL legacy rows are hidden. */
 export function currentUnifiedReadSql(tableAlias = "memories") {
   const current = currentUnifiedSession();
@@ -78,8 +88,9 @@ export function currentUnifiedReadSql(tableAlias = "memories") {
   const sources = [...current.acl.readableSources(current.identity)];
   if (!sources.length) return { sql: "0 = 1", params: [] };
   const marks = sources.map(() => "?").join(", ");
+  const restricted=current.acl.learningRestrictionSql(current.identity,tableAlias);
   return {
-    sql: `((EXISTS (SELECT 1 FROM unified_memory_sources AS ums
+    sql: `(((EXISTS (SELECT 1 FROM unified_memory_sources AS ums
              WHERE ums.memory_id = ${tableAlias}.id)
             AND (${tableAlias}.scene_scope IS NULL OR EXISTS
               (SELECT 1 FROM unified_memory_sources AS stamp
@@ -90,8 +101,8 @@ export function currentUnifiedReadSql(tableAlias = "memories") {
            OR (NOT EXISTS (SELECT 1 FROM unified_memory_sources AS ums
              WHERE ums.memory_id = ${tableAlias}.id)
              AND ${tableAlias}.scene_scope LIKE 'qq:%'
-             AND ${tableAlias}.scene_scope IN (${marks})))`,
-    params: [...sources, ...sources]
+             AND ${tableAlias}.scene_scope IN (${marks})))) AND (${restricted.sql})`,
+    params: [...sources, ...sources,...restricted.params]
   };
 }
 
@@ -128,9 +139,8 @@ export function createUnifiedSessionAcl({
     throw new TypeError("trusted Workspace and Session services required");
   }
   db.exec(UNIFIED_SESSION_ACL_SCHEMA);
-  const version = db.prepare("SELECT value FROM unified_acl_meta WHERE key = 'schema_version'").get();
-  if (version && version.value !== "1") throw new Error(`UNIFIED_ACL_SCHEMA_UNSUPPORTED: ${version.value}`);
-  db.prepare("INSERT OR IGNORE INTO unified_acl_meta (key, value) VALUES ('schema_version', '1')").run();
+  migrateLearning(db,now);
+  let learning;
   const ownsIdentity = (value) => value && typeof value === "object" && trustedIdentities.get(value) === api;
 
   function identify(sessionId, { bind = true } = {}) {
@@ -211,27 +221,16 @@ export function createUnifiedSessionAcl({
         result.add(row.source_key);
       }
     }
-    // A model may retain shared material in its conversation after revocation.
-    // Persist a conservative derivation guard; do not silently relabel that
-    // history as solely owned by the receiving Session on a later restart.
-    if (!sourceJobs.has(identity) && result.size > 1) {
-      db.prepare("INSERT OR IGNORE INTO unified_acl_meta(key,value) VALUES(?, '1')")
-        .run(`shared-history:${workspaceId}:${identity.sessionId}`);
-    }
     return result;
   }
 
-  function noteSharedHistory(identity) {
-    if (!isCurrent(identity) || sourceJobs.has(identity)) throw new Error('UNIFIED_SESSION_INVALID');
-    db.prepare("INSERT OR IGNORE INTO unified_acl_meta(key,value) VALUES(?, '1')")
-      .run(`shared-history:${workspaceId}:${identity.sessionId}`);
+  function canDeriveSessionHistory(identity) {
+    return isCurrent(identity) && !sourceJobs.has(identity);
   }
 
-  function canDeriveSessionHistory(identity) {
-    if (!isCurrent(identity) || sourceJobs.has(identity)) return false;
-    readableSources(identity);
-    return !db.prepare('SELECT 1 FROM unified_acl_meta WHERE key=?')
-      .get(`shared-history:${workspaceId}:${identity.sessionId}`);
+  function grantDetails(sourceKey,readerKey) {
+    return db.prepare('SELECT * FROM unified_long_term_grants WHERE workspace_id=? AND source_key=? AND reader_key=?')
+      .get(workspaceId,sourceKey,readerKey) ?? null;
   }
 
   function memorySources(memoryId, sceneScope = null) {
@@ -255,7 +254,7 @@ export function createUnifiedSessionAcl({
     if (!sources.length) return false;
     const readable = readableSources(identity);
     // A mixed-source row cannot be exposed by a grant for only one source.
-    return sources.every((source) => readable.has(source));
+    return sources.every((source) => readable.has(source)) && learning.permitted(identity,id);
   }
 
   function filterReadable(identity, rows) {
@@ -266,9 +265,10 @@ export function createUnifiedSessionAcl({
     // synchronously on every filter, including the final post-rerank boundary.
     for (let offset=0;offset<ids.length;offset+=400) {
       const chunk=ids.slice(offset,offset+400), records=new Map();
+      const restricted=learning.restrictionSql(identity,"m");
       const found=db.prepare(`SELECT m.id,m.scene_scope,s.source_key FROM memories m
         LEFT JOIN unified_memory_sources s ON s.memory_id=m.id
-        WHERE m.id IN (${chunk.map(()=>'?').join(',')})`).all(...chunk);
+        WHERE m.id IN (${chunk.map(()=>'?').join(',')}) AND (${restricted.sql})`).all(...chunk,...restricted.params);
       for(const row of found) {
         if(!records.has(row.id))records.set(row.id,{scope:row.scene_scope,sources:[]});
         if(row.source_key)records.get(row.id).sources.push(row.source_key);
@@ -317,31 +317,37 @@ export function createUnifiedSessionAcl({
       );
   }
 
-  function setGrant(sourceKey, readerKey, enabled) {
-    if (!validId(sourceKey) || !validId(readerKey) || sourceKey === readerKey
-        || typeof enabled !== "boolean") throw new TypeError("invalid grant");
-    if (enabled) {
-      db.prepare(`INSERT OR IGNORE INTO unified_long_term_grants
-        (workspace_id, source_key, reader_key, created_at) VALUES (?, ?, ?, ?)`).run(
-          workspaceId, sourceKey, readerKey, now()
-        );
-    } else {
-      db.prepare(`DELETE FROM unified_long_term_grants
-        WHERE workspace_id = ? AND source_key = ? AND reader_key = ?`).run(
-          workspaceId, sourceKey, readerKey
-        );
-    }
+  function setGrant(sourceKey, readerKey, enabled, mode) {
+    if (!validId(sourceKey) || !validId(readerKey) || sourceKey === readerKey || typeof enabled !== 'boolean'
+      || (mode !== undefined && !['learn','borrow'].includes(mode))) throw new TypeError('invalid grant');
+    const prior=grantDetails(sourceKey,readerKey);
+    if(enabled) {
+      const chosen=mode ?? prior?.mode ?? 'learn';
+      const unchanged=prior && chosen===prior.mode;
+      db.prepare(`INSERT INTO unified_long_term_grants(workspace_id,source_key,reader_key,created_at,mode,legacy,grant_id)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(workspace_id,source_key,reader_key) DO UPDATE SET
+        mode=excluded.mode,legacy=excluded.legacy,grant_id=excluded.grant_id,created_at=excluded.created_at`)
+        .run(workspaceId,sourceKey,readerKey,unchanged?prior.created_at:now(),chosen,
+          unchanged?prior.legacy:0,unchanged?prior.grant_id:randomUUID());
+    } else db.prepare('DELETE FROM unified_long_term_grants WHERE workspace_id=? AND source_key=? AND reader_key=?')
+      .run(workspaceId,sourceKey,readerKey);
   }
 
   function sourceJob(anchor) {
     if (!isCurrent(anchor) || sourceJobs.has(anchor)) throw new Error("UNIFIED_SOURCE_JOB_INVALID");
-    const job = Object.freeze({ sourceKey: anchor.sourceKey, owner: false, kind: "source-job" });
+    const job = Object.freeze({ sourceKey: anchor.sourceKey, sessionId: anchor.sessionId, owner: false, kind: "source-job" });
     trustedIdentities.set(job, api);
     sourceJobs.set(job, anchor);
     return job;
   }
 
+  learning=createLearningLedger({db,workspaceId,now,grantFor:grantDetails,canRead:canReadMemory,isCurrent,readableSources,sessionFor:resolveTrustedSession});
   const api = Object.freeze({ sourceJob, identify, isCurrent, readableSources, memorySources, canReadMemory, filterReadable, canWriteMemory,
-    linkMemory, setOwnerRead, setGrant, canDeriveSessionHistory, noteSharedHistory });
+    linkMemory, setOwnerRead, setGrant, grantDetails, canDeriveSessionHistory,
+    recordDelivery:learning.recordDelivery,recordRecentDelivery:learning.recordRecent,
+    historyEvidence:learning.historyEvidence,memoryEvidence:learning.memoryEvidence,combineEvidence:learning.combine,
+    emptyEvidence:learning.emptyEvidence,attachLearning:learning.attach,assertLearningEvidence:learning.assertEvidence,
+    canUseEvidence:learning.canUseEvidence,saveRecentEvidence:learning.saveRecentEvidence,canReadRecent:learning.canReadRecent,
+    learningRestrictionSql:learning.restrictionSql,derivationFor:learning.derivationFor,learningStats:learning.learningStats });
   return api;
 }

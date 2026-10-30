@@ -681,20 +681,20 @@ test("overlapping searches use current persisted grant state at each completion"
 });
 
 
-test("shared-history derivation guard survives revoke and ACL recreation", () => {
+test("unused grants remain derivable through revoke and ACL recreation", () => {
   const f = fixture();
   try {
     const a=f.acl.identify(f.add('a').id), b=f.acl.identify(f.add('b').id);
     assert.equal(f.acl.canDeriveSessionHistory(b),true);
     f.acl.setGrant(a.sourceKey,b.sourceKey,true);
-    assert.equal(f.acl.canDeriveSessionHistory(b),false);
+    assert.equal(f.acl.canDeriveSessionHistory(b),true);
     f.acl.setGrant(a.sourceKey,b.sourceKey,false);
-    assert.equal(f.acl.canDeriveSessionHistory(b),false);
+    assert.equal(f.acl.canDeriveSessionHistory(b),true);
     assert.equal(f.acl.canDeriveSessionHistory(a),true);
     const restored=createUnifiedSessionAcl({db:f.db,workspaceId:'workspace-1',
       resolveTrustedSession:id=>f.sessions.get(id),confirmOrdinarySession:()=>true,
       authorizeWorkspace:()=>({allowed:true,workspaceId:'workspace-1'})});
-    assert.equal(restored.canDeriveSessionHistory(restored.identify('b')),false);
+    assert.equal(restored.canDeriveSessionHistory(restored.identify('b')),true);
     assert.equal(restored.canDeriveSessionHistory(restored.identify('a')),true);
   } finally { f.db.close(); }
 });

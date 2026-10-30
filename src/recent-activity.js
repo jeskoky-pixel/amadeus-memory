@@ -726,6 +726,9 @@ export function createRecentActivityCore({
   resolveTrustedSession = null,
   allowCrossSession = null,
   onSharedRead = null,
+  prepareRecord = null,
+  saveProvenance = null,
+  canReadProvenance = null,
   isTrustedOwner = null,
   config = {},
   now = Date.now,
@@ -874,7 +877,8 @@ export function createRecentActivityCore({
       ).get(key);
       if (existing) return { ok: false, reason: "duplicate" };
 
-      const turn = buildTurnSummary(session, turnSeq);
+      const prepared=prepareRecord?.(session,event);
+      const turn = buildTurnSummary(prepared?.session??session, turnSeq);
       if (!turn) return { ok: false, reason: "no-public-text" };
 
       const occurredAt = resolveNow(callOptions.now);
@@ -924,6 +928,7 @@ export function createRecentActivityCore({
         db.prepare(
           "DELETE FROM recent_activity_events WHERE workspace_id = ? AND expires_at <= ?"
         ).run(workspace, occurredAt);
+        if(prepared?.evidence && saveProvenance)saveProvenance(key,session,prepared.evidence);
         pruneCaps(sourceSessionId);
         db.exec("RELEASE SAVEPOINT mneme_recent_activity_record");
         return {
@@ -1189,7 +1194,7 @@ export function createRecentActivityCore({
       if (selected.length > 0) {
         const placeholders = selected.map(() => "?").join(", ");
         const parameters = [workspace, ...selected, now];
-        let sql = `SELECT source_session_id AS sourceSessionId, kind, summary, occurred_at AS occurredAt
+        let sql = `SELECT idempotency_key AS provenanceKey, expires_at AS expiresAt, source_session_id AS sourceSessionId, kind, summary, occurred_at AS occurredAt
                    FROM recent_activity_events
                    WHERE workspace_id = ? AND source_session_id IN (${placeholders}) AND expires_at > ?`;
         if (normalized.since !== null) {
@@ -1211,9 +1216,11 @@ export function createRecentActivityCore({
 
       const needle = normalized.query.toLowerCase();
       const items = [];
+      const delivered=[];
       let usedTokens = 0;
       let truncated = false;
       for (const row of rows) {
+        if(canReadProvenance && !canReadProvenance(row.provenanceKey,targetSession))continue;
         if (row.sourceSessionId !== targetSessionId &&
           !crossSessionDecision(allowCrossSession, row.sourceSessionId, targetSessionId).allowed) continue;
         const summary = typeof row?.summary === "string" ? row.summary : "";
@@ -1237,11 +1244,12 @@ export function createRecentActivityCore({
           occurredAt: Number(row.occurredAt),
           estimatedTokens: cost
         });
+        delivered.push({...items[items.length-1],expiresAt:row.expiresAt,provenanceKey:row.provenanceKey});
         usedTokens += cost;
       }
 
       if (items.some(item=>item.sourceSessionId !== targetSessionId) && typeof onSharedRead === 'function') {
-        onSharedRead(targetSession);
+        onSharedRead(targetSession,delivered);
       }
 
       // Expired cleanup is maintenance, not a read dependency; a failure here

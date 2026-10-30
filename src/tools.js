@@ -1680,9 +1680,18 @@ export function createTools(ctx, service, config, embedder, access = null, recen
         if (decision?.allowed !== true) {
           throw new Error(`WORKSPACE_ACCESS_DENIED: ${decision?.reason ?? "denied"}`);
         }
+        const invoke=async()=>{
+          const output=await tool.execute(args,exec);
+          if(authorizeModelWork.delivery && ['memory_search','memory_list','memory_get'].includes(tool.name)) {
+            const rows=output?.items ?? (output?.memory?[output.memory]:[]);
+            const delivered=rows.map(row=>tool.name==='memory_list'?{...row,content:''}:
+              tool.name==='memory_search'?{...row,content:String(row.content??'').replace(/\s+/g,' ').trim().slice(0,200)}:row);
+            authorizeModelWork.delivery(sessionOf(exec),delivered,tool.name);
+          }
+          return output;
+        };
         return authorizeModelWork.run
-          ? authorizeModelWork.run(sessionOf(exec), () => tool.execute(args, exec))
-          : tool.execute(args, exec);
+          ? authorizeModelWork.run(sessionOf(exec), invoke,{purpose:'model'}) : invoke();
       }
     };
   };

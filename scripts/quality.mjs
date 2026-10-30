@@ -28,6 +28,7 @@ const files = [
   "test/release-package-workflow.test.js",
   "test/scene-recent-core.test.js",
   "test/unified-session-acl.test.js",
+  "test/unified-learning.test.js",
   "test/unified-runtime.test.js",
   "test/unified-background.test.js",
   "test/amadeus-memory-service.test.js",

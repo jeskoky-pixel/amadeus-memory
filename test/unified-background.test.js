@@ -55,7 +55,7 @@ test('Dream and Sleep source jobs never inherit shared reads or merge another so
  } finally {f.store.close();}
 });
 
-test('shared conversation history cannot be automatically relabelled after grant or revoke',async()=>{
+test('unused grants do not freeze automatic summaries',async()=>{
  const f=setup(),handlers=[];let calls=0;
  Object.assign(f.ctx,{on:(n,fn)=>{handlers.push(fn);return()=>{};},logger:{warn(){}},llm:{async *stream(){calls++;
   yield {type:'text-delta',text:JSON.stringify([{type:'decision',title:'copied',content:'PRIVATE_a',importance:4}])};
@@ -65,31 +65,83 @@ test('shared conversation history cannot be automatically relabelled after grant
  try {
   f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',true);
   await handlers[0](f.sessions.get('b'),{type:'turn/end',seq:2});
-  assert.equal(calls,0);assert.equal(f.store.all().length,0);
+  assert.equal(calls,1);assert.equal(f.store.all().length,1);
   f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',false);
   await handlers[0](f.sessions.get('b'),{type:'turn/end',seq:2});
-  assert.equal(calls,0);assert.equal(f.store.all().length,0);
+  assert.equal(calls,1);assert.equal(f.store.all().length,1);
  } finally {summarizer.dispose();f.store.close();}
 });
 
 
-test('actual shared recent read blocks re-derivation but an owner preview does not',()=>{
+test('actual shared recent read records Borrow ancestry without freezing the Session',()=>{
  const f=setup();
  const options={db:f.store.db,workspaceId:'w',allowSession:f.runtime.authorize,
   resolveTrustedSession:id=>f.sessions.get(id),allowCrossSession:f.runtime.allowRecentPair};
  const preview=createRecentActivityCore(options);
- const core=createRecentActivityCore({...options,onSharedRead:f.runtime.authorize.noteSharedRead});
+ const core=createRecentActivityCore({...options,onSharedRead:f.runtime.authorize.noteSharedRead,
+  prepareRecord:f.runtime.authorize.prepareRecent,saveProvenance:f.runtime.authorize.saveRecent,
+  canReadProvenance:f.runtime.authorize.canReadRecent});
  try {
   const a=f.sessions.get('a'),b=f.sessions.get('b');
   assert.equal(core.recordTurnEnd(a,{type:'turn/end',seq:2}).ok,true);
   core.setSourcePolicy(a,{mode:'shared',sharedSessionIds:['b']});
   assert.equal(preview.readRecentActivity(b,{includeSelf:false}).count,1);
+  assert.equal(f.runtime.acl.learningStats().receipts,0);
   assert.equal(f.runtime.authorize.derive(b).allowed,true);
   assert.equal(core.readRecentActivity(b,{includeSelf:false}).count,1);
-  assert.equal(f.runtime.authorize.derive(b).allowed,false);
-  assert.equal(core.recordTurnEnd(b,{type:'turn/end',seq:2}).ok,false);
+  assert.equal(f.runtime.authorize.derive(b).allowed,true);
+  assert.equal(f.runtime.acl.learningStats().receipts,1);
+  const evidence=f.runtime.acl.historyEvidence(f.runtime.acl.identify('b'));
+  assert.equal(evidence.roots[0].mode,'borrow');
+  assert.equal(core.recordTurnEnd(b,{type:'turn/end',seq:2}).ok,true);
   core.setSourcePolicy(a,{mode:'self'});
   assert.equal(core.readRecentActivity(b,{includeSelf:false}).count,0);
-  assert.equal(f.runtime.authorize.derive(b).allowed,false);
+  assert.equal(f.runtime.authorize.derive(b).allowed,true);
  } finally {f.runtime.dispose();f.store.close();}
+});
+
+
+for(const mode of ['learn','borrow'])test(`summary in flight uses historical ${mode} permission after revoke`,async()=>{
+ const f=setup(),handlers=[];
+ const a=f.sessions.get('a'),b=f.sessions.get('b');
+ const original=f.runtime.authorize.run(a,()=>f.service.saveWithDedupe({type:'preference',title:'source',content:'basketball source'})).memory;
+ f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',true,mode);
+ f.runtime.acl.recordDelivery(f.runtime.acl.identify('b'),[original],'tool',1);
+ Object.assign(f.ctx,{on:(n,fn)=>{handlers.push(fn);return()=>{};},logger:{warn(){}},llm:{async *stream(){
+  f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',false);
+  yield {type:'text-delta',text:JSON.stringify([{type:'decision',title:'derived',content:'basketball learned from source',importance:4}])};
+  yield {type:'finish',reason:{kind:'ok'}};
+ }}});
+ const summarizer=createSummarizer(f.ctx,f.service,{autoSummarize:true},{authorizeModelWork:f.runtime.authorize});
+ try {
+  await handlers[0](b,{type:'turn/end',seq:2});
+  const derived=f.store.all().find(m=>m.title==='derived');
+  if(mode==='learn') {
+   assert.ok(derived);assert.equal(f.runtime.acl.derivationFor(derived.id)[0].origin_id,original.id);
+   assert.equal(f.runtime.authorize.run(b,()=>f.store.getById(derived.id))?.id,derived.id);
+  } else assert.equal(derived,undefined);
+  assert.equal(f.runtime.authorize.run(b,()=>f.store.getById(original.id)),undefined);
+ }finally{summarizer.dispose();f.store.close();}
+});
+
+
+test('repeated original Dream and Sleep keep learned roots after source revoke',async()=>{
+ const f=setup();const a=f.sessions.get('a'),b=f.sessions.get('b');
+ const source=f.runtime.authorize.run(a,()=>f.service.saveWithDedupe({type:'preference',title:'root',content:'synthetic root A',importance:5})).memory;
+ f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',true);
+ f.runtime.acl.recordDelivery(f.runtime.acl.identify('b'),[source],'tool',1);
+ f.runtime.authorize.run(b,()=>f.service.saveWithDedupe({type:'preference',title:'learned B',content:'synthetic root A and B',importance:5}),{evidence:f.runtime.acl.historyEvidence(f.runtime.acl.identify('b'))});
+ f.runtime.acl.setGrant('dsh:session:a','dsh:session:b',false);
+ const ctx=mockCtx({summaryText:'synthetic learned summary'});
+ const stream=ctx.llm.stream;ctx.llm.stream=function(options){assert.ok(['a','b'].includes(options.sessionId));return stream(options);};
+ const dream=createDreamScheduler({thresholdCount:1,thresholdChars:0,delayMs:0});
+ try {
+  for(let i=0;i<2;i++){
+   await f.runtime.runSources(()=>dream.runDream(ctx,f.service,{dreamProvider:'mock',dreamModel:'synthetic'}));
+   await f.runtime.runSources(()=>runSleep(ctx,f.service,{sleepModeEnabled:true,sleepPatternMinMemories:100,sleepArchiveDays:365,sleepCompressDays:365},ctx.logger));
+  }
+  const summaries=f.store.all().filter(m=>m.scene_scope==='dsh:session:b'&&m.type==='summary');
+  assert.ok(summaries.length);
+  for(const row of summaries){assert.ok(f.runtime.acl.derivationFor(row.id).some(r=>r.origin_id===source.id));assert.equal(f.runtime.acl.canReadMemory(f.runtime.acl.identify('b'),row),true);}
+ }finally{dream.dispose();f.store.close();}
 });

@@ -120,6 +120,16 @@ test("registered tools, real injector, admin grants and source jobs share the sa
   const before = unifiedSnapshot(deps).revision;
   saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:['b'],revision:before});
   assert.throws(()=>saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:[],revision:before}),/CONFLICT/);
+  const initialGrant=runtime.acl.grantDetails('dsh:session:a','dsh:session:b');
+  assert.equal(initialGrant.mode,'learn');
+  saveUnifiedPolicy(deps,{session_id:'a',owner_read:true,readers:['b']});
+  assert.equal(runtime.acl.grantDetails('dsh:session:a','dsh:session:b').grant_id,initialGrant.grant_id);
+  saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:['b'],reader_modes:{b:'borrow'}});
+  const changedGrant=runtime.acl.grantDetails('dsh:session:a','dsh:session:b');
+  assert.equal(changedGrant.mode,'borrow');assert.notEqual(changedGrant.grant_id,initialGrant.grant_id);
+  saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:['b']});
+  assert.equal(runtime.acl.grantDetails('dsh:session:a','dsh:session:b').grant_id,changedGrant.grant_id);
+  assert.throws(()=>saveUnifiedPolicy(deps,{session_id:'a',owner_read:false,readers:['b'],reader_modes:{b:'invalid'}}),/MODE_INVALID/);
   assert.deepEqual(recent.getSourcePolicy(sessions.get('a')),recentPolicy);
   assert.equal((await call('memory_list','b',{limit:20})).items.length,2);
   assert.equal((await call('memory_get','b',{id:rows.a.id})).memory.id,rows.a.id);

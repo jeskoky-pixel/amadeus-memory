@@ -67,19 +67,46 @@ export function createUnifiedRuntime({ ctx, db, workspaceId, authorizeWorkspace,
     const identity = acl.identify(s?.id);
     return identity ? { allowed: true, workspaceId, identity } : { allowed: false, reason: "unified-identity-unverified", workspaceId: null };
   }
-  authorize.noteSharedRead = s => {
-    const access = authorize(s);
-    if (!access.allowed) throw new Error('UNIFIED_SESSION_INVALID');
-    acl.noteSharedHistory(access.identity);
+  authorize.noteSharedRead = (target,items=[]) => {
+    const to=authorize(target);if(!to.allowed)throw Error('UNIFIED_SESSION_INVALID');
+    for(const id of new Set(items.map(x=>x.sourceSessionId))) {
+      if(id===target.id)continue;
+      const from=acl.identify(id);if(!from)throw Error('UNIFIED_SESSION_INVALID');
+      acl.recordRecentDelivery(to.identity,from,items.filter(x=>x.sourceSessionId===id));
+    }
   };
-  authorize.derive = s => {
-    const access = authorize(s);
-    return access.allowed && acl.canDeriveSessionHistory(access.identity)
-      ? access : { allowed: false, reason: 'unified-shared-history-cannot-be-relabelled' };
+  authorize.derive = authorize;
+  authorize.prepareSummary = (s,range) => {
+    const access=authorize(s);if(!access.allowed)throw Error('UNIFIED_SESSION_INVALID');
+    const evidence=acl.historyEvidence(access.identity,{...range,window:true});
+    if(!evidence.userOnly)return {session:s,evidence};
+    const from=(range?.sinceSeq??-1)+1,to=range?.untilSeq??Number.MAX_SAFE_INTEGER;
+    const events=(s.snapshotEvents?.(from,to+1)??s.events??[]).filter(e=>
+      Number.isSafeInteger(e.seq) && e.seq>=from && e.seq<=to &&
+      (e.type==='turn/end' || (e.type==='user/message' && e.data?.source?.kind==='user')));
+    return {session:{id:s.id,header:s.header,snapshotEvents:()=>events},evidence};
   };
-  authorize.run = (s, fn) => {
+  authorize.prepareRecent = (s,event) => {
+    const untilSeq=event.seq??Number.MAX_SAFE_INTEGER;
+    const events=s.snapshotEvents?.(Math.max(0,untilSeq-4096),untilSeq)??s.events??[];
+    const sinceSeq=events.reduce((last,e)=>e.type==='turn/end' && Number.isSafeInteger(e.seq) && e.seq<untilSeq ? Math.max(last,e.seq) : last,-1);
+    return authorize.prepareSummary(s,{sinceSeq,untilSeq});
+  };
+  authorize.saveRecent = (key,s,evidence) => {
+    const identity=acl.identify(s.id);if(!identity)throw Error('UNIFIED_SESSION_INVALID');
+    acl.saveRecentEvidence(key,identity,evidence);
+  };
+  authorize.canReadRecent = (key,s) => {
+    const identity=acl.identify(s.id);return !!identity && acl.canReadRecent(key,identity);
+  };
+  authorize.delivery = (s,rows,kind) => {
+    const access=authorize(s);if(!access.allowed)throw Error('UNIFIED_SESSION_INVALID');
+    return acl.recordDelivery(access.identity,rows,kind);
+  };
+  authorize.run = (s, fn, options = {}) => {
     const result = authorize(s);
     if (!result.allowed) throw new Error("UNIFIED_SESSION_INVALID");
+    const evidence=options.evidence ?? (options.purpose==='model' ? acl.historyEvidence(result.identity) : null);
     return runWithUnifiedSession(acl, result.identity, () => {
       const execute = () => {
         const value = fn();
@@ -87,7 +114,7 @@ export function createUnifiedRuntime({ ctx, db, workspaceId, authorizeWorkspace,
         currentUnifiedSession(); return value;
       };
       return result.identity.scene ? runWithTrustedScene(result.identity.scene, execute) : execute();
-    });
+    },{...options,evidence});
   };
   async function runSources(operation) {
     const bindings = db.prepare("SELECT session_id, source_key FROM unified_session_bindings WHERE workspace_id=?").all(workspaceId);
@@ -97,7 +124,7 @@ export function createUnifiedRuntime({ ctx, db, workspaceId, authorizeWorkspace,
       const anchor = acl.identify(binding.session_id);
       if (!anchor || anchor.sourceKey !== binding.source_key) continue;
       done.add(anchor.sourceKey);
-      results.push(await runWithSceneJob(anchor.sourceKey, () => runWithUnifiedSession(acl, acl.sourceJob(anchor), operation)));
+      results.push(await runWithSceneJob(anchor.sourceKey, () => runWithUnifiedSession(acl, acl.sourceJob(anchor), operation,{purpose:"job",evidence:acl.emptyEvidence()})));
     }
     return { ok: results.every(r => r?.ok !== false), results, sources: done.size,
       skipped: done.size === 0, reason: done.size ? "source-jobs" : "no-live-trusted-sources" };

@@ -3323,5 +3323,22 @@ export function createService({ store, mirror, config, onWrite, logger, document
   serviceApi.submitTrustedMemory = (body) => intake.submit(body);
   serviceApi.validateTrustedIntake = (body) => intake.validate(body);
   serviceApi.trustedProvenanceFor = (memoryId) => intake.provenanceFor(memoryId);
+  // Background algorithms retain Mneme's decisions. Their trusted input set
+  // contributes immutable ancestry to every write, including rewrites/merges.
+  for(const name of ['getById','list','all','search','searchMemories','injectCandidates']) {
+    const original=serviceApi[name];if(typeof original!=='function')continue;
+    serviceApi[name]=(...args)=>{
+      const observe=value=>{
+        const scope=currentUnifiedSession();
+        if(scope?.purpose==='job') {
+          const rows=Array.isArray(value)?value:value?.id?[value]:[];
+          const ids=rows.map(r=>r?.id).filter(Boolean);
+          if(ids.length)scope.evidence=scope.acl.combineEvidence(scope.evidence,scope.acl.memoryEvidence(scope.identity,ids));
+        }
+        return value;
+      };
+      const result=original(...args);return result?.then?result.then(observe):observe(result);
+    };
+  }
   return serviceApi;
 }
