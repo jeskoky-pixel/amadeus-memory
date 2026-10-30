@@ -12,7 +12,7 @@ database or install this branch in the daily DSH Profile.
   `2FD41422A6FA30B60975FF8B306BCFECB80F39DA3CACDAB84FF72B0ADC3AC392`.
 - Baseline schema: `PRAGMA user_version = 1`.
 - Baseline quality gate: 725 passed, 0 failed, 0 skipped.
-- Experimental branch quality gate at this checkpoint: 745 passed, 0 failed,
+- Experimental branch quality gate at this checkpoint: 746 passed, 0 failed,
   0 skipped. This validates only the implemented foundation, not the full
   architecture or real Desktop behavior.
 - The frozen package installed into a new `memory-acl-lab` DSH Profile. That
@@ -32,6 +32,12 @@ verified QQ Scene and `dsh:session:<id>` for an ordinary Host Session. A QQ
 Session rebuilt with a new ID can retain its verified source key. An ordinary
 Session never inherits by title. A changed Host binding for an existing ID is
 rejected instead of silently reclassifying a source.
+When a QQ Host is present but cannot bind a Session, the experimental core now
+requires a separate trusted `confirmOrdinarySession` decision. A custom preset
+alone is insufficient because a renamed QQ Session may be paused or temporarily
+unbound. The current QQ Host contract does not yet provide this negative proof;
+the runtime mode must stay unavailable until that gap is resolved without a
+fixed Agent Preset whitelist.
 
 `unified_memory_sources` records each source for a memory. All linked sources
 must be readable before the memory can be returned. A single grant never opens
@@ -51,8 +57,9 @@ is read from SQLite on each check; no policy cache is retained.
    only when every model read/write path is gated. A stored true value must not
    be able to activate an incomplete implementation.
 2. Resolve the runtime Session from Host services; authorize Workspace
-   membership and QQ Scene at every model invocation. Never trust HTTP or tool
-   arguments for source identity.
+   membership and QQ Scene at every model invocation. Supply a trustworthy
+   ordinary-Session classification for custom Agent Sessions when QQ is present.
+   Never trust HTTP or tool arguments for source identity.
 3. Stamp new writes and their source link in one SQLite transaction. Constrain
    dedupe, updates, provenance, and background merges to one source unless all
    contributions can be represented and checked.

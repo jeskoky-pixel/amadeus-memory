@@ -24,6 +24,8 @@ function fixture() {
     resolveTrustedSession: (id) => sessions.get(id),
     authorizeWorkspace: (session) => ({ allowed: sessions.has(session.id), workspaceId: "workspace-1" }),
     resolveTrustedQQScene: (id) => scenes.get(id) ?? null,
+    confirmOrdinarySession: (session) => sessions.get(session.id) === session &&
+      !String(session.header?.agentPreset ?? "").startsWith("amadeus-qq"),
     isTrustedOwner: (session) => session.id === "owner"
   });
   const memory = (id, sceneScope = null) => {
@@ -239,7 +241,8 @@ test("custom DSH Preset is isolated when QQ Host rejects an unbound Session", ()
     resolveTrustedQQScene: () => {
       if (qqScene) return qqScene;
       throw new Error("unbound");
-    }
+    },
+    confirmOrdinarySession: (candidate) => candidate === session
   });
   const identity = acl.identify(session.id);
   assert.equal(identity.sourceKey, "dsh:session:custom-1");
@@ -247,6 +250,21 @@ test("custom DSH Preset is isolated when QQ Host rejects an unbound Session", ()
   assert.equal(acl.canReadMemory(identity, oldQQ), false);
   qqScene = { platform: "qq", kind: "group", id: "bot1:group9", verified: true };
   assert.equal(acl.identify(session.id), null, "binding changes require review, not silent inheritance");
+});
+
+test("a renamed QQ Session without a Host binding cannot become an ordinary source", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE memories (id TEXT PRIMARY KEY, scene_scope TEXT)");
+  const session = { id: "renamed", header: { agentPreset: "renamed-qq-preset" } };
+  const acl = createUnifiedSessionAcl({
+    db, workspaceId: "workspace-1",
+    resolveTrustedSession: () => session,
+    authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" }),
+    resolveTrustedQQScene: () => { throw new Error("Host binding unavailable"); }
+  });
+  assert.equal(acl.identify(session.id), null);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM unified_session_bindings").get().n, 0);
+  db.close();
 });
 
 test("Owner visibility requires a separate policy and Host-verified owner Scene", () => {
@@ -326,7 +344,8 @@ test("schema and policy survive a second opener on the same SQLite database", ()
     db: f.db, workspaceId: "workspace-1",
     resolveTrustedSession: (id) => f.sessions.get(id),
     authorizeWorkspace: () => ({ allowed: true, workspaceId: "workspace-1" }),
-    resolveTrustedQQScene: (id) => f.scenes.get(id) ?? null
+    resolveTrustedQQScene: (id) => f.scenes.get(id) ?? null,
+    confirmOrdinarySession: (session) => f.sessions.get(session.id) === session
   });
   assert.equal(reopened.canReadMemory(reopened.identify("b"), row), true);
 });
