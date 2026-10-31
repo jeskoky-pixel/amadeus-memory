@@ -10,7 +10,7 @@ Target package: **`@fg-lab/amadeus-memory@1.3.0`**. Tested runtime baseline: off
 
 ## Release status
 
-Productization candidate. Public npm and GitHub Release publication are pending release gates and npm account authorization. A version in this README is not evidence of publication. See [publishing policy](docs/PUBLISHING.md).
+**1.3.0 is published:** [GitHub Release](https://github.com/jeskoky-pixel/amadeus-memory/releases/tag/v1.3.0) · [npm](https://www.npmjs.com/package/@fg-lab/amadeus-memory). Install the pinned version and verify the release checksum. Later main changes do not change this immutable archive. See [publishing policy](docs/PUBLISHING.md).
 
 ## What you can do
 
