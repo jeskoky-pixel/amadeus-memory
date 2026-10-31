@@ -1,5 +1,7 @@
 # Amadeus Memory
 
+<img src="assets/market-icon.png" width="80" alt="Amadeus memory logo">
+
 [English](README.md) · [详细配置参考](REFERENCE.md)
 
 支持方向性会话共享的长期记忆与知识图谱。
@@ -9,6 +11,21 @@
 ## 当前发行状态
 
 目前是产品化候选。正式 npm 与 GitHub Release 发布仍需通过发布门禁并完成 npm 账户授权；这里的版本号不代表已经公开发行。
+
+## 能帮你做什么
+
+- Hot Memory 保留近期上下文；按需开启近期动态与 Core Memory，记录跨会话活动和人工精选的重要事实。
+- 保存长期事实与经历，通过 BM25、向量或混合检索查找。向量检索需要配置 Embedding 服务。
+- 浏览统一知识图谱、实体与别名，调整 Tag/Entity 权重；共享图谱不等于绕过 Session 来源权限。
+- 复用 Mneme 自动摘要与 Dream 巩固，并可选启用 Sleep；模型处理可能访问已配置的远端服务。
+- 绑定一个 Workspace，在第五页 Amadeus 管理方向性 Learn/Borrow 授权，查看派生知识来源及按 Session 预览图谱。
+- Learn 允许合法学习成果在撤销源访问后保留；Borrow 随源访问撤销而失效。学习不代表获得任意转分享权。
+
+示例：让规划会话学习研究会话的项目背景，再撤销源访问。已合法形成的学习成果可保留，未学习的源内容不可继续读取；需要随授权一起失效时选择 Borrow。
+
+Hot Memory 默认开启；近期动态、Core Memory 和 Memory 自带的可选人格卡默认关闭，Sleep 为可选功能。QQ 使用前应核对统一 ACL 工作区及授权。普通 DSH 会话无需安装 QQ；QQ 身份只接受可信 Host 契约。
+
+Amadeus Memory 基于 Mneme，原版记忆、巩固及检索能力不冒称 Amadeus 原创，见[上游署名](UPSTREAM.md)。
 
 ## 安装与首次配置
 

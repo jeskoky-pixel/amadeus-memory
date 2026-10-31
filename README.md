@@ -1,5 +1,7 @@
 # Amadeus Memory
 
+<img src="assets/market-icon.png" width="80" alt="Amadeus memory logo">
+
 [简体中文](README.zh-CN.md) · [Detailed configuration](REFERENCE.md) · [Issues](https://github.com/jeskoky-pixel/amadeus-memory/issues)
 
 Persistent memory and a knowledge graph with directional Session sharing.
@@ -9,6 +11,21 @@ Target package: **`@fg-lab/amadeus-memory@1.3.0`**. Tested runtime baseline: off
 ## Release status
 
 Productization candidate. Public npm and GitHub Release publication are pending release gates and npm account authorization. A version in this README is not evidence of publication. See [publishing policy](docs/PUBLISHING.md).
+
+## What you can do
+
+- Keep recent conversation context with Hot Memory; optionally enable Recent Activity and Core Memory for cross-session activity and deliberately curated facts.
+- Save long-term facts and experiences; retrieve them with BM25, vector or hybrid search. Vector search needs a configured embedding provider.
+- Browse a shared knowledge graph, entities and aliases, and tune Tag/Entity importance. Session authorization still controls which source material may be read.
+- Use Mneme automatic summaries and Dream consolidation, with optional Sleep processing. These use configured model services and are not a promise of offline processing.
+- Bind one Workspace. Sessions are private by default in unified ACL mode; grant directional Learn or Borrow access from the fifth Amadeus page. Inspect derived-knowledge provenance and preview a Session's graph.
+- Learn permits authorized derived knowledge to remain after source access is revoked; Borrow remains dependent on source access. Learning does not grant unrestricted onward sharing.
+
+Example: let a planning Session learn selected project context from a research Session, then revoke source access. Authorized learned facts can remain; unlearned source content becomes inaccessible. Choose Borrow when continued access must depend on the original grant.
+
+Hot Memory is enabled by default. Recent Activity, Core Memory and Memory's optional persona card are disabled by default; Sleep is optional. Confirm the unified ACL Workspace and grants before QQ use. Memory can run without QQ for ordinary DSH Sessions. QQ identity is accepted only through its trusted Host contract.
+
+Amadeus Memory is based on Mneme. See [upstream source and attribution](UPSTREAM.md); original memory, consolidation and retrieval capabilities are not presented as new Amadeus inventions.
 
 ## Install and configure
 

@@ -1,6 +1,13 @@
 # Memory 数据迁移契约
 
-## 当前格式
+## 当前格式（1.3.0）
+
+- 发行包：`@fg-lab/amadeus-memory@1.3.0`，内部 ID 保持 `dsh-mneme`。
+- 基础 Mneme 兼容数据库使用 schema 1；统一 Session ACL 数据库使用 schema 2。不能以包版本号推导或重置数据版本。
+- schema 2 保存 Session 授权、Learn/Borrow、派生来源和依赖账本。现有 schema 2 数据必须继续读取，不能重新初始化。
+- 从旧格式迁移须使用已有备份和迁移路径；回滚旧代码前应确认其支持当前格式，否则恢复匹配的旧备份。详见本文后面的统一 Session ACL 章节。
+
+## v1.2.0 历史迁移基线
 
 - 发行包：`@fg-lab/amadeus-memory@1.2.0`
 - 持久 Schema Version：SQLite `PRAGMA user_version = 1`；此前 Mneme 兼容库为版本 0（未标记）
