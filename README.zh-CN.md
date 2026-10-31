@@ -1,0 +1,68 @@
+# Amadeus Memory
+
+[English](README.md) · [详细配置参考](REFERENCE.md)
+
+支持方向性会话共享的长期记忆与知识图谱。
+
+目标发行包：**`@fg-lab/amadeus-memory@1.3.0`**。已验证的官方 DSH Desktop 基线：**0.2.1-rc.3**。许可证：MIT。
+
+## 当前发行状态
+
+目前是产品化候选。正式 npm 与 GitHub Release 发布仍需通过发布门禁并完成 npm 账户授权；这里的版本号不代表已经公开发行。
+
+## 安装与首次配置
+
+使用官方 DSH 插件管理器将预构建 `.tgz` 安装到所需 Profile，无需手工构建源码。按[安装说明](docs/INSTALL_V1_2.md)操作，不要手工改写正在运行的 Profile。
+
+选择工作区并配置 Session ACL。Learn 保留合法学习成果；Borrow 派生成果随来源访问权撤销。
+
+Memory 已整理为仓库根目录包，不再需要子目录安装后缀。内部插件 ID 仍为 `dsh-mneme`，不要同时加载原版 Mneme。
+
+## 界面
+
+![Amadeus Memory 界面](docs/verification/screenshots/recent-sharing-preview.png)
+
+截图展示已有界面，不表示本轮所有真实平台能力均已通过。具体限制请阅读配置参考和验收报告。
+
+## 升级与回滚
+
+升级前备份用户数据。程序、持久数据和恢复备份分开保存。禁用停止功能；卸载默认保留外部数据。回退旧程序不能自动撤销数据库迁移。
+
+- [升级政策](docs/UPGRADE_POLICY.md)
+- [数据迁移与恢复](docs/DATA_MIGRATION.md)
+- [发行检查清单](docs/RELEASE_CHECKLIST.md)
+- [完整配置与限制](REFERENCE.md)
+
+[项目主页](https://github.com/jeskoky-pixel/Amadeus-dsh) · [MIT 许可证](LICENSE)
+基于 Mneme，保留原始署名及许可，见 [UPSTREAM.md](UPSTREAM.md)。
+
+### 模型工具（默认注册 13 个；全数 16 个）
+
+| 工具 | 功能 |
+| --- | --- |
+| `memory_save` | 写入记忆 |
+| `memory_search` | 检索记忆 |
+| `memory_list` | 列出记忆 |
+| `memory_get` | 读取记忆正文 |
+| `memory_preference_get` | 查看偏好权重 |
+| `memory_identity_lookup` | 查询身份与别名 |
+| `memory_update` | 更新记忆 |
+| `memory_delete` | 删除记忆 |
+| `memory_forget` | 抑制记忆注入 |
+| `memory_archive` | 归档与恢复 |
+| `memory_core_save` | 核心记忆写入；需开启 `coreMemoryEnabled` |
+| `set_scope_state` | 设置可逆作用域闸门 |
+| `memory_register_document` | 登记文档指针 |
+| `memory_organize` | 主动整理；需开启 `organizeEnabled` |
+| `memory_runtime` | 查看本地运行时 |
+| `memory_recent_activity` | 查询近期活动；需开启 `recentActivityEnabled` |
+
+## 隐私承诺
+
+`autoDream` 与 `autoSummarize` 的巩固和摘要走宿主模型；默认 Embedding 配置也可能访问远端服务。只有显式选择本地 Embedding 并安装本地运行时，语义向量才在本机计算。插件不向 Amadeus 自有服务器传送记忆正文。
+
+## Privacy
+
+`autoDream` and `autoSummarize` use the host model for consolidation and summaries. The configured embedding provider may be remote. Semantic vectors stay local only when local embedding is explicitly selected and its runtime is installed. The plugin does not send memory bodies to an Amadeus-owned server.
+
+软件包不携带用户数据库、QQ Token 或模型密钥。用户数据位于插件安装目录之外；卸载代码不等于删除数据。旧版代码未必能读取已迁移的数据库，回滚时须配套恢复升级前备份。详情见 [中文指南](docs/USER_GUIDE.zh.md)、[备份与回滚](docs/BACKUP_ROLLBACK.md)。
