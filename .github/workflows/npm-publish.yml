@@ -4,6 +4,11 @@ name: Publish verified npm package
 # Trusted Publisher have been configured. This workflow never publishes on push.
 on:
   workflow_dispatch:
+    inputs:
+      verified_sha:
+        description: Final main commit approved by the release acceptance report
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -12,6 +17,10 @@ permissions:
 jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
+    environment: npm-release
+    concurrency:
+      group: npm-release-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +33,13 @@ jobs:
           cache: npm
       - run: npm install --global npm@12.0.2
       - name: Verify tag and main ancestry
+        env:
+          VERIFIED_SHA: ${{ inputs.verified_sha }}
         shell: pwsh
         run: |
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $actual = git rev-parse HEAD
+          if ($actual -ne $env:VERIFIED_SHA) { throw 'Commit differs from the accepted release candidate' }
           if ($env:GITHUB_REF_NAME -ne "v$($pkg.version)") { throw 'Tag does not match package version' }
           git fetch origin main
           git merge-base --is-ancestor HEAD origin/main
