@@ -1,11 +1,11 @@
-# Amadeus Memory v1.2.0 安装与升级
+# Amadeus Memory v1.3.0 安装与升级
 
-本仓库根目录是可安装包，发行包名为 `@fg-lab/amadeus-memory@1.2.0`。公开 npm、GitHub Release 与外部市场的实际状态应以发行报告为准。先前隔离测试使用官方 DSH Desktop `0.2.1-rc.3` 附带的 DSH 运行时；更广泛的兼容性仍需实测。普通用户不需要 Node、源码构建或 Codex。
+本仓库根目录是可安装包，发行包名为 `@fg-lab/amadeus-memory@1.3.0`。公开 npm、GitHub Release 与外部市场的实际状态应以发行报告为准。先前隔离测试使用官方 DSH Desktop `0.2.1-rc.3` 附带的 DSH 运行时；更广泛的兼容性仍需实测。普通用户不需要 Node、源码构建或 Codex。
 
 ## 首次安装
 
 1. 在 DSH Desktop 打开目标 Profile 的插件管理器，选择安装本地预构建包；发行获准后也可使用对应的 Market/GitHub 条目。
-2. 选择 `fg-lab-amadeus-memory-1.2.0.tgz` 或安装 `@fg-lab/amadeus-memory@1.2.0`，确认已安装插件列表显示新包名，并打开其设置页。GitHub 根目录安装不再需要 `#path:/dsh-mneme`。
+2. 选择 `fg-lab-amadeus-memory-1.3.0.tgz` 或安装 `@fg-lab/amadeus-memory@1.3.0`，确认已安装插件列表显示新包名，并打开其设置页。GitHub 根目录安装不再需要 `#path:/dsh-mneme`。
 3. 先在设置中核对 `memoryDir` 与目标 Workspace；同一 Profile 只能启用一个 `dsh-mneme`。旧根 `memory.db` 不会自动收养。
 4. 按宿主提示重载或重启，回到设置页检查健康状态。安装失败时不要修改数据目录；保留错误信息与原安装包，然后恢复备份的 Profile。
 
