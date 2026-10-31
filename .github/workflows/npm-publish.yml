@@ -1,0 +1,48 @@
+name: Publish verified npm package
+
+# Run manually from the exact vX.Y.Z tag after release readiness and npm
+# Trusted Publisher have been configured. This workflow never publishes on push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+      - run: npm install --global npm@12.0.2
+      - name: Verify tag and main ancestry
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($env:GITHUB_REF_NAME -ne "v$($pkg.version)") { throw 'Tag does not match package version' }
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Tagged commit is not on main' }
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run sync
+      - run: npm test
+      - run: npm run verify:release
+      - name: Pack and publish this tested artifact
+        shell: pwsh
+        run: |
+          npm pack --ignore-scripts --pack-destination $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $archive = Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter '*.tgz' | Select-Object -First 1
+          if (-not $archive) { throw 'No package archive produced' }
+          $sha = (Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "Package: $($archive.Name); SHA-256: $sha" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          npm publish $archive.FullName --access public --provenance
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

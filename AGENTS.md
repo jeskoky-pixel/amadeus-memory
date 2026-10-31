@@ -1,8 +1,8 @@
 # Amadeus Memory development
 
-This repository contains a forked Mneme package in `dsh-mneme/`. Source is in
-`dsh-mneme/src/`; `dsh-mneme/lib/` is synchronized output. Run `npm run sync`
-from the package directory after changing source, then run relevant tests.
+This repository is a root-level forked Mneme package. Source is in `src/`;
+`lib/` is synchronized output. Run `npm run sync` from the repository root
+after changing source, then run relevant tests.
 
 Preserve Mneme's existing store, memory importance, autoDream, Sleep, archive,
 forgetting, scope and retrieval behavior when enhancement switches are off.
