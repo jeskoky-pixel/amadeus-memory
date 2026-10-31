@@ -1,0 +1,44 @@
+[
+  {
+    "mode": "keyword",
+    "ms": 13,
+    "hit": false,
+    "ownGaming": false,
+    "hasPrivateBasketball": false
+  },
+  {
+    "mode": "vector",
+    "ms": 16,
+    "hit": true,
+    "ownGaming": false,
+    "hasPrivateBasketball": false
+  },
+  {
+    "mode": "hybrid",
+    "ms": 15,
+    "hit": true,
+    "ownGaming": false,
+    "hasPrivateBasketball": false
+  },
+  {
+    "mode": "keyword",
+    "ms": 14,
+    "hit": false,
+    "ownGaming": false,
+    "hasPrivateBasketball": false
+  },
+  {
+    "mode": "vector",
+    "ms": 19,
+    "hit": true,
+    "ownGaming": true,
+    "hasPrivateBasketball": false
+  },
+  {
+    "mode": "hybrid",
+    "ms": 17,
+    "hit": true,
+    "ownGaming": true,
+    "hasPrivateBasketball": false
+  }
+]

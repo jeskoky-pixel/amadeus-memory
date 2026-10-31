@@ -1,0 +1,6 @@
+{
+  "syntheticDerivedRows": 3,
+  "action": "retain rows and add required original source; quarantine stale test activity",
+  "removedSyntheticRecentRows": 5,
+  "backup": true
+}

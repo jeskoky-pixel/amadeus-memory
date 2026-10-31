@@ -1,3 +1,4 @@
+import { unifiedLlmOptions } from "./unified-session-acl.js";
 import { validateDecisions, applyDecisions } from "./dream/decisions.js";
 import { clusterMemories, findPotentialConflicts, cosineSimilarity } from "./dream/clustering.js";
 import { clusterByTag, intersectEvidence } from "./dream/narratives.js";
@@ -312,7 +313,7 @@ function buildRecordReceipts({ runId, committed, snapshot, policyEpoch }) {
  */
 async function streamText(ctx, options, onUsage, onStreamError) {
   let text = "";
-  for await (const chunk of ctx.llm.stream(options)) {
+  for await (const chunk of ctx.llm.stream(unifiedLlmOptions(options))) {
     if (chunk.type === "text-delta" && typeof chunk.text === "string") text += chunk.text;
     // DSH 的 StreamChunk 契约把用量嵌在 chunk.usage（TokenUsage：inputTokens /
     // outputTokens / …），chunk 顶层没有 token 字段——把整个 chunk 当用量对象交给

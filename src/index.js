@@ -1,3 +1,5 @@
+import { unifiedLlmOptions } from "./unified-session-acl.js";
+import { createUnifiedRuntime } from "./unified-runtime.js";
 import { createStore } from "./store.js";
 import { createMirror, TYPE_FILE } from "./mirror.js";
 import { createDocumentIndex } from "./document-index.js";
@@ -142,12 +144,12 @@ export function createEntityStreamAdapter({ llm, agentDefaultModel, logger, serv
         }
       };
       return (async () => {
-        for await (const chunk of llm.stream({
+        for await (const chunk of llm.stream(unifiedLlmOptions({
           ...route,
           maxTokens: 4096,
           ...(withEffort && effort ? { reasoningEffort: effort } : {}),
           messages
-        })) {
+        }))) {
           if (chunk.type === "text-delta" && typeof chunk.text === "string") text += chunk.text;
           // DSH 的 StreamChunk 契约把用量嵌在 chunk.usage（TokenUsage）；兼容直接
           // 平铺在 chunk 上的旧形态。归一放在这里，下面只需认平铺形状——与
@@ -244,9 +246,10 @@ const TRUSTED_SCENE_ACL_TOOLS = Object.freeze(["memory_search", "memory_list", "
  * Host binding must already be present. It returns null unless strict QQ Scene
  * isolation is effective in this running instance.
  */
-export function sceneAclReadDeclaration(ctx, cfg) {
+export function sceneAclReadDeclaration(ctx, cfg, unifiedReady = false) {
   try {
-    if (cfg?.sceneIsolationEnabled !== true || cfg?.sceneStrictQQ !== true) return null;
+    if (!(unifiedReady && cfg?.unifiedSessionAclEnabled === true) &&
+        (cfg?.sceneIsolationEnabled !== true || cfg?.sceneStrictQQ !== true)) return null;
     const qq = ctx?.reflect?.get?.("qq");
     if (typeof qq?.resolveTrustedSessionScene !== "function") return null;
     return Object.freeze({
@@ -261,12 +264,12 @@ export function sceneAclReadDeclaration(ctx, cfg) {
   }
 }
 
-export function provideSceneAclRead(ctx, cfg) {
+export function provideSceneAclRead(ctx, cfg, unifiedReady = false) {
   if (typeof ctx?.provide !== "function") return () => {};
   try {
     let disposed = false;
     const dispose = ctx.provide("amadeus.memory", Object.freeze({
-      sceneAclRead: () => sceneAclReadDeclaration(ctx, cfg)
+      sceneAclRead: () => sceneAclReadDeclaration(ctx, cfg, unifiedReady)
     }));
     return async () => {
       if (disposed) return;
@@ -450,6 +453,10 @@ export function createRecentActivityRuntime({
     }
     return typeof authorizeModelWork === "function" ? authorizeModelWork(session) : null;
   };
+  if (typeof authorizeModelWork?.derive === 'function') {
+    allowSession.derive = s => allowSession(s)?.allowed === true
+      ? authorizeModelWork.derive(s) : {allowed:false,reason:'recent-activity-disabled'};
+  }
   // Cross-Session grants must be authorized from the live Host Session behind
   // the stored ID, never from a caller's ID-only placeholder. The resolver is
   // read fresh on every check; a missing service or Session fails closed for
@@ -468,6 +475,11 @@ export function createRecentActivityRuntime({
       allowSession,
       resolveTrustedSession: trustedSessionLookup,
       allowCrossSession: pairGate,
+      onSharedRead: typeof authorizeModelWork?.noteSharedRead === 'function'
+        ? (target,items) => authorizeModelWork.noteSharedRead(target,items) : null,
+      prepareRecord:authorizeModelWork?.prepareRecent,
+      saveProvenance:authorizeModelWork?.saveRecent,
+      canReadProvenance:authorizeModelWork?.canReadRecent,
       isTrustedOwner: typeof isTrustedOwner === "function" ? isTrustedOwner : null,
       config,
       logger,
@@ -777,6 +789,10 @@ export const apply = (ctx, config) => {
   // No selected Workspace means no autonomous memory work: skip the semantic
   // boot backfill as well as the Dream/Sleep/entity/continuity/nudge paths.
   if (workspaceRuntime.mode !== "selected") runtimeOverrides.autoReindexOnBoot = false;
+  if (cfg.unifiedSessionAclEnabled === true) {
+    runtimeOverrides.continuityRescueEnabled = false;
+    runtimeOverrides.actionNudgeEnabled = false;
+  }
   const runtimeCfg = createScopedRuntimeConfig(cfg, runtimeOverrides);
 
   // The runtime authorization closure is created once per mount, before any
@@ -796,7 +812,11 @@ export const apply = (ctx, config) => {
     ctx,
     logger: ctx.logger
   });
-  const authorizeModelWork = createQQModelAccessGate({
+  const unifiedRuntime = activeWorkspaceId && runtimeCfg.unifiedSessionAclEnabled === true
+    ? createUnifiedRuntime({ ctx, db: store.db, workspaceId: activeWorkspaceId,
+        authorizeWorkspace: workspaceAccessGuard.authorize,
+        enabled: () => runtimeCfg.unifiedSessionAclEnabled === true }) : null;
+  const authorizeModelWork = unifiedRuntime?.authorize ?? createQQModelAccessGate({
     ctx,
     config: runtimeCfg,
     authorizeWorkspace: workspaceAccessGuard.authorize,
@@ -806,6 +826,7 @@ export const apply = (ctx, config) => {
   // Teardown effects are collected from every later registration. Declared here
   // because the command/recorder block below also registers a disposer.
   const disposers = [];
+  if (unifiedRuntime) disposers.push(unifiedRuntime.dispose);
 
   // Mneme-lite Recent Activity is opt-in and only mounts for a selected
   // Workspace. It shares the already-open isolated store DB and the existing
@@ -829,7 +850,7 @@ export const apply = (ctx, config) => {
     };
     const isTrustedOwner = createRecentActivityOwnerCheck(ctx);
     const resolveTrustedSession = createTrustedSessionResolver(ctx);
-    const allowCrossSession = createRecentActivityPairGate(ctx);
+    const allowCrossSession = unifiedRuntime?.allowRecentPair ?? createRecentActivityPairGate(ctx);
     const mount = createRecentActivityRuntime({
       ctx,
       db: store.db,
@@ -850,6 +871,7 @@ export const apply = (ctx, config) => {
           db: store.db,
           workspaceId: activeWorkspaceId,
           allowSession: authorizeModelWork,
+          canReadProvenance:authorizeModelWork?.canReadRecent,
           resolveTrustedSession,
           allowCrossSession,
           isTrustedOwner,
@@ -873,7 +895,7 @@ export const apply = (ctx, config) => {
     strictQQ: runtimeCfg.sceneStrictQQ === true,
     hostContract: false
   });
-  const disposeSceneAclHandshake = provideSceneAclRead(ctx, runtimeCfg);
+  const disposeSceneAclHandshake = provideSceneAclRead(ctx, runtimeCfg, Boolean(unifiedRuntime));
   configureRecentContext({
     enabled: runtimeCfg.recentContextEnabled === true,
     ttlMs: runtimeCfg.recentContextTtlMs,
@@ -1171,11 +1193,13 @@ export const apply = (ctx, config) => {
   // re-evaluated per run so a tagged row arriving later switches to the safe
   // per-Scene path instead of being processed unscoped.
   async function runBackgroundDream() {
+    if (unifiedRuntime) return unifiedRuntime.runSources(() => dream.runDream(ctx, service, runtimeCfg));
     if (!sceneUnsafeDerivation()) return dream.runDream(ctx, service, runtimeCfg);
     return runScopedDreams();
   }
 
   async function runBackgroundSleep(signal) {
+    if (unifiedRuntime) return unifiedRuntime.runSources(() => runSleep(ctx, service, runtimeCfg, ctx.logger, { embedder, vectorIndex }, signal));
     if (!sceneUnsafeDerivation()) {
       return runSleep(ctx, service, runtimeCfg, ctx.logger, { embedder, vectorIndex }, signal);
     }
@@ -1334,7 +1358,7 @@ export const apply = (ctx, config) => {
   });
 
   const strictQQScene = runtimeCfg.sceneIsolationEnabled === true && runtimeCfg.sceneStrictQQ === true;
-  const summarizer = (!strictQQScene && sceneUnsafeDerivation())
+  const summarizer = (!unifiedRuntime && !strictQQScene && sceneUnsafeDerivation())
     ? { dispose() {} }
     : createSummarizer(ctx, service, runtimeCfg, { authorizeModelWork });
   disposers.push(summarizer.dispose);
@@ -1381,7 +1405,8 @@ export const apply = (ctx, config) => {
       initialSelectedWorkspaceId: workspaceRuntime.binding?.workspaceId ?? null,
       recentActivity,
       recentActivityAdmin,
-      recentActivityBootEnabled
+      recentActivityBootEnabled,
+      unifiedRuntime
     });
   }
 

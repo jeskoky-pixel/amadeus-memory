@@ -22,3 +22,8 @@
 - 验证：记忆正文、向量/Embedding 配置、知识图谱关系、权重、核心记忆、近期活动、Scene 隔离与授权、旧库版本 0 升级和失败恢复。
 
 未在真实 DSH Desktop/Market 运行的项目不得在发行报告里记作通过。
+
+
+## Unified Session ACL schema 2 — Learn/Borrow (2026-10-31 candidate)
+
+See [Session learning and rollback](SESSION_LEARNING.md). This additive migration creates a consistent pre-migration SQLite snapshot before changing the grant schema. Old grants remain legacy Borrow; historical shared-history records remain audited and quarantined. No automatic Learn upgrade or deletion is performed. Rollback requires the matching pre-v2 database/configuration and prior package, not a code-only downgrade. The candidate remains on Draft PR #7.

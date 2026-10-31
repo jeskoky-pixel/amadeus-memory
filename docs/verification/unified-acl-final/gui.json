@@ -1,0 +1,8 @@
+{
+  "desktop": "0.2.1-rc.3",
+  "grantPersistsAfterRestart": true,
+  "unsavedRevert": true,
+  "sharedGraphContainsAandB": true,
+  "revokedGraphContainsOnlyB": true,
+  "source": "actual Desktop controls and backend responses"
+}

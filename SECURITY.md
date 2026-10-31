@@ -9,14 +9,14 @@ are recorded in [UPSTREAM.md](UPSTREAM.md); installation and rollback are in
 
 | Version | Supported |
 | --- | --- |
-| 1.2.x | Current Amadeus Memory candidate line |
+| 1.3.x | Current Amadeus Memory candidate line |
 | < 1.2 | Historical line; upgrade before reporting an issue |
 
 ## 支持版本
 
 | Version | Supported |
 | --- | --- |
-| 1.2.x | 当前 Amadeus Memory 候选线 |
+| 1.3.x | 当前 Amadeus Memory 候选线 |
 | < 1.2 | 历史版本；报告问题前请先升级 |
 
 ## Reporting a Vulnerability / 报告漏洞

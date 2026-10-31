@@ -1,3 +1,4 @@
+import { currentUnifiedSession } from "./unified-session-acl.js";
 import { createScopeResolver } from "./scope.js";
 import { createHotMemory, roundsFromEvents } from "./hot-memory.js";
 import { STR, langOf } from "./lang.js";
@@ -112,7 +113,8 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
     } catch {
       decision = null;
     }
-    if (decision?.allowed === true) return render();
+    if (decision?.allowed === true) return authorizeModelWork.run
+      ? authorizeModelWork.run(renderCtx?.agent?.session, render) : render();
     // An unauthorized session must not leave a previous session's preview frame
     // visible, and must not reach the injector's data path at all.
     injectionSnapshot = null;
@@ -369,7 +371,7 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
     );
   }
 
-  function render(candidates, pinnedStats = null) {
+  function render(candidates, pinnedStats = null, delivered = null) {
     if (!candidates.length) return "";
     const header = STR.memoryHeader[language];
     const lines = [header];
@@ -489,6 +491,7 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
   }
 
   function renderForQQScene(renderCtx, render) {
+    if (currentUnifiedSession()) return render();
     const policy = scenePolicy();
     const preset = sessionAgentId(renderCtx);
     // An existing in-process capability can be supplied by a trusted Host
@@ -610,7 +613,9 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
         // separate context) keeps the prompt assembly stable at two blocks.
         const hotText = renderHotContext(ctx);
         const recentText = renderRecentContext();
-        const body = render(candidates, pinnedStats);
+        const delivered=[];
+        const body = render(candidates, pinnedStats,delivered);
+        if(body && authorizeModelWork?.delivery)authorizeModelWork.delivery(ctx?.agent?.session,delivered,'injection');
         // #333（issue #34 恢复）：时间前缀只在会话首轮出现（per-session 闩锁），
         // 排在整个记忆块的最前——模型先知道「今天几号」，再看热上下文与长期记忆。
         const timePrefix = renderTimePrefix(ctx);

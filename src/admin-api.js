@@ -1,3 +1,4 @@
+import { unifiedSnapshot, saveUnifiedPolicy, unifiedGraph, unifiedDisplay, saveUnifiedMemory } from "./unified-admin.js";
 // Owner-authenticated, minimal admin surface for the native Amadeus Memory
 // settings page. It never exposes API keys, database contents or memory bodies;
 // dynamic reads/writes go through the existing service, settings and preference
@@ -1295,6 +1296,8 @@ async function handle(req, res, deps) {
   }
   const path = url.pathname.slice(PREFIX.length) || "/";
   if (req.method === "GET") {
+    if (path === "/unified") return send(res, 200, { ok: true, data: await unifiedDisplay(deps.ctx, unifiedSnapshot(deps)) });
+    if (path === "/unified/graph") return send(res, 200, { ok: true, data: unifiedGraph(deps, url.searchParams.get("session_id")) });
     if (path === "/workspace") {
       return send(res, 200, { ok: true, data: workspaceSnapshot(deps) });
     }
@@ -1490,6 +1493,9 @@ async function handle(req, res, deps) {
   }
   if (req.method !== "POST") return send(res, 405, { ok: false, error: "method not allowed" });
   const body = await readJson(req);
+  if (path === "/unified/create") return send(res, 200, { ok: true, data: saveUnifiedMemory(deps, body) });
+  if (path === "/unified/mirror") return send(res, 200, { ok: true, data: service.recoverMirror() });
+  if (path === "/unified") return send(res, 200, { ok: true, data: await unifiedDisplay(deps.ctx, saveUnifiedPolicy(deps, body)) });
   if (path === "/workspace") {
     const controlRoot = workspaceControlRoot(deps);
     const requested = body.workspace_id;

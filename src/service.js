@@ -20,6 +20,7 @@ import { normalizeEventTag, stripEventTags, eventTagForKind, isEventTag } from "
 import { currentScene, sceneFilterRows, sceneIdOf, isAdminPrivateScene, scenePolicy, sceneAllowsMemory } from "./scene.js";
 import { sceneJobScopes, sceneJobMatches, sceneJobEquals, currentSceneJob, LEGACY_SCENE_JOB } from "./scene-job.js";
 import { INTERNAL_AUTHORITY } from "./internal-authority.js";
+import { currentUnifiedSession } from "./unified-session-acl.js";
 
 // Issue #369：蒸馏白名单（src/summarize.js 的 VALID）产得出 history，注入白名单
 // 原先不收——本机活跃库实测 378/1820（20.8%）因此永不可自动注入，而它们在同一库
@@ -470,6 +471,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
   }
 
   function trustedReadableSceneScopes() {
+    // The unified ACL supplies its own SQL candidate predicate. The legacy
+    // Scene selector would otherwise hide every ordinary DSH source stamp.
+    if (currentUnifiedSession()) return null;
     if (scenePolicy().enabled !== true) return null;
     const scene = currentScene();
     // No QQ capability means an authorized ordinary DSH session. Keep SQL
@@ -503,7 +507,13 @@ export function createService({ store, mirror, config, onWrite, logger, document
 
   function jobOrSceneFilter(rows) {
     const job = currentSceneJob();
-    return job ? rows.filter((row) => sceneJobMatches(row)) : sceneFilterRows(rows);
+    return job ? rows.filter((row) => sceneJobMatches(row)) : visibleRows(rows);
+  }
+
+  function visibleRows(rows) {
+    const unified = currentUnifiedSession();
+    if (!unified) return sceneFilterRows(rows);
+    return unified.acl.filterReadable(unified.identity, rows);
   }
 
   function jobEntityIds() {
@@ -1172,7 +1182,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // Scene isolation is a data-access gate, after graph/entity recall has
     // merged and before rerank/receipt/cache. It is fail-closed in strict mode
     // when the trusted output scene is missing.
-    merged = sceneFilterRows(merged);
+    merged = visibleRows(merged);
     if (Array.isArray(sceneScopes)) {
       const selected = new Set(sceneScopes.map((scope) => String(scope)));
       merged = merged.filter((row) => selected.has(row.scene_scope ?? "legacy"));
@@ -1239,6 +1249,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // before returning, making the retrieval scene replayable — the sibling of
     // the dream judgment-layer audit trail. Recorder failures must never break
     // the search itself.
+    // Async ranking may outlive a read grant, not just a Host identity.
+    // Recheck SQLite's current per-memory authorization before audit/cache/output.
+    result = visibleRows(result);
     if (recordRecall && recallRecorder) {
       try {
         recallRecorder({
@@ -1264,7 +1277,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     }
     // Bug4: cache the latest semantic recall so the sync injection path can
     // reuse it when the injection query matches (no async embed available).
-    lastSemanticRecall = { query: q, items: result };
+    if (!currentUnifiedSession()) lastSemanticRecall = { query: q, items: result };
     touchRecalled(result);
     return result;
   }
@@ -1610,6 +1623,15 @@ export function createService({ store, mirror, config, onWrite, logger, document
     const job = currentSceneJob();
     if (job) {
       memory = { ...memory, scene_scope: job.sceneScope === LEGACY_SCENE_JOB ? null : job.sceneScope };
+    }
+    const unified = currentUnifiedSession();
+    if (unified) {
+      if (job && job.sceneScope !== unified.identity.sourceKey) {
+        throw new Error("UNIFIED_SOURCE_JOB_MISMATCH");
+      }
+      // Dedupe compares scene_scope before store.save stamps its source. Keep
+      // the comparison and the eventual write on the same trusted source.
+      memory = { ...memory, scene_scope: unified.identity.sourceKey };
     }
     // Event claims are authority-bearing provenance, not free-form labels.
     // Every ordinary write loses all event:* spellings; the private trusted
@@ -2005,7 +2027,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
           }
         } catch { /* vector unavailable: fall through to the recall cache */ }
       }
-      if (!semanticItems.length && lastSemanticRecall?.query === q && lastSemanticRecall.items?.length) {
+      if (!currentUnifiedSession() && !semanticItems.length && lastSemanticRecall?.query === q && lastSemanticRecall.items?.length) {
         // CodeRabbit on #404：这条回填分支此前独漏重要度门槛——向量路（上方）与
         // BM25 路（下方 :1655 注释「门控与向量路径一致（含 importance 阈值）」）
         // 都带着它。#369 收编 history 后缺口会被放大：库里低于闸门的行（实测
@@ -2114,7 +2136,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // 观察档（enabled 开、enforce 关）在这里留一条审计行说清「本应被拦下几条」，
     // 但不改 candidates；拦截档才真的摘掉。审计写失败只 warn，注入照常完成。
     candidates = scopeStateGate.gateInjection(candidates).rows;
-    candidates = sceneFilterRows(candidates);
+    candidates = visibleRows(candidates);
     // #249 第一批：B1 pin 池。取在相关性排序之后、轮换之前——取谁按此刻的候选
     // 次序（即相关性次序），取到后从候选中摘除，于是下面的轮换重排碰不到它们
     // （验收：pin 不参与跨轮轮换）。独立预算的两层意义：pin 既不占 maxItems
@@ -2201,6 +2223,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     // Explain the preference contribution without exposing any inaccessible
     // content: only this row's own tags/entity labels and the bounded factor.
     if (preferenceScorer.active) injected = injected.map((m) => preferenceScorer.annotate(m));
+    currentUnifiedSession();
     touchRecalled(injected);
     // #217 口径（2026-09-19 拍板）：注入是曝光型访问事件，与检索命中同表分账
     // （mode='inject'，candidates 存实际注入集）。跟随 recallRecordDefault——
@@ -2520,6 +2543,9 @@ export function createService({ store, mirror, config, onWrite, logger, document
   //   - 逐 type 用 setTypeStatus 记录部分成功/失败（type_status JSON）；
   //   - 所有 store 状态写入各自 try/catch，失败只 warn，绝不向外抛（F-NEW-03）。
   function syncMirror() {
+    // A source-filtered view must never overwrite the whole-library projection.
+    // Leave its generation dirty for authenticated management/restart recovery.
+    if (currentUnifiedSession()) return { success: true, deferred: true, reason: "unified-admin-projection-required" };
     if (txDepth > 0) return { success: true, deferred: true }; // deferred to the transaction's commit
     // #296 第二批：documentDir/index.md 走同一条写后语——它与镜像一样是「从库渲染
     // 的机器产物」，同样只在内容变化时落盘、同样自己吞掉失败。放在 !mirror 短路
@@ -2745,10 +2771,12 @@ export function createService({ store, mirror, config, onWrite, logger, document
   // 处置）共用的写路径：mirror 同步、写通知、嵌入调度全部同源，不能各写一份。
   function updateMemory(id, p, ctx = {}) {
     const old = store.getById(id);
+    const unified = currentUnifiedSession();
+    if (unified && old && !unified.acl.canWriteMemory(unified.identity, old)) throw new Error("UNIFIED_WRITE_NOT_OWNED");
     if (currentSceneJob()) {
       if (!old || !sceneJobMatches(old)) throw new Error("memory not found in scene job");
     }
-    if (old?.scene_scope && scenePolicy().enabled) {
+    if (!unified && ctx[INTERNAL_AUTHORITY] !== true && old?.scene_scope && scenePolicy().enabled) {
       const scene = currentScene();
       const jobAllowsExactScene = currentSceneJob() !== null && sceneJobMatches(old);
       if ((!scene || old.scene_scope !== scene.sceneId) && !jobAllowsExactScene) {
@@ -3036,7 +3064,7 @@ export function createService({ store, mirror, config, onWrite, logger, document
     listCore({ includeArchived = true } = {}) {
       const rows = store.list({ includeArchived, includeForgotten: false, limit: 5000 })
         .filter((row) => row.protected === true);
-      return sceneFilterRows(rows);
+      return visibleRows(rows);
     },
     listReadableSceneScopes() {
       return trustedReadableSceneScopes();
@@ -3295,5 +3323,22 @@ export function createService({ store, mirror, config, onWrite, logger, document
   serviceApi.submitTrustedMemory = (body) => intake.submit(body);
   serviceApi.validateTrustedIntake = (body) => intake.validate(body);
   serviceApi.trustedProvenanceFor = (memoryId) => intake.provenanceFor(memoryId);
+  // Background algorithms retain Mneme's decisions. Their trusted input set
+  // contributes immutable ancestry to every write, including rewrites/merges.
+  for(const name of ['getById','list','all','search','searchMemories','injectCandidates']) {
+    const original=serviceApi[name];if(typeof original!=='function')continue;
+    serviceApi[name]=(...args)=>{
+      const observe=value=>{
+        const scope=currentUnifiedSession();
+        if(scope?.purpose==='job') {
+          const rows=Array.isArray(value)?value:value?.id?[value]:[];
+          const ids=rows.map(r=>r?.id).filter(Boolean);
+          if(ids.length)scope.evidence=scope.acl.combineEvidence(scope.evidence,scope.acl.memoryEvidence(scope.identity,ids));
+        }
+        return value;
+      };
+      const result=original(...args);return result?.then?result.then(observe):observe(result);
+    };
+  }
   return serviceApi;
 }

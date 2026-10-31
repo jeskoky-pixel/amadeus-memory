@@ -1,7 +1,7 @@
 {
   "name": "@fg-lab/amadeus-memory",
   "description": "Amadeus Memory (enhanced Mneme 0.9.4): cross-session memory with stable typed identities, native DSH settings, SQLite storage, autoDream, vector retrieval and 13 model tools.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "license": "MIT",
   "publishConfig": { "access": "public" },
   "amadeus": {

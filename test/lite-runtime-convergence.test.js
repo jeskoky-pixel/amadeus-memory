@@ -46,11 +46,11 @@ test("index wires direct Dream/Sleep for the lite path and scoped jobs for legac
   // Direct original Mneme calls, guarded by the same live policy decision.
   assert.match(
     src,
-    /async function runBackgroundDream\(\) \{\s*if \(!sceneUnsafeDerivation\(\)\) return dream\.runDream\(ctx, service, runtimeCfg\);\s*return runScopedDreams\(\);/
+    /async function runBackgroundDream\(\) \{\s*if \(unifiedRuntime\) return unifiedRuntime\.runSources\(\(\) => dream\.runDream\(ctx, service, runtimeCfg\)\);\s*if \(!sceneUnsafeDerivation\(\)\) return dream\.runDream\(ctx, service, runtimeCfg\);\s*return runScopedDreams\(\);/
   );
   assert.match(
     src,
-    /async function runBackgroundSleep\(signal\) \{\s*if \(!sceneUnsafeDerivation\(\)\) \{\s*return runSleep\(ctx, service, runtimeCfg, ctx\.logger, \{ embedder, vectorIndex \}, signal\);\s*\}\s*return runScopedSleep\(signal\);/
+    /async function runBackgroundSleep\(signal\) \{\s*if \(unifiedRuntime\) return unifiedRuntime\.runSources\(\(\) => runSleep\(ctx, service, runtimeCfg, ctx\.logger, \{ embedder, vectorIndex \}, signal\)\);\s*if \(!sceneUnsafeDerivation\(\)\) \{\s*return runSleep\(ctx, service, runtimeCfg, ctx\.logger, \{ embedder, vectorIndex \}, signal\);\s*\}\s*return runScopedSleep\(signal\);/
   );
   // The compatibility path still enumerates persisted buckets and uses the
   // Scene job scope for both jobs.
