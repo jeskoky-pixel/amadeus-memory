@@ -23,4 +23,6 @@ Do not overwrite a published npm version. Investigate and publish a new patch wh
 
 ## 当前状态
 
-正式发行仍以最终验收报告为准。当前本地 npm 认证失效，不能据此确认 Scope 权限或 Trusted Publisher 已配置。普通代码推送不会运行正式发布。禁止将账户凭证写入代码。
+2026-10-31：npm 与 GitHub Release 已发布，固定版本和 SHA-256 见 Release。初始 npm 版本由所有者通过浏览器认证发布，不带 npm OIDC provenance；不得将 SHA 校验等同于该证明。
+
+五包的 npm Trusted Publisher 已通过 CLI 配置并读取验证，限定为各自仓库、`npm-publish.yml` 和 `npm-release` 环境。后续 OIDC 工作流尚未用新版本执行，不声称首发带有该证明。普通 push 不发布。发布过的版本不可覆盖；后续改动必须使用新版本。
