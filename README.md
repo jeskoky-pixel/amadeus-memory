@@ -4,24 +4,29 @@ Amadeus Memory 是基于 [Mneme](https://github.com/slow-stack/mneme) 修改并�
 
 Memory 可独立安装。QQ 提供可信 Scene 身份时，它会按 Scene 隔离长期记忆和近期上下文；Life 可通过受控入口写入可信经历；Persona 与 State 均为可选插件。缺少这些插件时，普通 DSH 会话仍可使用 Memory。
 
+## 当前状态
+
+1.3.0 是主分支整合候选，本轮不发布 npm、Release 或 Market。以下版本安装命令仅在对应公开发行完成后适用；当前验收使用本地预构建包。
+
 ## 安装
 
-目标版本：`@fg-lab/amadeus-memory@1.2.0`，兼容已验证的 DSH Desktop `0.2.1-rc.3`。在 DSH 插件管理器中安装 npm 包，或安装本仓库根目录／[GitHub Release](https://github.com/jeskoky-pixel/amadeus-memory/releases) 的预构建包。命令行等价形式：
+目标版本：`@fg-lab/amadeus-memory@1.3.0`，兼容已验证的 DSH Desktop `0.2.1-rc.3`。在 DSH 插件管理器中安装 npm 包，或安装本仓库根目录／[GitHub Release](https://github.com/jeskoky-pixel/amadeus-memory/releases) 的预构建包。命令行等价形式：
 
 ```powershell
-dsh plugin --profile <隔离或目标Profile> add @fg-lab/amadeus-memory@1.2.0
+dsh plugin --profile <隔离或目标Profile> add @fg-lab/amadeus-memory@1.3.0
 ```
 
 首次配置在 DSH 设置的 **Amadeus 记忆** 页面完成。先核对 Workspace、`memoryDir`、Embedding 与 Scene 安全开关，再启用写入。GUI 包含记忆卡片与时间线、实体关系图、运行状态，以及分组设置。向量服务未配置时仍可使用关键词检索；远端 Embedding 或宿主模型可能接收待处理的记忆内容。
 
-从 `@amadeus/memory` 升级时，先停用旧 Memory，做 SQLite 一致性备份并导出 Profile，再移除旧包的 Bundle 配置，安装新包并恢复原 Workspace、`memoryDir` 和设置。**绝不能同时启用两个 `dsh-mneme` 实例**。根目录 GitHub 安装不再需要 `#path:/dsh-mneme`。详见 [安装与升级](docs/INSTALL_V1_2.md)、[升级政策](docs/UPGRADE_POLICY.md)、[数据迁移](docs/DATA_MIGRATION.md)。
+从 `@amadeus/memory` 升级时，先停用旧 Memory，做 SQLite 一致性备份并导出 Profile，再移除旧包的 Bundle 配置，安装新包并恢复原 Workspace、`memoryDir` 和设置。**绝不能同时启用两个 `dsh-mneme` 实例**。根目录 GitHub 安装不再需要 `#path:/dsh-mneme`。详见 [安装与升级](docs/INSTALL_V1_3.md)、[升级政策](docs/UPGRADE_POLICY.md)、[数据迁移](docs/DATA_MIGRATION.md)。
 
 ## 功能与页面
 
 - 长期记忆的写入、检索、编辑、归档、遗忘、自动摘要、autoDream 和 Sleep。
 - 核心记忆、近期活动、Tag 与实体权重、稳定身份、别名和知识图谱。
-- QQ Scene 隔离与管理员配置的跨 Scene 读取授权；可信经历写入有来源证据与幂等保护。
-- 中英文 GUI：记忆、实体、状态和设置；可查看并管理备份与恢复。
+- 单 Workspace 统一记忆、Session 隔离、全局知识图谱与方向性 Learn/Borrow 授权。新授权默认 Learn；已合法学得的派生知识保留来源约束，禁止未经授权转分享。
+- autoSummarize、Dream/Sleep 按来源约束派生；QQ 可信身份契约可选，普通 DSH Session 可独立使用。
+- 中英文 GUI：保留记忆、实体、状态和设置四页，增加第五页 Amadeus 授权管理与 Session 图谱预览。
 
 高级维护键 `reflectionFailureRetentionDays` 控制失败反思记录的保留天数；默认 90 天，详见 [配置参考](docs/CONFIGURATION.md)。
 

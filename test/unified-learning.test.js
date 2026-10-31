@@ -218,3 +218,25 @@ test('derived recent activity also requires its publisher own independent Learn 
   assert.equal(roots.find(r=>r.source_key===f.ids.b.sourceKey)?.mode,'borrow');
  }finally{f.store.close();}
 });
+
+test('1.3 metadata upgrade reopens schema 2 without changing persisted rows or learned rights',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'amadeus-v13-reopen-'));let store;
+ try {
+  const path=join(dir,'memory.db');store=createStore(path);
+  const sessions=new Map(['a','b','c'].map(id=>[id,{id,header:{createdAt:1},events:[]} ]));
+  const options=()=>({db:store.db,workspaceId:'w',resolveTrustedSession:id=>sessions.get(id),authorizeWorkspace:()=>({allowed:true,workspaceId:'w'}),confirmOrdinarySession:()=>true});
+  let acl=createUnifiedSessionAcl(options());let a=acl.identify('a'),b=acl.identify('b'),c=acl.identify('c');
+  const root=runWithUnifiedSession(acl,a,()=>store.save({type:'preference',title:'original',content:'synthetic retained fact',importance:4}));
+  acl.setGrant(a.sourceKey,b.sourceKey,true,'learn');acl.recordDelivery(b,[root],'tool',7);
+  const learned=runWithUnifiedSession(acl,b,()=>store.save({type:'preference',title:'learned',content:'synthetic derived fact',importance:4}),{evidence:acl.historyEvidence(b)});
+  acl.setGrant(a.sourceKey,b.sourceKey,false);acl.setGrant(b.sourceKey,c.sourceKey,true);
+  const snapshot=()=>Object.fromEntries(store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(({name})=>[name,store.db.prepare('SELECT * FROM "'+name.replaceAll('"','""')+'"').all()]));
+  const before=snapshot();store.close();store=createStore(path);acl=createUnifiedSessionAcl(options());
+  assert.deepEqual(snapshot(),before,'all persisted tables, not just row counts, remain intact');
+  assert.equal(store.db.prepare("SELECT value FROM unified_acl_meta WHERE key='schema_version'").get().value,'2');
+  assert.equal(store.getById(root.id).content,'synthetic retained fact');
+  assert.equal(acl.canReadMemory(acl.identify('b'),learned),true);
+  assert.equal(acl.canReadMemory(acl.identify('c'),learned),false);
+  assert.equal(acl.canReadMemory(acl.identify('b'),root),false);
+ } finally {store?.close();rmSync(dir,{recursive:true,force:true});}
+});

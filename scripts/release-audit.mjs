@@ -10,7 +10,7 @@ const requirements = {
   '@amadeus/state': ['src/index.js', 'lib/client.js', 'cordis.patch.yml', 'icon.svg', 'locale/zh.json', 'locale/en.json'],
   '@amadeus/persona': ['src/index.js', 'src/client.js', 'src/console/index.html', 'src/console/console.js', 'src/console/console.css', 'cordis.patch.yml']
 }
-for (const required of Object.values(requirements)) required.push('assets/market-icon.png', 'screenshots.json', 'docs/INSTALL_V1_2.md')
+for (const required of Object.values(requirements)) required.push('assets/market-icon.png', 'screenshots.json', 'docs/INSTALL_V1_3.md')
 const expectedId = pkg.name === '@fg-lab/amadeus-memory' ? 'dsh-mneme' : pkg.name.replace('@amadeus/', 'amadeus-')
 const errors = []
 const warnings = []
