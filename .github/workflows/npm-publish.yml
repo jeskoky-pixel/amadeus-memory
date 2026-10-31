@@ -44,6 +44,7 @@ jobs:
           git fetch origin main
           git merge-base --is-ancestor HEAD origin/main
           if ($LASTEXITCODE -ne 0) { throw 'Tagged commit is not on main' }
+      - run: node scripts/registry-guard.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run sync
       - run: npm test
