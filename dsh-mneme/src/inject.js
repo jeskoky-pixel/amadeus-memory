@@ -467,7 +467,11 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
     "amadeus-qq-search",
     "amadeus-qq-media",
     "amadeus-qq-media-search",
-    "amadeus-qq-owner"
+    "amadeus-qq-owner",
+    "amadeus-qq-life",
+    "amadeus-qq-life-search",
+    "amadeus-qq-life-media",
+    "amadeus-qq-life-media-search"
   ]);
   const ORDINARY_DSH_PRESETS = new Set(["standard", "minimal", "creator", "creative", "default"]);
   function trustedQQScene(renderCtx) {
@@ -664,3 +668,4 @@ export function createInjector(ctx, service, settings, config, gate = null, acce
     }
   };
 }
+
